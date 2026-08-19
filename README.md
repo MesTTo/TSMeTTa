@@ -59,6 +59,19 @@ once and stepped in any order, which is the reason an SWI engine holds the
 query rather than swipl-wasm's own query object: the raw one refuses a pull
 that is not the innermost, with `Attempt to access not innermost query`.
 
+## Nothing reaches your console
+
+An embedded engine that prints is printing over whatever the host was saying,
+so this one does not. A program's own `println!` is buffered and
+`petta.drainOutput()` hands it over; an engine error is raised as a
+`PettaError` carrying the engine's own message, never written out. Pass
+`boot({ verbose: true })` when you want the engine's trace, and both streams
+go to the console as well as into the buffers.
+
+That took work rather than being free: swipl-wasm writes every Prolog
+exception to the console before handing it back, and offers no switch, so
+`bridge.pl` catches inside the engine and the outcome crosses as data.
+
 ## Numbers
 
 A MeTTa integer arrives as a JavaScript `BigInt` and a MeTTa float as a

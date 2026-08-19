@@ -21,6 +21,9 @@
  *     that tells 2 from 2.0 apart, and the engine does tell them apart
  *     [measured 2026-08-20: (== 2 2.0) answers False]
  *   - a value JavaScript has no type for (a rational) is refused by name
+ *   - nothing reaches the host's console unless boot() was asked for verbose;
+ *     an engine error is raised here and a program's output is buffered
+ *     [tested: "an error is raised rather than printed"]
  * Owns: one WebAssembly instance per boot(), and one Prolog engine per open
  *   stream, released by close() on the iterator or on exhaustion.
  * Decides: cursors are addressed by integer, because the WebAssembly value
@@ -289,28 +292,39 @@ function mountInto(fs, hostDir, virtualDir, keep) {
 
 export class Petta {
   #swipl;
+  #output;
   #stderr;
 
-  /** @param {object} swipl @param {string[]} stderr @param {object[]} refusals */
-  constructor(swipl, stderr, refusals) {
+  /**
+   * @param {object} swipl @param {string[]} output @param {string[]} stderr
+   * @param {object[]} refusals
+   */
+  constructor(swipl, output, stderr, refusals) {
     this.#swipl = swipl;
+    this.#output = output;
     this.#stderr = stderr;
     this.refusals = refusals;
   }
 
   /**
-   * Run a goal that must succeed exactly once, and return its bindings. A
-   * failure is a bug in this binding rather than an answer, so it raises;
-   * MeTTa's own "no answers" is an empty group, which is a success here.
+   * Run a goal that must succeed exactly once, and return its bindings.
+   *
+   * Through bridge.pl's petta_node_do/2, so a Prolog exception never reaches
+   * the WebAssembly boundary: swipl-wasm prints one on the host's console
+   * before handing it back and has no switch for it, so the outcome crosses
+   * as data and the raising happens here instead.
    */
   #once(goal, input) {
-    const result = this.#swipl.prolog.query(goal, input).once();
+    const result = this.#swipl.prolog.query(`petta_node_do((${goal}), Outcome).`, input).once();
     if (result && result.error === true) {
       throw new PettaError(`${result.message} (running ${goal})`);
     }
     if (!result || result.success === false) {
-      throw new PettaError(`the engine goal failed: ${goal}`);
+      throw new PettaError(`the engine could not run ${goal}`);
     }
+    const [outcome, text] = result.Outcome;
+    if (outcome === "error") throw new PettaError(`${hostText(text)}(running ${goal})`);
+    if (outcome !== "ok") throw new PettaError(`the engine goal failed: ${goal}`);
     return result;
   }
 
@@ -321,7 +335,7 @@ export class Petta {
 
   /** Run MeTTa source. One group of answers per `!` directive, in order. */
   run(source) {
-    const { Groups } = this.#once("petta_node_run(Src, Groups).", { Src: source });
+    const { Groups } = this.#once("petta_node_run(Src, Groups)", { Src: source });
     return Groups.map((group) => group.map(answerFrom));
   }
 
@@ -333,7 +347,7 @@ export class Petta {
     const full = resolve(path);
     const directory = dirname(full);
     this.mount(directory, directory, (name) => name.endsWith(".metta") || name.endsWith(".pl"));
-    const { Groups } = this.#once("petta_node_load(File, Groups).", { File: full });
+    const { Groups } = this.#once("petta_node_load(File, Groups)", { File: full });
     return Groups.map((group) => group.map(answerFrom));
   }
 
@@ -362,7 +376,7 @@ export class Petta {
       if (cursor !== null) {
         const id = cursor;
         cursor = null;
-        engine.#once("petta_node_close(Id).", { Id: id });
+        engine.#once("petta_node_close(Id)", { Id: id });
       }
     };
 
@@ -373,7 +387,7 @@ export class Petta {
       async next() {
         if (finished) return { done: true, value: undefined };
         if (cursor === null) {
-          const { Id } = engine.#once("petta_node_open(Src, Space, Id).", {
+          const { Id } = engine.#once("petta_node_open(Src, Space, Id)", {
             Src: expression,
             Space: space,
           });
@@ -381,7 +395,7 @@ export class Petta {
         }
         let answer;
         try {
-          ({ Answer: answer } = engine.#once("petta_node_next(Id, Answer).", { Id: cursor }));
+          ({ Answer: answer } = engine.#once("petta_node_next(Id, Answer)", { Id: cursor }));
         } catch (error) {
           release();
           throw error;
@@ -405,7 +419,7 @@ export class Petta {
 
   /** An atom's round trip through the engine: decode it, then encode it back. */
   roundTrip(wire) {
-    const { Out } = this.#once("petta_node_decode(W, T), petta_node_encode(T, Out).", {
+    const { Out } = this.#once("petta_node_decode(W, T), petta_node_encode(T, Out)", {
       W: toTransport(wire),
     });
     return fromTransport(Out);
@@ -413,8 +427,21 @@ export class Petta {
 
   /** The engine's own rendering of an atom, through the published writer. */
   text(wire) {
-    const { S } = this.#once("petta_node_decode(W, T), swrite(T, S).", { W: toTransport(wire) });
+    const { S } = this.#once("petta_node_decode(W, T), swrite(T, S)", { W: toTransport(wire) });
     return hostText(S);
+  }
+
+  /**
+   * Everything the engine printed since the last read, and forgets it.
+   *
+   * A program's own `println!` lands here rather than on the host's console,
+   * because an embedded engine writing to that console is writing over
+   * whatever the host was saying. Both streams are captured and neither is
+   * printed unless boot() was asked for verbose, which is the switch for
+   * wanting the engine's own trace.
+   */
+  drainOutput() {
+    return this.#output.splice(0, this.#output.length);
   }
 
   /** Everything the engine wrote to standard error since the last read. */
@@ -433,10 +460,18 @@ export class Petta {
  */
 export async function boot({ root = REPO_ROOT, verbose = false } = {}) {
   const initSWIPL = require("swipl-wasm/dist/swipl-node");
+  const output = [];
   const stderr = [];
   const swipl = await initSWIPL({
     arguments: ["-q"],
-    printErr: (line) => stderr.push(line),
+    print: (line) => {
+      output.push(line);
+      if (verbose) console.log(line);
+    },
+    printErr: (line) => {
+      stderr.push(line);
+      if (verbose) console.error(line);
+    },
   });
 
   for (const directory of ENGINE_DIRS) {
@@ -453,13 +488,14 @@ export async function boot({ root = REPO_ROOT, verbose = false } = {}) {
 
   const seen = readRefusals(stderr, `${VIRTUAL_ROOT}/`);
   stderr.length = 0;
+  output.length = 0;
 
   const bridged = swipl.prolog.query(`consult('${VIRTUAL_ROOT}/bridge.pl').`).once();
   if (bridged && bridged.error === true) {
     throw new PettaError(`the Node bridge did not load: ${bridged.message}`);
   }
 
-  return new Petta(swipl, stderr, seen);
+  return new Petta(swipl, output, stderr, seen);
 }
 
 export { Answer, PettaError };

@@ -34,6 +34,49 @@
 %   Future Enhancements: None
 
 :- dynamic petta_node_cursor/2.
+:- dynamic petta_node_captured/1.
+
+%%%%%%%%%% Every call from the host comes through here %%%%%%%%%%
+%
+% swipl-wasm PRINTS a Prolog exception on the host's console before handing it
+% back: its query loop runs `console.error(msg)` or `console.log(msg)` in the
+% PL_S_EXCEPTION branch, whichever the query flags select, and offers no way
+% to turn it off [source: swipl-wasm 8.0.6, dist/swipl/swipl.js, verified
+% 2026-08-20 by intercepting console.log around a refused source]. An
+% embedded engine writing over its host's own output is a defect the host
+% cannot fix, so no exception crosses the boundary: the outcome is DATA and
+% the JavaScript side raises from it.
+%
+% [ok], [fail] or [error, Text]. A goal that fails rather than raising is a
+% bug in this file, not an answer, and the host says so; MeTTa's own "no
+% answers" is an empty group, which is a success here.
+petta_node_do(Goal, Outcome) :-
+    catch(( call(Goal) -> Outcome = [ok] ; Outcome = [fail] ),
+          Ball,
+          ( petta_node_render(Ball, Text), Outcome = [error, Text] )).
+
+% The message is SWI's own: print_message/2 renders it through exactly the
+% machinery the console would have used, and the hook below takes the lines
+% instead of letting them out. Only ONE message is emitted inside the guarded
+% window, so nothing else is caught by it.
+petta_node_render(Ball, Text) :-
+    setup_call_cleanup(nb_setval('$petta_node_capture', true),
+                       catch(print_message(error, Ball), _, true),
+                       nb_setval('$petta_node_capture', false)),
+    (   retract(petta_node_captured(Rendered))
+    ->  Text = Rendered
+    ;   term_string(Ball, Text)
+    ).
+
+% Deaf outside petta_node_render/2, and it has to be: a hook that succeeds
+% suppresses the message, so an always-on one would swallow the loader's own
+% diagnostics. It is module-qualified because message_hook/3 is SWI's
+% protocol and not a seam of this engine's.
+:- multifile user:message_hook/3.
+user:message_hook(_, _, Lines) :-
+    nb_current('$petta_node_capture', true),
+    print_message_lines(atom(Text), '', Lines),
+    assertz(petta_node_captured(Text)).
 
 %%%%%%%%%% The seven-tag codec %%%%%%%%%%
 %

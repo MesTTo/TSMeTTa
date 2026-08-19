@@ -87,7 +87,33 @@ describe("running a program", () => {
   });
 
   it("raises when the source does not parse", () => {
-    assert.throws(() => petta.run("!(unclosed"), PettaError);
+    assert.throws(() => petta.run("!(unclosed"), /missing '\)'/);
+  });
+
+  it("raises an error rather than printing it", () => {
+    // swipl-wasm writes every Prolog exception to the host's console before
+    // handing it back and has no switch for it, so bridge.pl catches inside
+    // and the outcome crosses as data. Without that the caller sees the same
+    // failure twice, once raised and once written over its own output.
+    const written = [];
+    const { log, error } = console;
+    console.log = (...parts) => written.push(parts.join(" "));
+    console.error = (...parts) => written.push(parts.join(" "));
+    try {
+      assert.throws(() => petta.run("!(unclosed"), PettaError);
+      assert.throws(() => petta.run("!(below 1)\n(= (below $x) $x)"), PettaError);
+    } finally {
+      console.log = log;
+      console.error = error;
+    }
+    assert.deepEqual(written, []);
+  });
+
+  it("buffers what a program prints instead of writing it out", () => {
+    petta.drainOutput();
+    petta.run('!(println! "from the program")');
+    assert.deepEqual(petta.drainOutput(), ['"from the program"']);
+    assert.deepEqual(petta.drainOutput(), []);
   });
 });
 

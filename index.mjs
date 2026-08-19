@@ -228,8 +228,16 @@ export function fromTransport(term) {
       return [tag, hostText(payload)];
     case "n":
       return ["n", numberFromText(hostText(payload))];
-    case "b":
-      return ["b", hostText(payload) === "true"];
+    case "b": {
+      // Exactly the two words. Reading anything else as false answers a
+      // question nobody asked, and a truthiness rule here would let ["b", 1]
+      // through as a boolean the engine never wrote.
+      const written = hostText(payload);
+      if (written !== "true" && written !== "false") {
+        throw new PettaError(`the b tag carries true or false, not ${JSON.stringify(payload)}`);
+      }
+      return ["b", written === "true"];
+    }
     case "e":
       return ["e", items(payload).map(fromTransport)];
     default:
@@ -416,6 +424,12 @@ export class Petta {
         throw error;
       },
     };
+  }
+
+  /** One atom of MeTTa source, through the engine's own reader. */
+  read(text) {
+    const { Wire } = this.#once("petta_node_read(Src, Wire)", { Src: text });
+    return fromTransport(Wire);
   }
 
   /** An atom's round trip through the engine: decode it, then encode it back. */

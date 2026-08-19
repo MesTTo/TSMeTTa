@@ -143,14 +143,26 @@ gate naming the pair. What it calls:
 
 ## The conformance kit
 
-`kit/corpus.json` lists MeTTa programs and wire atoms and records no expected
-answers, because `python/tests/test_node_binding.py` runs the same cases
-through the shipped Python host in the same moment and compares the two. That
-test is
-`test_a_second_language_binding_passes_the_same_conformance_kit`, and it is
-what says the seam has two consumers rather than one.
+The binding is held to the codec twice, and the two answer different
+questions.
 
-`kit/run.mjs` is the runner; it prints the whole report as JSON, so:
+`kit/driver.mjs` exposes it as one `CodecDriver` for the golden corpus at
+`tests/codec/corpus.json`, which is the grammar's authority. A whole binding
+runs every leg the kit has, where a wire-carrying store runs two: it reads
+MeTTa source, prints through the engine's own writer, round trips an atom, and
+runs programs. Measured 2026-08-20 against the corpus: **62 cases in scope,
+zero complaints**, with only the `o` tag and the three protocol frames
+declared out of profile. The kit earned that by catching a real defect first,
+which is what a kit is for: the decoder minted a fresh variable per
+occurrence, so `(f $x $x)` came back as `(f $x $y)`.
+
+`kit/corpus.json` and `kit/run.mjs` answer the other question. They record
+cases and never answers, because `python/tests/test_node_binding.py` runs the
+same programs through the shipped Python host in the same moment and compares
+the two. A codec can satisfy a written-down grammar and still disagree with
+the engine beside it, and that is what this half would catch.
+
+The runner prints the whole report as JSON:
 
 ```sh
 node kit/run.mjs | head -40
@@ -160,9 +172,10 @@ node kit/run.mjs | head -40
 
 | file | what it is |
 |---|---|
-| `index.mjs` | the binding: boot, run, load, stream, and the codec |
+| `index.mjs` | the binding: boot, run, load, read, stream, and the codec |
 | `bridge.pl` | its Prolog half: the codec, the program pipeline, the cursor |
-| `kit/corpus.json` | the conformance cases |
+| `kit/driver.mjs` | the binding as one CodecDriver, for the golden corpus |
+| `kit/corpus.json` | the live-host comparison's own cases |
 | `kit/run.mjs` | the runner that answers them |
 | `test/binding.test.mjs` | `node --test` |
 | `example/streaming.metta` | the program the README and the tests run |

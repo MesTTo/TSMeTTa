@@ -18,8 +18,8 @@
     "!(memoize f) case was here and answered True on one side and the",
     "unreduced expression on the other, depending on which test file ran first.",
     "",
-    "This file stands in until P4.24's golden corpus lands, at which point the",
-    "cases move there and both codecs read one file."
+    "This file stands in for the live-host half until the golden corpus at",
+    "tests/codec/corpus.json lands, at which point the cases move there."
   ],
   "programs": [
     { "source": "!(+ 1 1)", "why": "an integer answer" },

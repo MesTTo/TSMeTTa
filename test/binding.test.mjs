@@ -166,10 +166,27 @@ describe("the codec", () => {
     assert.throws(() => toTransport("s"), /not a wire atom/);
   });
 
+  it("reads one variable payload as one variable", () => {
+    // The payload is an identity within its term, not a display name, so
+    // (f $x $x) and (f $x $y) are different terms and the codec must keep
+    // them apart in both directions.
+    assert.equal(petta.text(["e", [["s", "f"], ["v", "x"], ["v", "x"]]]), "(f $_0 $_0)");
+    assert.equal(petta.text(["e", [["s", "f"], ["v", "x"], ["v", "y"]]]), "(f $_0 $_1)");
+    const read = petta.read("(f $x $x)");
+    assert.equal(read[1][1][1], read[1][2][1], "one name read as two variables");
+  });
+
+  it("keeps the anonymous payload fresh at every occurrence", () => {
+    // `_` is the one reserved payload: two of them constrain nothing, the
+    // same as $_ in source.
+    assert.equal(petta.text(["e", [["s", "f"], ["v", "_"], ["v", "_"]]]), "(f $_0 $_1)");
+  });
+
   it("refuses a payload of the wrong kind for its tag", () => {
     assert.throws(() => toTransport(["s", 5]), /carries text/);
     assert.throws(() => toTransport(["n", "2"]), /carries a number/);
     assert.throws(() => toTransport(["b", "true"]), /carries a boolean/);
+    assert.throws(() => fromTransport(["b", "maybe"]), /carries true or false/);
     assert.throws(() => toTransport(["e", "x"]), /carries a list/);
     assert.throws(() => fromTransport(["e", "x"]), /carries a list/);
   });

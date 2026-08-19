@@ -122,27 +122,52 @@ petta_node_number_text(T, Text) :- format(atom(A), '~q', [T]), atom_string(A, Te
 % payload, because the WebAssembly conversion has no separate string type on
 % the way in. Numbers are read back from their text with the reader, which is
 % the only thing that reads every spelling ~q writes.
-petta_node_decode(W, T) :- petta_node_decode_(W, T), !.
-petta_node_decode(W, _) :-
-    throw(error(petta_node_undecodable(W),
-                context(petta_node_decode/2,
-                        'not a wire atom the Node binding writes'))).
+%
+% The names travel with the walk, because a v payload is an IDENTITY WITHIN
+% ITS TERM and not a display name: two occurrences of one payload are two
+% occurrences of one variable, and (f $x $x) is a different term from
+% (f $x $y). Decoding each occurrence fresh made the two the same term, which
+% the codec kit's corpus caught on its expression-repeated-variable case
+% [measured 2026-08-20].
+%
+% `_` is the one reserved payload and the exception: fresh at every
+% occurrence and never recorded, exactly as $_ is in source, so two of them
+% constrain nothing.
+petta_node_decode(W, T) :- petta_node_decode(W, [], _, T).
 
-petta_node_decode_([Tag, Payload], T) :- petta_node_tag(Tag, s), !, petta_node_atom(Payload, T).
-petta_node_decode_([Tag, Payload], T) :- petta_node_tag(Tag, n), !,
+petta_node_decode(W, Names0, Names, T) :-
+    (   petta_node_decode_(W, Names0, Names, T)
+    ->  true
+    ;   throw(error(petta_node_undecodable(W),
+                    context(petta_node_decode/2,
+                            'not a wire atom the Node binding writes')))
+    ).
+
+petta_node_decode_([Tag, Payload], Names, Names, T) :- petta_node_tag(Tag, s), !,
+    petta_node_atom(Payload, T).
+petta_node_decode_([Tag, Payload], Names, Names, T) :- petta_node_tag(Tag, n), !,
     petta_node_atom(Payload, A),
     petta_node_number(A, T).
-petta_node_decode_([Tag, Payload], T) :- petta_node_tag(Tag, g), !,
+petta_node_decode_([Tag, Payload], Names, Names, T) :- petta_node_tag(Tag, g), !,
     petta_node_atom(Payload, A), atom_string(A, T).
-petta_node_decode_([Tag, Payload], T) :- petta_node_tag(Tag, b), !,
+petta_node_decode_([Tag, Payload], Names, Names, T) :- petta_node_tag(Tag, b), !,
     petta_node_atom(Payload, T), ( T == true ; T == false ).
-petta_node_decode_([Tag, Payload], T) :- petta_node_tag(Tag, e), !,
-    is_list(Payload), maplist(petta_node_decode, Payload, T).
+petta_node_decode_([Tag, Payload], Names0, Names, T) :- petta_node_tag(Tag, v), !,
+    petta_node_atom(Payload, Name),
+    (   Name == '_'
+    ->  Names = Names0
+    ;   memberchk(Name-Known, Names0)
+    ->  T = Known, Names = Names0
+    ;   Names = [Name-T|Names0]
+    ).
+petta_node_decode_([Tag, Payload], Names0, Names, T) :- petta_node_tag(Tag, e), !,
+    is_list(Payload),
+    petta_node_decode_items(Payload, Names0, Names, T).
 
-% A variable decodes to a fresh one: its wire name is the writer's _G123 and
-% carries no identity a reader could honour, which is the same reading
-% python/petta/_atom_wire.py takes.
-petta_node_decode_([Tag, _], _) :- petta_node_tag(Tag, v).
+petta_node_decode_items([], Names, Names, []).
+petta_node_decode_items([W|Ws], Names0, Names, [T|Ts]) :-
+    petta_node_decode(W, Names0, Names1, T),
+    petta_node_decode_items(Ws, Names1, Names, Ts).
 
 % The reader takes back every spelling ~q writes, the non-finite floats
 % included: 1.0Inf, -1.0Inf and 1.5NaN all read back as numbers, where the
@@ -157,6 +182,14 @@ petta_node_tag(Tag, Want) :- petta_node_atom(Tag, Want).
 petta_node_atom(In, Out) :- atom(In), !, Out = In.
 petta_node_atom(In, Out) :- string(In), !, atom_string(Out, In).
 petta_node_atom(In, Out) :- number(In), !, atom_number(Out, In).
+
+% MeTTa source text as one atom, through the engine's own reader. It is the
+% leg a whole binding has and a storage provider does not: a store carries
+% wire terms and never sees the text they were written as.
+petta_node_read(Source, Wire) :-
+    petta_node_text(Source, S),
+    sread(S, Term),
+    petta_node_encode(Term, Wire).
 
 %%%%%%%%%% Running a program %%%%%%%%%%
 %

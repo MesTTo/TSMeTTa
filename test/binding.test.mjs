@@ -12,6 +12,8 @@
 
 import { strict as assert } from "node:assert";
 import { after, before, describe, it } from "node:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -84,6 +86,24 @@ describe("running a program", () => {
   it("runs a .metta file from disk", () => {
     const groups = petta.load(join(HERE, "..", "example", "streaming.metta"));
     assert.deepEqual(groups.map((group) => group.map(String)), [["(1 2 3)"]]);
+  });
+
+  it("replaces a file's definitions on a reload rather than doubling them", () => {
+    // The claim the engine's own loader buys, and the reason load() goes
+    // through import_when/4 and replacing_previous_load/4 rather than reading
+    // the text here and calling run(): a second load of one file replaces what
+    // it put there, and an edited file replaces it with the edit.
+    const directory = mkdtempSync(join(tmpdir(), "petta-node-reload-"));
+    const file = join(directory, "program.metta");
+
+    writeFileSync(file, "(= (reloaded) 1)\n!(collapse (reloaded))\n");
+    assert.deepEqual(petta.load(file)[0].map(String), ["(1)"]);
+    assert.deepEqual(petta.load(file)[0].map(String), ["(1)"], "the load doubled");
+
+    writeFileSync(file, "(= (reloaded) 2)\n!(collapse (reloaded))\n");
+    assert.deepEqual(petta.load(file)[0].map(String), ["(2)"], "the edit did not replace");
+    assert.deepEqual(petta.run("!(collapse (reloaded))")[0].map(String), ["(2)"]);
+    rmSync(directory, { recursive: true, force: true });
   });
 
   it("raises when the source does not parse", () => {

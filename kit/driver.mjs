@@ -44,9 +44,13 @@ for await (const line of lines) {
   let response;
   try {
     const request = JSON.parse(line);
-    const operation = operations[request.op];
-    if (operation === undefined) throw new Error(`no operation named ${request.op}`);
-    response = { ok: operation(request) };
+    // hasOwn rather than a truth test on the lookup: `constructor` and
+    // `__proto__` are inherited and callable, so a bare index would run
+    // something this table never named.
+    if (!Object.hasOwn(operations, request.op)) {
+      throw new Error(`no operation named ${JSON.stringify(request.op)}`);
+    }
+    response = { ok: operations[request.op](request) };
   } catch (error) {
     response = { error: error.message };
   }

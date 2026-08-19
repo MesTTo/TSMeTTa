@@ -32,7 +32,12 @@
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
- *   Future Enhancements: None
+ *   Future Enhancements: publishing this to npm needs the engine tree beside
+ *     it. boot() mounts src/, lib/, hosts/ and backends/ from the checkout,
+ *     and a published package carries none of them, which is why
+ *     package.json is private for now. The Python side solved the same
+ *     problem by copying them under petta/_runtime at build time (setup.py);
+ *     an npm build would do the same or depend on them.
  */
 
 import { createRequire } from "node:module";

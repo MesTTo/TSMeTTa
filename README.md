@@ -96,11 +96,14 @@ engine parses, translates and evaluates end to end.
 
 ## What the binding calls
 
-Only published surface, the same rule `tests/prolog/static_checks.pl` holds the
-Python transport to. `bindings/node/bridge.pl` is this binding's Prolog half
+Only published surface. `bindings/node/bridge.pl` is this binding's Prolog half
 and every engine predicate it calls carries an `ext_point_kind/2` in
 `src/ext_points.pl` as a `service` or a `host_service`, or is a MeTTa builtin
-that `builtin_fun/1` enumerates:
+that `builtin_fun/1` enumerates. That is checked rather than promised:
+`tests/prolog/static_checks.pl`'s
+`a_host_binding_calls_only_published_surface` walks every host transport with
+SWI's own `prolog_walk_code/1`, so a call that reaches an internal fails the
+gate naming the pair. What it calls:
 
 - `parse_metta_source/2`, `prepare_parsed_forms/1`, `process_form/3` to run a
   program, in the order the engine's own loader runs them

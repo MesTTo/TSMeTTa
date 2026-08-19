@@ -1,0 +1,31 @@
+{
+  "name": "petta-node",
+  "version": "0.0.1-alpha.0",
+  "private": true,
+  "type": "module",
+  "description": "MeTTa in Node on the PeTTa engine, in process over swipl-wasm",
+  "license": "MIT",
+  "homepage": "https://github.com/trueagi-io/PeTTa",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trueagi-io/PeTTa.git",
+    "directory": "bindings/node"
+  },
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "bridge.pl",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "swipl-wasm": "8.0.6"
+  }
+}

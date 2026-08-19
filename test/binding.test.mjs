@@ -226,6 +226,12 @@ describe("the answer stream", () => {
     assert.deepEqual(order, ["a", "x", "b", "y"]);
   });
 
+  it("ends a stream whose expression will not even open", async () => {
+    const stream = petta.stream("(unclosed")[Symbol.asyncIterator]();
+    await assert.rejects(() => stream.next(), PettaError);
+    assert.deepEqual(await stream.next(), { done: true, value: undefined });
+  });
+
   it("closes a cursor that is abandoned before its first pull", async () => {
     const stream = petta.stream("(superpose (1 2 3))")[Symbol.asyncIterator]();
     await stream.return();

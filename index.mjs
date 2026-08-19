@@ -323,7 +323,7 @@ export class Petta {
       throw new PettaError(`the engine could not run ${goal}`);
     }
     const [outcome, text] = result.Outcome;
-    if (outcome === "error") throw new PettaError(`${hostText(text)}(running ${goal})`);
+    if (outcome === "error") throw new PettaError(`${hostText(text).trimEnd()}\nrunning ${goal}`);
     if (outcome !== "ok") throw new PettaError(`the engine goal failed: ${goal}`);
     return result;
   }
@@ -384,27 +384,28 @@ export class Petta {
       [Symbol.asyncIterator]() {
         return this;
       },
+      // One try around both calls, so a stream whose expression does not even
+      // open is ended rather than left retrying the failure on every pull.
       async next() {
         if (finished) return { done: true, value: undefined };
-        if (cursor === null) {
-          const { Id } = engine.#once("petta_node_open(Src, Space, Id)", {
-            Src: expression,
-            Space: space,
-          });
-          cursor = Number(Id);
-        }
-        let answer;
         try {
-          ({ Answer: answer } = engine.#once("petta_node_next(Id, Answer)", { Id: cursor }));
+          if (cursor === null) {
+            const { Id } = engine.#once("petta_node_open(Src, Space, Id)", {
+              Src: expression,
+              Space: space,
+            });
+            cursor = Number(Id);
+          }
+          const { Answer: answer } = engine.#once("petta_node_next(Id, Answer)", { Id: cursor });
+          if (answer.length === 0) {
+            release();
+            return { done: true, value: undefined };
+          }
+          return { done: false, value: answerFrom(answer[0]) };
         } catch (error) {
           release();
           throw error;
         }
-        if (answer.length === 0) {
-          release();
-          return { done: true, value: undefined };
-        }
-        return { done: false, value: answerFrom(answer[0]) };
       },
       async return(value) {
         release();

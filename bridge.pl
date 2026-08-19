@@ -22,6 +22,9 @@
 %     [tested: test_the_node_binding_leaves_the_third_answer_uncomputed]
 %   - a term the codec has no tag for raises rather than crossing as text
 %   - petta_node_close/1 is idempotent
+%   - no Prolog exception reaches the host: every call arrives through
+%     petta_node_do/2 and the outcome crosses as data
+%     [tested: the node --test suite, "raises an error rather than printing it"]
 % Owns: one SWI engine per open cursor, released by petta_node_close/1, which
 %   the JavaScript iterator calls from its own return() so an abandoned
 %   for-await releases it.
@@ -60,13 +63,15 @@ petta_node_do(Goal, Outcome) :-
 % instead of letting them out. Only ONE message is emitted inside the guarded
 % window, so nothing else is caught by it.
 petta_node_render(Ball, Text) :-
+    retractall(petta_node_captured(_)),
     setup_call_cleanup(nb_setval('$petta_node_capture', true),
                        catch(print_message(error, Ball), _, true),
                        nb_setval('$petta_node_capture', false)),
-    (   retract(petta_node_captured(Rendered))
+    (   petta_node_captured(Rendered)
     ->  Text = Rendered
     ;   term_string(Ball, Text)
-    ).
+    ),
+    retractall(petta_node_captured(_)).
 
 % Deaf outside petta_node_render/2, and it has to be: a hook that succeeds
 % suppresses the message, so an always-on one would swallow the loader's own

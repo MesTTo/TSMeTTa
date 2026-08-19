@@ -15,7 +15,7 @@ published surface and answers the same conformance corpus.
 
 ```sh
 cd bindings/node
-npm install
+npm ci
 npm test
 ```
 
@@ -29,6 +29,17 @@ const petta = await boot();
 // One group of answers per `!` directive, in source order.
 const [answers] = petta.run("(= (double $x) (* $x 2))\n!(double 21)");
 console.log(answers.map(String)); // [ '42' ]
+```
+
+`load()` takes a path instead of source. It mounts the file's directory into
+the engine's virtual filesystem at the same absolute path first, so a relative
+`import!` beside it resolves exactly as it does on disk, and it goes through
+the engine's own loader, so a second `load()` of the same file replaces that
+file's definitions rather than doubling them:
+
+```js
+const [collapsed] = petta.load("./bindings/node/example/streaming.metta");
+console.log(collapsed.map(String)); // [ '(1 2 3)' ]
 ```
 
 ## Answers arrive one at a time

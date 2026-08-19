@@ -62,6 +62,7 @@
     { "transport": ["n", "1208925819614629174706176"], "why": "an integer far past it" },
     { "transport": ["n", "2.0"], "why": "a float whose value is integral" },
     { "transport": ["n", "-0.5"], "why": "a negative float" },
+    { "transport": ["n", "-0.0"], "why": "negative zero, which a double carries and String(-0) loses" },
     { "transport": ["n", "1.0e+20"], "why": "a float with an exponent" },
     { "transport": ["n", "1.0Inf"], "why": "positive infinity, in the spelling the reader takes back" },
     { "transport": ["n", "-1.0Inf"], "why": "negative infinity" },

@@ -203,7 +203,9 @@ function numberToText(value) {
   if (value === -Infinity) return "-1.0Inf";
   // A MeTTa float must go back as one, so a spelling the Prolog reader would
   // take as an integer gets its point back, and an exponent gets a mantissa.
-  const text = String(value);
+  // String(-0) is "0", which loses the sign a double carries, so negative zero
+  // is spelled here rather than left to it.
+  const text = Object.is(value, -0) ? "-0" : String(value);
   if (text.includes(".")) return text;
   const exponent = text.indexOf("e");
   if (exponent >= 0) return `${text.slice(0, exponent)}.0${text.slice(exponent)}`;
@@ -226,7 +228,7 @@ export function fromTransport(term) {
     case "b":
       return ["b", hostText(payload) === "true"];
     case "e":
-      return ["e", payload.map(fromTransport)];
+      return ["e", items(payload).map(fromTransport)];
     default:
       throw new PettaError(`unknown wire tag ${JSON.stringify(tag)}`);
   }
@@ -242,16 +244,32 @@ export function toTransport(wire) {
     case "s":
     case "v":
     case "g":
-      return [tag, String(payload)];
+      if (typeof payload !== "string") {
+        throw new PettaError(`the ${tag} tag carries text, not ${JSON.stringify(payload)}`);
+      }
+      return [tag, payload];
     case "n":
+      if (typeof payload !== "number" && typeof payload !== "bigint") {
+        throw new PettaError(`the n tag carries a number, not ${JSON.stringify(payload)}`);
+      }
       return ["n", numberToText(payload)];
     case "b":
+      if (typeof payload !== "boolean") {
+        throw new PettaError(`the b tag carries a boolean, not ${JSON.stringify(payload)}`);
+      }
       return ["b", payload ? "true" : "false"];
     case "e":
-      return ["e", payload.map(toTransport)];
+      return ["e", items(payload).map(toTransport)];
     default:
       throw new PettaError(`unknown wire tag ${JSON.stringify(tag)}`);
   }
+}
+
+function items(payload) {
+  if (!Array.isArray(payload)) {
+    throw new PettaError(`the e tag carries a list, not ${JSON.stringify(payload)}`);
+  }
+  return payload;
 }
 
 // ---------------------------------------------------------------------------

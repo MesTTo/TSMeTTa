@@ -139,6 +139,21 @@ describe("the codec", () => {
     assert.throws(() => fromTransport(["s"]), /not a transport atom/);
     assert.throws(() => toTransport("s"), /not a wire atom/);
   });
+
+  it("refuses a payload of the wrong kind for its tag", () => {
+    assert.throws(() => toTransport(["s", 5]), /carries text/);
+    assert.throws(() => toTransport(["n", "2"]), /carries a number/);
+    assert.throws(() => toTransport(["b", "true"]), /carries a boolean/);
+    assert.throws(() => toTransport(["e", "x"]), /carries a list/);
+    assert.throws(() => fromTransport(["e", "x"]), /carries a list/);
+  });
+
+  it("keeps the sign of negative zero, which String(-0) loses", () => {
+    const [, text] = toTransport(["n", -0]);
+    assert.equal(text, "-0.0");
+    assert.equal(petta.text(["n", -0]), "-0.0");
+    assert.ok(Object.is(petta.roundTrip(["n", -0])[1], -0));
+  });
 });
 
 describe("the answer stream", () => {

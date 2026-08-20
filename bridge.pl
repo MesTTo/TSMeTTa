@@ -4,7 +4,7 @@
 %   the engine in its own process.
 % Assumes:
 %   - every engine predicate called here carries an ext_point_kind/2 in
-%     src/ext_points.pl, service or host_service, or is a MeTTa builtin that
+%     engine/ext_points.pl, service or host_service, or is a MeTTa builtin that
 %     builtin_fun/1 already enumerates [tested: tests/prolog/static_checks.pl,
 %     a_host_binding_calls_only_published_surface]
 %   - engine_create/3 and engine_next/2 exist in the host SWI, including the
@@ -92,8 +92,8 @@ user:message_hook(_, _, Lines) :-
 
 %%%%%%%%%% The seven-tag codec %%%%%%%%%%
 %
-% The same tags python/petta/shim.pl's petta_py_encode/2 writes and
-% python/petta/_atom_wire.py reads: s symbol, v variable, n number, g string,
+% The same tags bindings/python/petta/shim.pl's petta_py_encode/2 writes and
+% bindings/python/petta/_atom_wire.py reads: s symbol, v variable, n number, g string,
 % b boolean, e expression. Two tags that codec has are refused here rather
 % than faked. `o` is a live host object and no JavaScript object is ever
 % inside this engine, and `h` is a native blob, whose whole point is an
@@ -106,7 +106,7 @@ user:message_hook(_, _, Lines) :-
 % BigInt at 2^53, while the language changes from Number to BigInt at signed
 % i64. Text keeps those independent and preserves the integer/float split. It
 % is what the shipped JSON codec already falls back on for the same reason
-% (python/examples/integration/typescript_space/space_server.ts reads the JSON
+% (bindings/python/examples/integration/typescript_space/space_server.ts reads the JSON
 % source literal rather than the parsed number, so an integer past 2^53 is
 % caught instead of silently rounded).
 petta_node_encode(T, [v, Name]) :- var(T), !, term_to_atom(T, A), atom_string(A, Name).
@@ -196,7 +196,7 @@ petta_node_decode_items([W|Ws], Names0, Names, [T|Ts]) :-
 % included: 1.0Inf, -1.0Inf and 1.5NaN all read back as numbers, where the
 % MeTTa grammar's own inf, -inf and NaN read as symbols
 % [measured 2026-08-20, and the note beside metta_unwritable_symbol/2 in
-% src/ext_points.pl is why the two spellings differ]. So one clause covers
+% engine/ext_points.pl is why the two spellings differ]. So one clause covers
 % the whole numeric tower and the JavaScript side writes ~q's spelling.
 petta_node_number(A, T) :- term_to_atom(T, A), number(T).
 
@@ -217,7 +217,7 @@ petta_node_read(Source, Wire) :-
 %%%%%%%%%% Running a program %%%%%%%%%%
 %
 % The grouping walk, the working-dir defaulting and the load lifecycle are
-% the engine's host run and load surface (src/filereader.pl), shared with
+% the engine's host run and load surface (engine/filereader.pl), shared with
 % the Python shim; this side maps its own codec over the term groups and
 % nothing else. One encoded group per ! directive, in source order.
 petta_node_run(Source, Groups) :-

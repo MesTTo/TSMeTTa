@@ -36,7 +36,7 @@
  *   To Do: None
  *   Hacks: None
  *   Future Enhancements: publishing this to npm needs the engine tree beside
- *     it. boot() mounts src/, lib/, hosts/ and backends/ from the checkout,
+ *     it. boot() mounts engine/, lib/ and backends/ from the checkout,
  *     and a published package carries none of them, which is why
  *     package.json is private for now. The Python side solved the same
  *     problem by copying them under petta/_runtime at build time (setup.py);
@@ -54,9 +54,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "..", "..");
 const VIRTUAL_ROOT = "/petta";
 
-// The directories src/metta.pl reaches for while it loads: its own, the
-// standard library, the host deciders it globs, and the backend deciders.
-const ENGINE_DIRS = ["src", "lib", "hosts", "backends"];
+// The directories engine/metta.pl reaches for while it loads: its own, the
+// standard library, and the backend deciders. The seat deciders under
+// bindings/ stay unmounted: no substrate they gate on exists in wasm, and
+// this binding IS the host, its bridge written into the image below.
+const ENGINE_DIRS = ["engine", "lib", "backends"];
 
 /**
  * What the WebAssembly build does not carry, and what each absence costs.
@@ -76,20 +78,20 @@ const ENGINE_DIRS = ["src", "lib", "hosts", "backends"];
  */
 export const REFUSALS = [
   {
-    file: "src/metta.pl",
+    file: "engine/metta.pl",
     missing: "library(thread)",
     costs: "concurrent_maplist and so jobs/2. The WebAssembly build is " +
       "single-threaded; SWI engines are present and are what this binding " +
       "streams answers with.",
   },
   {
-    file: "src/metta.pl",
+    file: "engine/metta.pl",
     missing: "library(time)",
     costs: "alarm/4 and so metta_timeout/2. A host-side timeout has to " +
       "bound the pull instead.",
   },
   {
-    file: "src/metta.pl",
+    file: "engine/metta.pl",
     missing: "library(process)",
     costs: "subprocess operations. A WebAssembly instance has no processes " +
       "to start.",
@@ -163,7 +165,7 @@ function answerFrom(pair) {
 // ---------------------------------------------------------------------------
 // The seven-tag codec, JavaScript side.
 //
-// The tags are python/petta/shim.pl's: s symbol, v variable, n number,
+// The tags are bindings/python/petta/shim.pl's: s symbol, v variable, n number,
 // g string, b boolean, e expression. bridge.pl carries a number as its
 // canonical Prolog text because the WebAssembly value conversion renders the
 // float 2.0 and the integer 2 as the same JavaScript number; here that text
@@ -478,8 +480,8 @@ export class Petta {
  *
  * `root` is the PeTTa checkout; the default is the one this file lives in.
  * The engine's own `silent` flag goes in argv rather than being retracted
- * afterwards, because argv is where src/filereader.pl reads it and
- * src/main.pl already lists it as an engine flag.
+ * afterwards, because argv is where engine/filereader.pl reads it and
+ * engine/main.pl already lists it as an engine flag.
  */
 export async function boot({ root = REPO_ROOT, verbose = false } = {}) {
   const initSWIPL = require("swipl-wasm/dist/swipl-node");
@@ -504,7 +506,7 @@ export async function boot({ root = REPO_ROOT, verbose = false } = {}) {
 
   const flags = verbose ? "['backends']" : "['backends', silent]";
   swipl.prolog.query(`set_prolog_flag(argv, ${flags}).`).once();
-  const consulted = swipl.prolog.query(`consult('${VIRTUAL_ROOT}/src/metta.pl').`).once();
+  const consulted = swipl.prolog.query(`consult('${VIRTUAL_ROOT}/engine/metta.pl').`).once();
   if (consulted && consulted.error === true) {
     throw new PettaError(`the engine did not load: ${consulted.message}`);
   }

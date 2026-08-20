@@ -26,7 +26,7 @@ const petta = await boot();
  * The kit's wire and this binding's transport are the same seven tags; they
  * differ only in what a payload is spelled as, which is what fromTransport
  * and toTransport already convert. The kit's side of that spelling is settled
- * in python/tests/test_node_binding.py, where the corpus is read.
+ * in bindings/python/tests/test_node_binding.py, where the corpus is read.
  */
 const operations = {
   read: ({ text }) => toTransport(petta.read(text)),

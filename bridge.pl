@@ -92,8 +92,8 @@ user:message_hook(_, _, Lines) :-
 
 %%%%%%%%%% The seven-tag codec %%%%%%%%%%
 %
-% The same tags python/petta/shim.pl's petta_py_encode/2 writes and
-% python/petta/_atom_wire.py reads: s symbol, v variable, n number, g string,
+% The same tags bindings/python/petta/shim.pl's petta_py_encode/2 writes and
+% bindings/python/petta/_atom_wire.py reads: s symbol, v variable, n number, g string,
 % b boolean, e expression. Two tags that codec has are refused here rather
 % than faked. `o` is a live host object and no JavaScript object is ever
 % inside this engine, and `h` is a native blob, whose whole point is an
@@ -106,7 +106,7 @@ user:message_hook(_, _, Lines) :-
 % BigInt at 2^53, while the language changes from Number to BigInt at signed
 % i64. Text keeps those independent and preserves the integer/float split. It
 % is what the shipped JSON codec already falls back on for the same reason
-% (python/examples/integration/typescript_space/space_server.ts reads the JSON
+% (bindings/python/examples/integration/typescript_space/space_server.ts reads the JSON
 % source literal rather than the parsed number, so an integer past 2^53 is
 % caught instead of silently rounded).
 petta_node_encode(T, [v, Name]) :- var(T), !, term_to_atom(T, A), atom_string(A, Name).

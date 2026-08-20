@@ -36,7 +36,7 @@
  *   To Do: None
  *   Hacks: None
  *   Future Enhancements: publishing this to npm needs the engine tree beside
- *     it. boot() mounts engine/, lib/, hosts/ and backends/ from the checkout,
+ *     it. boot() mounts engine/, lib/ and backends/ from the checkout,
  *     and a published package carries none of them, which is why
  *     package.json is private for now. The Python side solved the same
  *     problem by copying them under petta/_runtime at build time (setup.py);
@@ -55,8 +55,10 @@ const REPO_ROOT = resolve(HERE, "..", "..");
 const VIRTUAL_ROOT = "/petta";
 
 // The directories engine/metta.pl reaches for while it loads: its own, the
-// standard library, the host deciders it globs, and the backend deciders.
-const ENGINE_DIRS = ["engine", "lib", "hosts", "backends"];
+// standard library, and the backend deciders. The seat deciders under
+// bindings/ stay unmounted: no substrate they gate on exists in wasm, and
+// this binding IS the host, its bridge written into the image below.
+const ENGINE_DIRS = ["engine", "lib", "backends"];
 
 /**
  * What the WebAssembly build does not carry, and what each absence costs.
@@ -163,7 +165,7 @@ function answerFrom(pair) {
 // ---------------------------------------------------------------------------
 // The seven-tag codec, JavaScript side.
 //
-// The tags are python/petta/shim.pl's: s symbol, v variable, n number,
+// The tags are bindings/python/petta/shim.pl's: s symbol, v variable, n number,
 // g string, b boolean, e expression. bridge.pl carries a number as its
 // canonical Prolog text because the WebAssembly value conversion renders the
 // float 2.0 and the integer 2 as the same JavaScript number; here that text

@@ -193,28 +193,17 @@ petta_node_read(Source, Wire) :-
 
 %%%%%%%%%% Running a program %%%%%%%%%%
 %
-% The engine's own pipeline, in the order python/petta/shim.pl runs it:
-% parse_metta_source/2 reads every form, prepare_parsed_forms/1 registers each
-% signature before anything runs so a ! may name a function defined lower
-% down, and process_form/3 then runs the forms in source order. One encoded
-% group per ! directive, in source order, which is the grouping the Python
-% surface reports and the Node one keeps.
+% The grouping walk, the working-dir defaulting and the load lifecycle are
+% the engine's host run and load surface (src/filereader.pl), shared with
+% the Python shim; this side maps its own codec over the term groups and
+% nothing else. One encoded group per ! directive, in source order.
 petta_node_run(Source, Groups) :-
     petta_node_text(Source, S),
-    petta_node_working_dir,
-    parse_metta_source(S, Parsed),
-    prepare_parsed_forms(Parsed),
-    petta_node_forms(Parsed, '&self', Groups), !.
+    metta_host_run_source(S, '&self', [], TermGroups),
+    maplist(petta_node_group, TermGroups, Groups).
 
-petta_node_forms([], _, []).
-petta_node_forms([P|Ps], Space, Out) :-
-    process_form(Space, P, Results),
-    (   P = parsed(runnable, _, _)
-    ->  maplist(petta_node_answer, Results, Encoded),
-        Out = [Encoded|Rest]
-    ;   Out = Rest
-    ),
-    petta_node_forms(Ps, Space, Rest).
+petta_node_group(Terms, Encoded) :-
+    maplist(petta_node_answer, Terms, Encoded).
 
 % Each answer crosses as its wire form AND the engine's own rendering of it.
 % The text is not a convenience: swrite/2 is the published writer and the only
@@ -224,34 +213,13 @@ petta_node_answer(Term, [Wire, Text]) :-
     petta_node_encode(Term, Wire),
     swrite(Term, Text).
 
-% import! reads working_dir/1 unconditionally, and a source string has no file
-% to take one from, so the process's own directory stands in, exactly as the
-% Python transport does it.
-petta_node_working_dir :-
-    (   catch_recover(working_dir(_), fail)
-    ->  true
-    ;   working_directory(Dir, Dir),
-        assertz(working_dir(Dir))
-    ).
-
-% A file, loaded through the same door the engine's own import! uses, so the
-% file is recorded under the canonical path both doors key on and a reload
-% replaces the first load's definitions rather than doubling them.
+% A file, loaded through the same engine door import! uses, so the file is
+% recorded under the canonical path both doors key on and a reload replaces
+% the first load's definitions rather than doubling them.
 petta_node_load(File, Groups) :-
     petta_node_atom(File, FA),
-    absolute_file_name(FA, CanonPath, [access(read)]),
-    file_directory_name(CanonPath, Dir),
-    catch_recover(findall(W, working_dir(W), Saved), Saved = []),
-    setup_call_cleanup(
-        ( retractall(working_dir(_)), assertz(working_dir(Dir)) ),
-        import_when(true, '&self', CanonPath,
-            replacing_previous_load(CanonPath, '&self',
-                load_imported_metta_file_impl(CanonPath, _),
-                with_source_load(CanonPath, '&self',
-                    ( read_metta_source(CanonPath, S),
-                      petta_node_run(S, Groups) )))),
-        ( retractall(working_dir(_)),
-          forall(member(W, Saved), assertz(working_dir(W))) )).
+    metta_host_load_file(FA, '&self', TermGroups),
+    maplist(petta_node_group, TermGroups, Groups).
 
 %%%%%%%%%% One query, held open %%%%%%%%%%
 %

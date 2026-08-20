@@ -30,7 +30,7 @@
 %     "carries Number and BigInt across the signed-i64 boundary"]
 %   - runnable free variables retain source names in their wire value and host
 %     text [tested: test_the_node_binding_and_the_python_host_answer_the_same_programs;
-%     commit=WORKTREE]
+%     commit=916def0562c211143bb91cd0bd8b2c9dac7ab4fa]
 % Owns: one SWI engine per open cursor, released by petta_node_close/1, which
 %   the JavaScript iterator calls from its own return() so an abandoned
 %   for-await releases it.

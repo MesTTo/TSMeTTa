@@ -121,9 +121,9 @@ quietly:
 
 | missing | in | costs |
 |---|---|---|
-| `library(thread)` | `src/metta.pl` | `concurrent_maplist`, so `jobs/2`. The build is single-threaded. |
-| `library(time)` | `src/metta.pl` | `alarm/4`, so `metta_timeout/2`. Bound the pull from the host instead. |
-| `library(process)` | `src/metta.pl` | subprocess operations; a WebAssembly instance has none to start. |
+| `library(thread)` | `engine/metta.pl` | `concurrent_maplist`, so `jobs/2`. The build is single-threaded. |
+| `library(time)` | `engine/metta.pl` | `alarm/4`, so `metta_timeout/2`. Bound the pull from the host instead. |
+| `library(process)` | `engine/metta.pl` | subprocess operations; a WebAssembly instance has none to start. |
 | `library(process)` | `lib/lib_gitimport.pl` | `import!` from git, which shells out. |
 
 Everything else loads. Tabling is present, `library(sha)` is present, and the
@@ -133,7 +133,7 @@ engine parses, translates and evaluates end to end.
 
 Only published surface. `bindings/node/bridge.pl` is this binding's Prolog half
 and every engine predicate it calls carries an `ext_point_kind/2` in
-`src/ext_points.pl` as a `service` or a `host_service`, or is a MeTTa builtin
+`engine/ext_points.pl` as a `service` or a `host_service`, or is a MeTTa builtin
 that `builtin_fun/1` enumerates. That is checked rather than promised:
 `tests/prolog/static_checks.pl`'s
 `a_host_binding_calls_only_published_surface` walks every host transport with

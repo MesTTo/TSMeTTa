@@ -16,19 +16,22 @@
  *   - stream() computes one answer per pull, and abandoning the loop closes
  *     the cursor through the iterator's own return()
  *     [tested: "an abandoned stream leaves the rest uncomputed"]
- *   - every number crosses exactly: a MeTTa integer arrives as a BigInt and a
- *     MeTTa float as a number, which is the only pair of JavaScript types
+ *   - every number crosses exactly: a Prolog integer arrives as a BigInt and
+ *     a Prolog float as a number, which is the only pair of JavaScript types
  *     that tells 2 from 2.0 apart, and the engine does tell them apart
- *     [measured 2026-08-20: (== 2 2.0) answers False]
+ *     [tested: "carries Number and BigInt across the signed-i64 boundary";
+ *     measured 2026-08-20: (== 2 2.0) answers False]
  *   - a value JavaScript has no type for (a rational) is refused by name
  *   - nothing reaches the host's console unless boot() was asked for verbose;
  *     an engine error is raised here and a program's output is buffered
  *     [tested: "an error is raised rather than printed"]
  * Owns: one WebAssembly instance per boot(), and one Prolog engine per open
  *   stream, released by close() on the iterator or on exhaustion.
- * Decides: cursors are addressed by integer, because the WebAssembly value
- *   conversion renders every Prolog blob as the same opaque {"$t":"b"} and a
- *   host cannot hold a handle it cannot tell apart.
+ * Decides: cursors are addressed by integer because the WebAssembly value
+ *   conversion renders every Prolog blob as the same opaque {"$t":"b"}. The
+ *   private numeric transport uses canonical decimal text, then constructs a
+ *   BigInt for every integer and a number for every float. The exact integer
+ *   value, not the JavaScript storage kind, determines Number versus BigInt.
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

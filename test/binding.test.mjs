@@ -4,6 +4,8 @@
  * Guarantees:
  *   - the boot inventory, the codec and the lazy answer surface each fail here
  *     before anything downstream sees them
+ *   - Number and BigInt cross the signed-i64 boundary without losing a digit
+ *     [tested: "carries Number and BigInt across the signed-i64 boundary"]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -150,6 +152,23 @@ describe("the codec", () => {
   it("carries an integer past the exact JavaScript range", () => {
     const [[answer]] = petta.run("!(* 1000000000000 1000000000000)");
     assert.equal(answer.wire[1], 1000000000000000000000000n);
+  });
+
+  it("carries Number and BigInt across the signed-i64 boundary", () => {
+    const boundaries = [
+      ["-9223372036854775809", "BigInt"],
+      ["-9223372036854775808", "Number"],
+      ["9223372036854775807", "Number"],
+      ["9223372036854775808", "BigInt"],
+      ["170141183460469231731687303715884118073", "BigInt"],
+    ];
+
+    for (const [digits, type] of boundaries) {
+      const wire = petta.read(digits);
+      assert.deepEqual(wire, ["n", BigInt(digits)]);
+      assert.deepEqual(petta.roundTrip(wire), wire);
+      assert.equal(petta.run(`!(get-type ${digits})`)[0][0].text, type);
+    }
   });
 
   it("carries the non-finite floats", () => {

@@ -6,9 +6,9 @@
  *   - corpus.json's numbers are canonical Prolog text, which is what the
  *     comparison form below turns back into a value
  * Guarantees:
- *   - the report is JSON, so nothing here carries a BigInt or a raw float
- *     across; an integer crosses as its digits and a float as its IEEE-754
- *     bit pattern, which is exact for every double including -0.0 and NaN
+ *   - the report is JSON, so nothing here carries a JavaScript BigInt or a raw
+ *     float across; an integer crosses as its digits and a float as its
+ *     IEEE-754 bit pattern, exact for every double including -0.0 and NaN
  *   - a case that raises is reported as a refusal with its message, never
  *     dropped
  * Open Obligations:
@@ -29,8 +29,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * The form both hosts compare in. Three things differ between them and each
  * is settled here rather than in either binding:
  *
- *   - a number is a JavaScript BigInt or number and a Python int or float, so
- *     the kind travels beside the value and a float travels as its bits
+ *   - an integer is a JavaScript BigInt or Python int and a float is a host
+ *     number, so the kind travels beside the value and a float travels as its
+ *     bits
  *   - a variable's wire name is what the writer numbered it, which changes
  *     between runs and between hosts, so only the tag is compared
  *   - a boolean's payload is a string on the janus wire and a boolean here

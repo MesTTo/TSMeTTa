@@ -25,12 +25,16 @@
 %   - no Prolog exception reaches the host: every call arrives through
 %     petta_node_do/2 and the outcome crosses as data
 %     [tested: the node --test suite, "raises an error rather than printing it"]
+%   - signed-i64 Number values and wider BigInt values cross as exact decimal
+%     text in both directions [tested: the node --test suite,
+%     "carries Number and BigInt across the signed-i64 boundary"]
 % Owns: one SWI engine per open cursor, released by petta_node_close/1, which
 %   the JavaScript iterator calls from its own return() so an abandoned
 %   for-await releases it.
-% Decides: a MeTTa integer crosses as decimal text and a float as its ~q
-%   spelling; the JavaScript side reads the first as a BigInt and the second
-%   as a number, which is that language's own exact-integer/float split.
+% Decides: a Prolog integer crosses as decimal text and a float as its ~q
+%   spelling. The JavaScript side reads every integer as a BigInt and every
+%   float as a number. The integer value determines its MeTTa Number or BigInt
+%   type after it crosses.
 % Open Obligations:
 %   To Do: None
 %   Hacks: None
@@ -95,9 +99,10 @@ user:message_hook(_, _, Lines) :-
 %
 % The number payload is TEXT and that is this transport's own decision, not
 % the grammar's. Every other payload survives the WebAssembly value
-% conversion unchanged; a number does not, because JavaScript has one numeric
-% type where Prolog has two, and the conversion picks it. Text is what the
-% shipped JSON codec already falls back on for the same reason
+% conversion unchanged; raw swipl-wasm changes from JavaScript Number to
+% BigInt at 2^53, while the language changes from Number to BigInt at signed
+% i64. Text keeps those independent and preserves the integer/float split. It
+% is what the shipped JSON codec already falls back on for the same reason
 % (python/examples/integration/typescript_space/space_server.ts reads the JSON
 % source literal rather than the parsed number, so an integer past 2^53 is
 % caught instead of silently rounded).

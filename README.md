@@ -85,13 +85,24 @@ exception to the console before handing it back, and offers no switch, so
 
 ## Numbers
 
-A MeTTa integer arrives as a JavaScript `BigInt` and a MeTTa float as a
-`number`. That looks heavier than it needs to be until you notice the engine
-answers `False` to `(== 2 2.0)`: MeTTa has two numeric types and JavaScript's
-`number` is one of them, so `2` and `2.0` would be the same value on this side
-and the binding would corrupt one of them silently. `BigInt` and `number` are
-the pair JavaScript does have, and they line up exactly with Prolog's integer
-and float.
+MeTTa has `Number` and `BigInt`. A float and an integer from
+-9223372036854775808 through 9223372036854775807 have type `Number`. An
+integer outside that inclusive range has type `BigInt`. The engine keeps all
+integer values exact in SWI, so arithmetic may cross the boundary in either
+direction.
+
+Every Prolog integer arrives as a JavaScript `BigInt`, including the integers
+whose MeTTa type is `Number`. Every Prolog float arrives as a JavaScript
+`number`. The language type follows the integer value, while the JavaScript
+kind preserves the integer/float distinction. The distinction matters because
+the engine answers `False` to `(== 2 2.0)`. The private bridge carries a
+canonical decimal string before it constructs either host value. It never
+passes a wide integer through a JavaScript `number`.
+
+Measured 2026-08-20 with Node 22.22.1 and swipl-wasm 8.0.6, both signed-i64
+boundaries and `2^127 + 12345` crossed exactly in both directions. Raw
+swipl-wasm changes its host representation from `Number` to `BigInt` at
+`2^53`, so the binding does not use raw conversion as its numeric wire.
 
 The one thing this host has no type for is a rational, and it says so:
 
@@ -150,8 +161,8 @@ questions.
 `tests/codec/corpus.json`, which is the grammar's authority. A whole binding
 runs every leg the kit has, where a wire-carrying store runs two: it reads
 MeTTa source, prints through the engine's own writer, round trips an atom, and
-runs programs. Measured 2026-08-20 against the corpus: **62 cases in scope,
-zero complaints**, with only the `o` tag and the three protocol frames
+runs programs. Measured 2026-08-20 against the corpus: **67 cases in scope,
+zero complaints**, with only the `o` tag and protocol frames
 declared out of profile. The kit earned that by catching a real defect first,
 which is what a kit is for: the decoder minted a fresh variable per
 occurrence, so `(f $x $x)` came back as `(f $x $y)`.

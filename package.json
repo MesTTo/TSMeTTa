@@ -24,7 +24,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test test/binding.test.mjs"
   },
   "dependencies": {
     "swipl-wasm": "8.0.6"

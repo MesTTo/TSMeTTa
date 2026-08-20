@@ -28,6 +28,9 @@
 %   - signed-i64 Number values and wider BigInt values cross as exact decimal
 %     text in both directions [tested: the node --test suite,
 %     "carries Number and BigInt across the signed-i64 boundary"]
+%   - runnable free variables retain source names in their wire value and host
+%     text [tested: test_the_node_binding_and_the_python_host_answer_the_same_programs;
+%     commit=WORKTREE]
 % Owns: one SWI engine per open cursor, released by petta_node_close/1, which
 %   the JavaScript iterator calls from its own return() so an abandoned
 %   for-await releases it.
@@ -116,6 +119,21 @@ petta_node_encode(T, _) :-
     throw(error(petta_node_untaggable(T),
                 context(petta_node_encode/2,
                         'the Node binding has no wire tag for this term'))).
+
+petta_node_encode_named(T, Pairs, [v, Name]) :- var(T), !,
+    ( petta_node_var_name(Pairs, T, Written) -> atom_string(Written, Name)
+    ; term_to_atom(T, A), atom_string(A, Name) ).
+petta_node_encode_named(T, Pairs, [e, Encoded]) :- is_list(T), !,
+    maplist(petta_node_encode_with_names(Pairs), T, Encoded).
+petta_node_encode_named(T, _, Encoded) :-
+    petta_node_encode(T, Encoded).
+
+petta_node_encode_with_names(Pairs, Term, Encoded) :-
+    petta_node_encode_named(Term, Pairs, Encoded).
+
+petta_node_var_name([Name-Var|_], Term, Name) :- Var == Term, !.
+petta_node_var_name([_|Pairs], Term, Name) :-
+    petta_node_var_name(Pairs, Term, Name).
 
 % ~q is the spelling the reader takes back, so 2.0 stays 2.0, a rational stays
 % 1r3 and a non-finite float stays inf, -inf or nan. Each of those three is a
@@ -214,6 +232,10 @@ petta_node_group(Terms, Encoded) :-
 % The text is not a convenience: swrite/2 is the published writer and the only
 % authority on how an atom spells, so a binding that printed answers itself
 % would be a second authority that can disagree with the first.
+petta_node_answer('$petta_answer'(Term, NameState), [Wire, Text]) :- !,
+    petta_name_pairs(NameState, Names),
+    petta_node_encode_named(Term, Names, Wire),
+    swrite_with_names(Term, NameState, Text).
 petta_node_answer(Term, [Wire, Text]) :-
     petta_node_encode(Term, Wire),
     swrite(Term, Text).

@@ -48,6 +48,7 @@
     { "source": "!(empty)", "why": "a directive with no answers at all" },
     { "source": "!(let $x (+ 1 2) $x)", "why": "a binding form" },
     { "source": "(= (kit-double $x) (* $x 2))\n!(kit-double 21)", "why": "a program with a definition above its directive" },
+    { "source": "! untouched-symbol\n! 42", "why": "bare runnable atoms answer their groups, the arbiter's self-evaluating rule" },
     { "source": "!(+ 1 2)\n!(+ 3 4)", "why": "one group per directive, in source order" }
   ],
   "atoms": [

@@ -68,12 +68,15 @@ describe("running a program", () => {
     assert.deepEqual(groups.map((group) => group.map(String)), [["True"], ["21"]]);
   });
 
-  it("refuses a CALL to a definition below it, as the engine does", () => {
+  it("answers a CALL to a definition below it unreduced, as the engine does", () => {
     // prepare_parsed_forms/1 registers the signature, which is what lets the
     // pragma above name a function defined lower down; it does not compile the
-    // clauses early. The shipped Python host raises the same
-    // '$petta_exec:&self':below/2 here [measured 2026-08-20].
-    assert.throws(() => petta.run("!(below 1)\n(= (below $x) $x)"), /Unknown procedure/);
+    // clauses early. Evaluation follows LeaTTa's evalSequentialRun: a bang
+    // sees only the preceding prefix, so the call stays data. The shipped
+    // Python host answers the same
+    // [test_a_bang_before_the_definition_answers_unreduced_not_a_host_error].
+    const groups = petta.run("!(below 1)\n(= (below $x) $x)");
+    assert.deepEqual(groups.map((group) => group.map(String)), [["(below 1)"]]);
   });
 
   it("keeps one group per directive, in source order", () => {
@@ -123,7 +126,7 @@ describe("running a program", () => {
     console.error = (...parts) => written.push(parts.join(" "));
     try {
       assert.throws(() => petta.run("!(unclosed"), PettaError);
-      assert.throws(() => petta.run("!(below 1)\n(= (below $x) $x)"), PettaError);
+      assert.throws(() => petta.run("!(car-atom $u)"), PettaError);
     } finally {
       console.log = log;
       console.error = error;

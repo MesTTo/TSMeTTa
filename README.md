@@ -132,7 +132,7 @@ engine parses, translates and evaluates end to end.
 ## What the binding calls
 
 Only published surface. `bindings/node/bridge.pl` is this binding's Prolog half
-and every engine predicate it calls carries an `ext_point_kind/2` in
+and every engine predicate it calls carries an `seam:kind/2` in
 `engine/ext_points.pl` as a `service` or a `host_service`, or is a MeTTa builtin
 that `builtin_fun/1` enumerates. That is checked rather than promised:
 `tests/prolog/static_checks.pl`'s

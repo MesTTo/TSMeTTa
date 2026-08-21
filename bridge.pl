@@ -3,7 +3,7 @@
 %   seven-tag codec the other bindings speak, so a JavaScript host can embed
 %   the engine in its own process.
 % Assumes:
-%   - every engine predicate called here carries an ext_point_kind/2 in
+%   - every engine predicate called here carries an seam:kind/2 in
 %     engine/ext_points.pl, service or host_service, or is a MeTTa builtin that
 %     builtin_fun/1 already enumerates [tested: tests/prolog/static_checks.pl,
 %     a_host_binding_calls_only_published_surface]

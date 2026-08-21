@@ -450,9 +450,12 @@ export class Petta {
     return fromTransport(Out);
   }
 
-  /** The engine's own rendering of an atom, through the published writer. */
+  /** The engine's own rendering of an atom: the display writer, the same
+   *  authority the command line's answers use, so host-only values and
+   *  non-finite floats render instead of refusing. Round-trip storage text
+   *  stays with swrite/2's stricter contract on the Prolog side. */
   text(wire) {
-    const { S } = this.#once("petta_node_decode(W, T), swrite(T, S)", { W: toTransport(wire) });
+    const { S } = this.#once("petta_node_decode(W, T), sdisplay(T, S)", { W: toTransport(wire) });
     return hostText(S);
   }
 

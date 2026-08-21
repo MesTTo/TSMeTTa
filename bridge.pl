@@ -229,16 +229,17 @@ petta_node_group(Terms, Encoded) :-
     maplist(petta_node_answer, Terms, Encoded).
 
 % Each answer crosses as its wire form AND the engine's own rendering of it.
-% The text is not a convenience: swrite/2 is the published writer and the only
-% authority on how an atom spells, so a binding that printed answers itself
-% would be a second authority that can disagree with the first.
+% The text is not a convenience, and it is PRESENTATION: the display writer
+% is the same authority the command line's answers use, so host-only values
+% and non-finite floats render beside their wire forms instead of refusing
+% the whole answer. Round-trip storage keeps swrite/2's stricter contract.
 petta_node_answer('$petta_answer'(Term, NameState), [Wire, Text]) :- !,
     petta_name_pairs(NameState, Names),
     petta_node_encode_named(Term, Names, Wire),
-    swrite_with_names(Term, NameState, Text).
+    sdisplay_with_names(Term, NameState, Text).
 petta_node_answer(Term, [Wire, Text]) :-
     petta_node_encode(Term, Wire),
-    swrite(Term, Text).
+    sdisplay(Term, Text).
 
 % A file, loaded through the same engine door import! uses, so the file is
 % recorded under the canonical path both doors key on and a reload replaces

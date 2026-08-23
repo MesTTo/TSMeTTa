@@ -24,10 +24,10 @@ Then, from anywhere in the checkout:
 ```js
 import { boot } from "./bindings/node/index.mjs";
 
-const petta = await boot();
+const metta = await boot();
 
 // One group of answers per `!` directive, in source order.
-const [answers] = petta.run("(= (double $x) (* $x 2))\n!(double 21)");
+const [answers] = metta.run("(= (double $x) (* $x 2))\n!(double 21)");
 console.log(answers.map(String)); // [ '42' ]
 ```
 
@@ -38,7 +38,7 @@ the engine's own loader, so a second `load()` of the same file replaces that
 file's definitions rather than doubling them:
 
 ```js
-const [collapsed] = petta.load("./bindings/node/example/streaming.metta");
+const [collapsed] = metta.load("./bindings/node/example/streaming.metta");
 console.log(collapsed.map(String)); // [ '(1 2 3)' ]
 ```
 
@@ -49,9 +49,9 @@ are what you write, and the engine computes an answer only when you ask for the
 next one. That is why an unbounded generator is usable:
 
 ```js
-petta.run("(= (from $n) (superpose ($n (from (+ $n 1)))))");
+metta.run("(= (from $n) (superpose ($n (from (+ $n 1)))))");
 
-for await (const answer of petta.stream("(from 1)")) {
+for await (const answer of metta.stream("(from 1)")) {
   console.log(answer.text);
   if (Number(answer.wire[1]) === 5) break;   // the sixth is never computed
 }
@@ -74,7 +74,7 @@ that is not the innermost, with `Attempt to access not innermost query`.
 
 An embedded engine that prints is printing over whatever the host was saying,
 so this one does not. A program's own `println!` is buffered and
-`petta.drainOutput()` hands it over; an engine error is raised as a
+`metta.drainOutput()` hands it over; an engine error is raised as a
 `PettaError` carrying the engine's own message, never written out. Pass
 `boot({ verbose: true })` when you want the engine's trace, and both streams
 go to the console as well as into the buffers.
@@ -115,7 +115,7 @@ spelling and this host has nothing to hold it in
 
 Four platform libraries are absent from a WebAssembly SWI and there is no
 substitute for any of them, so the capabilities that rest on them are absent
-too. `boot()` reports them on `petta.refusals`, each with what it costs, and
+too. `boot()` reports them on `metta.refusals`, each with what it costs, and
 **raises on any refusal it does not name**, so an absence cannot creep in
 quietly:
 

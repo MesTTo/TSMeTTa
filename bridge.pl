@@ -92,8 +92,8 @@ user:message_hook(_, _, Lines) :-
 
 %%%%%%%%%% The seven-tag codec %%%%%%%%%%
 %
-% The same tags bindings/python/petta/shim.pl's petta_py_encode/2 writes and
-% bindings/python/petta/_atom_wire.py reads: s symbol, v variable, n number, g string,
+% The same tags bindings/python/metta/shim.pl's petta_py_encode/2 writes and
+% bindings/python/metta/_atom_wire.py reads: s symbol, v variable, n number, g string,
 % b boolean, e expression. Two tags that codec has are refused here rather
 % than faked. `o` is a live host object and no JavaScript object is ever
 % inside this engine, and `h` is a native blob, whose whole point is an

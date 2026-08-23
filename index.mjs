@@ -39,7 +39,7 @@
  *     it. boot() mounts engine/, lib/ and backends/ from the checkout,
  *     and a published package carries none of them, which is why
  *     package.json is private for now. The Python side solved the same
- *     problem by copying them under petta/_runtime at build time (setup.py);
+ *     problem by copying them under metta/_runtime at build time (setup.py);
  *     an npm build would do the same or depend on them.
  */
 
@@ -165,7 +165,7 @@ function answerFrom(pair) {
 // ---------------------------------------------------------------------------
 // The seven-tag codec, JavaScript side.
 //
-// The tags are bindings/python/petta/shim.pl's: s symbol, v variable, n number,
+// The tags are bindings/python/metta/shim.pl's: s symbol, v variable, n number,
 // g string, b boolean, e expression. bridge.pl carries a number as its
 // canonical Prolog text because the WebAssembly value conversion renders the
 // float 2.0 and the integer 2 as the same JavaScript number; here that text

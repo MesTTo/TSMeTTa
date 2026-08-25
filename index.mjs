@@ -24,7 +24,7 @@
  *   - a portable p term becomes an immutable SpaceHandle whose name is its
  *     whole host identity, and that handle re-encodes without losing the tag
  *     [tested: "decodes a portable space reference into a handle",
- *     "round trips a space handle by name"; commit=WORKTREE]
+ *     "round trips a space handle by name"; commit=d0631377c5e01a5d34d1c3437e283f87a0fab86f]
  *   - a value JavaScript has no type for (a rational) is refused by name
  *   - nothing reaches the host's console unless boot() was asked for verbose;
  *     an engine error is raised here and a program's output is buffered

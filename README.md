@@ -79,7 +79,7 @@ same name, exposing the same name-based identity as Python without pretending
 the referenced store crossed the wire. Names introduced by `p` retain that
 provenance when they return from the engine, while an explicit external `s`
 tag remains an ordinary symbol [tested: "round trips a space handle by name";
-commit=WORKTREE]:
+commit=d0631377c5e01a5d34d1c3437e283f87a0fab86f]:
 
 ```js
 import { SpaceHandle } from "./bindings/node/index.mjs";
@@ -184,7 +184,7 @@ runs programs. Measured 2026-08-26 against the corpus: **67 cases in scope,
 zero complaints**, with only the `o` tag and protocol frames declared out of
 profile [tested:
 test_the_binding_runs_every_leg_and_says_which_cases_it_does_not;
-commit=WORKTREE]. The kit earned that by catching a real defect first, which
+commit=d0631377c5e01a5d34d1c3437e283f87a0fab86f]. The kit earned that by catching a real defect first, which
 is what a kit is for: the decoder minted a fresh variable per occurrence, so
 `(f $x $x)` came back as `(f $x $y)`.
 

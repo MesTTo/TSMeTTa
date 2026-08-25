@@ -31,7 +31,7 @@
 %   - p accepts only an ampersand-prefixed space name, and the reserved engine
 %     spaces cross as p rather than collapsing into ordinary symbols
 %     [tested: test_a_second_language_binding_passes_the_same_conformance_kit;
-%     commit=WORKTREE]
+%     commit=d0631377c5e01a5d34d1c3437e283f87a0fab86f]
 %   - runnable free variables retain source names in their wire value and host
 %     text [tested: test_the_node_binding_and_the_python_host_answer_the_same_programs;
 %     commit=916def0562c211143bb91cd0bd8b2c9dac7ab4fa]

@@ -9,7 +9,7 @@
  *   - p decodes into a name-only SpaceHandle and survives both host and engine
  *     round trips [tested: "decodes a portable space reference into a handle",
  *     "round trips a space handle by name",
- *     "a space handle carries identity rather than contents"; commit=WORKTREE]
+ *     "a space handle carries identity rather than contents"; commit=d0631377c5e01a5d34d1c3437e283f87a0fab86f]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

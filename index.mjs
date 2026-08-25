@@ -21,6 +21,10 @@
  *     that tells 2 from 2.0 apart, and the engine does tell them apart
  *     [tested: "carries Number and BigInt across the signed-i64 boundary";
  *     measured 2026-08-20: (== 2 2.0) answers False]
+ *   - a portable p term becomes an immutable SpaceHandle whose name is its
+ *     whole host identity, and that handle re-encodes without losing the tag
+ *     [tested: "decodes a portable space reference into a handle",
+ *     "round trips a space handle by name"; commit=WORKTREE]
  *   - a value JavaScript has no type for (a rational) is refused by name
  *   - nothing reaches the host's console unless boot() was asked for verbose;
  *     an engine error is raised here and a program's output is buffered
@@ -159,17 +163,47 @@ class Answer {
 
 /** bridge.pl's petta_node_answer/2 pair, as this side holds it. */
 function answerFrom(pair) {
-  return new Answer(fromTransport(pair[0]), hostText(pair[1]));
+  return new Answer(fromEngineTransport(pair[0]), hostText(pair[1]));
 }
 
 // ---------------------------------------------------------------------------
 // The seven-tag codec, JavaScript side.
 //
 // The tags are bindings/python/metta/shim.pl's: s symbol, v variable, n number,
-// g string, b boolean, e expression. bridge.pl carries a number as its
-// canonical Prolog text because the WebAssembly value conversion renders the
-// float 2.0 and the integer 2 as the same JavaScript number; here that text
-// becomes a BigInt or a number, which is the split JavaScript does have.
+// g string, b boolean, e expression, p portable space handle. bridge.pl
+// carries a number as its canonical Prolog text because the WebAssembly value
+// conversion renders the float 2.0 and the integer 2 as the same JavaScript
+// number; here that text becomes a BigInt or a number, which is the split
+// JavaScript does have.
+
+// The engine's generic encoder emits a named space other than &self and
+// &petta as s, because a Prolog atom carries no record of the p tag it entered
+// under. Remember names introduced by p so engine results restore that
+// provenance, while the public fromTransport() decoder continues to honour an
+// explicit s tag. This is the same strict-wire/known-engine split as Python's
+// _atom_from_wire() and _atom_from_engine_wire()
+// [source: bindings/python/metta/_atom_wire.py:_atom_from_wire and
+// _atom_from_engine_wire; commit=4e2398075da67bb2cbcc123a9fc1e078ecac6fbf].
+const KNOWN_SPACE_NAMES = new Set();
+
+/** A named engine space reference. The name is identity; contents stay in the engine. */
+export class SpaceHandle {
+  constructor(name) {
+    if (typeof name !== "string") {
+      throw new PettaError(`the p tag carries text, not ${JSON.stringify(name)}`);
+    }
+    if (!name.startsWith("&")) {
+      throw new PettaError(`the p tag carries an ampersand-prefixed space name, not ${JSON.stringify(name)}`);
+    }
+    this.name = name;
+    KNOWN_SPACE_NAMES.add(name);
+    Object.freeze(this);
+  }
+
+  toString() {
+    return this.name;
+  }
+}
 
 // The spellings SWI's ~q writes and its reader takes back, measured
 // 2026-08-20: an integer is bare digits, a float carries a point or an
@@ -225,14 +259,18 @@ function numberToText(value) {
   return `${text}.0`;
 }
 
-/** bridge.pl's transport form to the wire atom a conformance kit compares. */
-export function fromTransport(term) {
+/** Decode transport, optionally restoring space provenance lost inside the engine. */
+function decodeTransport(term, engine) {
   if (!Array.isArray(term) || term.length !== 2) {
     throw new PettaError(`not a transport atom: ${JSON.stringify(term)}`);
   }
   const [tag, payload] = term;
   switch (tag) {
-    case "s":
+    case "s": {
+      const text = hostText(payload);
+      if (engine && KNOWN_SPACE_NAMES.has(text)) return ["p", new SpaceHandle(text)];
+      return ["s", text];
+    }
     case "v":
     case "g":
       return [tag, hostText(payload)];
@@ -248,11 +286,46 @@ export function fromTransport(term) {
       }
       return ["b", written === "true"];
     }
+    case "p":
+      return ["p", new SpaceHandle(hostText(payload))];
     case "e":
-      return ["e", items(payload).map(fromTransport)];
+      return ["e", items(payload).map((item) => decodeTransport(item, engine))];
     default:
       throw new PettaError(`unknown wire tag ${JSON.stringify(tag)}`);
   }
+}
+
+/** bridge.pl's transport form to the strict wire atom a conformance kit compares. */
+export function fromTransport(term) {
+  return decodeTransport(term, false);
+}
+
+/** An engine result, with known space names restored after Prolog erased p. */
+function fromEngineTransport(term) {
+  return decodeTransport(term, true);
+}
+
+/** Restore s/p input provenance after Prolog's atom representation erased it. */
+function fromRoundTripTransport(input, output) {
+  if (Array.isArray(input) && input.length === 2 && Array.isArray(output) && output.length === 2) {
+    const [inputTag, inputPayload] = input;
+    const [outputTag, outputPayload] = output;
+    if ((inputTag === "s" || inputTag === "p") && (outputTag === "s" || outputTag === "p")) {
+      const inputText = hostText(inputPayload);
+      const outputText = hostText(outputPayload);
+      if (inputText === outputText) {
+        return inputTag === "p" ? ["p", new SpaceHandle(outputText)] : ["s", outputText];
+      }
+    }
+    if (inputTag === "e" && outputTag === "e") {
+      const inputItems = items(inputPayload);
+      const outputItems = items(outputPayload);
+      if (inputItems.length === outputItems.length) {
+        return ["e", inputItems.map((item, index) => fromRoundTripTransport(item, outputItems[index]))];
+      }
+    }
+  }
+  return fromTransport(output);
 }
 
 /** The reverse, for handing an atom back to the engine. */
@@ -279,6 +352,11 @@ export function toTransport(wire) {
         throw new PettaError(`the b tag carries a boolean, not ${JSON.stringify(payload)}`);
       }
       return ["b", payload ? "true" : "false"];
+    case "p":
+      if (!(payload instanceof SpaceHandle)) {
+        throw new PettaError(`the p tag carries a SpaceHandle, not ${JSON.stringify(payload)}`);
+      }
+      return ["p", payload.name];
     case "e":
       return ["e", items(payload).map(toTransport)];
     default:
@@ -439,15 +517,16 @@ export class Petta {
   /** One atom of MeTTa source, through the engine's own reader. */
   read(text) {
     const { Wire } = this.#once("petta_node_read(Src, Wire)", { Src: text });
-    return fromTransport(Wire);
+    return fromEngineTransport(Wire);
   }
 
   /** An atom's round trip through the engine: decode it, then encode it back. */
   roundTrip(wire) {
+    const transport = toTransport(wire);
     const { Out } = this.#once("petta_node_decode(W, T), petta_node_encode(T, Out)", {
-      W: toTransport(wire),
+      W: transport,
     });
-    return fromTransport(Out);
+    return fromRoundTripTransport(transport, Out);
   }
 
   /** The engine's own rendering of an atom: the display writer, the same

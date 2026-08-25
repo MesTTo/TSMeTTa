@@ -28,6 +28,10 @@
 %   - signed-i64 Number values and wider BigInt values cross as exact decimal
 %     text in both directions [tested: the node --test suite,
 %     "carries Number and BigInt across the signed-i64 boundary"]
+%   - p accepts only an ampersand-prefixed space name, and the reserved engine
+%     spaces cross as p rather than collapsing into ordinary symbols
+%     [tested: test_a_second_language_binding_passes_the_same_conformance_kit;
+%     commit=WORKTREE]
 %   - runnable free variables retain source names in their wire value and host
 %     text [tested: test_the_node_binding_and_the_python_host_answer_the_same_programs;
 %     commit=916def0562c211143bb91cd0bd8b2c9dac7ab4fa]
@@ -94,11 +98,12 @@ user:message_hook(_, _, Lines) :-
 %
 % The same tags bindings/python/metta/shim.pl's petta_py_encode/2 writes and
 % bindings/python/metta/_atom_wire.py reads: s symbol, v variable, n number, g string,
-% b boolean, e expression. Two tags that codec has are refused here rather
-% than faked. `o` is a live host object and no JavaScript object is ever
-% inside this engine, and `h` is a native blob, whose whole point is an
-% identity a registry hands back; a binding that stringified either would
-% hand its caller something that cannot go home again.
+% b boolean, e expression, p portable space handle. Two tags that codec has
+% are refused here rather than faked. `o` is a live host object and no
+% JavaScript object is ever inside this engine, and `h` is a native blob,
+% whose whole point is an identity a registry hands back; a binding that
+% stringified either would hand its caller something that cannot go home
+% again.
 %
 % The number payload is TEXT and that is this transport's own decision, not
 % the grammar's. Every other payload survives the WebAssembly value
@@ -113,6 +118,8 @@ petta_node_encode(T, [v, Name]) :- var(T), !, term_to_atom(T, A), atom_string(A,
 petta_node_encode(T, [n, Text]) :- number(T), !, petta_node_number_text(T, Text).
 petta_node_encode(T, [g, T])    :- string(T), !.
 petta_node_encode(T, [b, T])    :- ( T == true ; T == false ), !.
+petta_node_encode('&self', [p, "&self"]) :- !.
+petta_node_encode('&petta', [p, "&petta"]) :- !.
 petta_node_encode(T, [s, S])    :- atom(T), !, atom_string(T, S).
 petta_node_encode(T, [e, Es])   :- is_list(T), !, maplist(petta_node_encode, T, Es).
 petta_node_encode(T, _) :-
@@ -175,6 +182,8 @@ petta_node_decode_([Tag, Payload], Names, Names, T) :- petta_node_tag(Tag, g), !
     petta_node_atom(Payload, A), atom_string(A, T).
 petta_node_decode_([Tag, Payload], Names, Names, T) :- petta_node_tag(Tag, b), !,
     petta_node_atom(Payload, T), ( T == true ; T == false ).
+petta_node_decode_([Tag, Payload], Names, Names, T) :- petta_node_tag(Tag, p), !,
+    petta_node_atom(Payload, T), sub_atom(T, 0, 1, _, '&').
 petta_node_decode_([Tag, Payload], Names0, Names, T) :- petta_node_tag(Tag, v), !,
     petta_node_atom(Payload, Name),
     (   Name == '_'

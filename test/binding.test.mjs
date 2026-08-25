@@ -6,6 +6,10 @@
  *     before anything downstream sees them
  *   - Number and BigInt cross the signed-i64 boundary without losing a digit
  *     [tested: "carries Number and BigInt across the signed-i64 boundary"]
+ *   - p decodes into a name-only SpaceHandle and survives both host and engine
+ *     round trips [tested: "decodes a portable space reference into a handle",
+ *     "round trips a space handle by name",
+ *     "a space handle carries identity rather than contents"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -19,7 +23,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { boot, fromTransport, toTransport, PettaError, REFUSALS } from "../index.mjs";
+import { boot, fromTransport, toTransport, PettaError, REFUSALS, SpaceHandle } from "../index.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -192,6 +196,44 @@ describe("the codec", () => {
     ]) {
       assert.deepEqual(petta.roundTrip(wire), wire, JSON.stringify(wire, (k, v) => String(v)));
     }
+  });
+
+  it("decodes a portable space reference into a handle", () => {
+    const [tag, handle] = fromTransport(["p", "&self"]);
+    assert.equal(tag, "p");
+    assert.ok(handle instanceof SpaceHandle);
+    assert.equal(handle.name, "&self");
+    assert.equal(String(handle), "&self");
+    assert.deepEqual(toTransport(petta.read("&self")), ["p", "&self"]);
+    assert.throws(() => fromTransport(["p", "self"]), /ampersand-prefixed space name/);
+  });
+
+  it("round trips a space handle by name", () => {
+    const wire = ["p", new SpaceHandle("&kb")];
+    assert.deepEqual(toTransport(wire), ["p", "&kb"]);
+
+    const crossed = petta.roundTrip(wire);
+    assert.equal(crossed[0], "p");
+    assert.ok(crossed[1] instanceof SpaceHandle);
+    assert.equal(crossed[1].name, "&kb");
+    assert.deepEqual(toTransport(crossed), ["p", "&kb"]);
+    assert.equal(petta.text(wire), "&kb");
+    assert.deepEqual(toTransport(petta.roundTrip(["e", [wire]])), ["e", [["p", "&kb"]]]);
+    assert.deepEqual(fromTransport(["s", "&kb"]), ["s", "&kb"], "an explicit s tag stays strict");
+    assert.deepEqual(petta.roundTrip(["s", "&kb"]), ["s", "&kb"]);
+    assert.deepEqual(petta.roundTrip(["s", "&self"]), ["s", "&self"]);
+    assert.deepEqual(petta.roundTrip(["e", [["s", "&kb"]]]), ["e", [["s", "&kb"]]]);
+    assert.throws(() => toTransport(["p", "&self"]), /carries a SpaceHandle/);
+  });
+
+  it("a space handle carries identity rather than contents", () => {
+    const left = fromTransport(["p", "&kb"])[1];
+    const right = fromTransport(["p", "&kb"])[1];
+    assert.notEqual(left, right, "separate decodes are separate host references");
+    assert.deepEqual(left, right, "one name denotes one space identity");
+    assert.deepEqual(Object.keys(left), ["name"]);
+    assert.equal("value" in left, false);
+    assert.ok(Object.isFrozen(left));
   });
 
   it("refuses a number JavaScript has no type for", () => {

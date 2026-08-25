@@ -70,6 +70,25 @@ once and stepped in any order, which is the reason an SWI engine holds the
 query rather than swipl-wasm's own query object: the raw one refuses a pull
 that is not the innermost, with `Attempt to access not innermost query`.
 
+## Space handles
+
+A portable `p` wire term decodes to `["p", handle]`, where `handle` is an
+immutable `SpaceHandle`. It carries the ampersand-prefixed engine name and no
+space contents. Separate decodes create separate JavaScript objects with the
+same name, exposing the same name-based identity as Python without pretending
+the referenced store crossed the wire. Names introduced by `p` retain that
+provenance when they return from the engine, while an explicit external `s`
+tag remains an ordinary symbol [tested: "round trips a space handle by name";
+commit=WORKTREE]:
+
+```js
+import { SpaceHandle } from "./bindings/node/index.mjs";
+
+const [, handle] = metta.read("&self");
+console.log(handle instanceof SpaceHandle); // true
+console.log(handle.name, String(handle));   // &self &self
+```
+
 ## Nothing reaches your console
 
 An embedded engine that prints is printing over whatever the host was saying,
@@ -161,11 +180,13 @@ questions.
 `tests/codec/corpus.json`, which is the grammar's authority. A whole binding
 runs every leg the kit has, where a wire-carrying store runs two: it reads
 MeTTa source, prints through the engine's own writer, round trips an atom, and
-runs programs. Measured 2026-08-20 against the corpus: **67 cases in scope,
-zero complaints**, with only the `o` tag and protocol frames
-declared out of profile. The kit earned that by catching a real defect first,
-which is what a kit is for: the decoder minted a fresh variable per
-occurrence, so `(f $x $x)` came back as `(f $x $y)`.
+runs programs. Measured 2026-08-26 against the corpus: **67 cases in scope,
+zero complaints**, with only the `o` tag and protocol frames declared out of
+profile [tested:
+test_the_binding_runs_every_leg_and_says_which_cases_it_does_not;
+commit=WORKTREE]. The kit earned that by catching a real defect first, which
+is what a kit is for: the decoder minted a fresh variable per occurrence, so
+`(f $x $x)` came back as `(f $x $y)`.
 
 `kit/corpus.json` and `kit/run.mjs` answer the other question. They record
 cases and never answers, because `bindings/python/tests/test_node_binding.py` runs the

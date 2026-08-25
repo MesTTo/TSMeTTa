@@ -502,8 +502,13 @@ export async function boot({ root = REPO_ROOT, verbose = false } = {}) {
     },
   });
 
+  // Sources only: a .qlf is the NATIVE install's compiled artifact (engine/
+  // qlf_boot.pl writes them beside the sources, gitignored), and this build's
+  // older wasm SWI resolving one instead of the .pl derails the load and the
+  // refusal census with it. This host boots from source.
+  const source = (name) => !name.endsWith(".qlf") && name !== ".qlf-stamp";
   for (const directory of ENGINE_DIRS) {
-    mountInto(swipl.FS, join(root, directory), `${VIRTUAL_ROOT}/${directory}`);
+    mountInto(swipl.FS, join(root, directory), `${VIRTUAL_ROOT}/${directory}`, source);
   }
   swipl.FS.writeFile(`${VIRTUAL_ROOT}/bridge.pl`, readFileSync(join(HERE, "bridge.pl")));
 

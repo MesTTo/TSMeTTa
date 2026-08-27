@@ -31,6 +31,7 @@ import {
 } from "./atom.ts";
 import { Answers, type AskOptions, type Row } from "./answers.ts";
 import {
+  type Capability,
   type Counters,
   type EffectClass,
   type Engine,
@@ -106,7 +107,7 @@ export class MeTTa implements Disposable {
   constructor(engine: Engine) {
     this.#engine = engine;
     this.self = this.space("&self");
-    this.catalog = this.space("&petta");
+    this.catalog = this.space("&metta");
     engine.scopes = this.#scopes;
   }
 
@@ -115,8 +116,15 @@ export class MeTTa implements Disposable {
     return new MeTTa(await bootEngine(options));
   }
 
-  /** What this build does without, each with what it costs. */
-  get refusals(): readonly { file: string; missing: string; costs: string }[] {
+  /**
+   * What this build does without, each with what it costs.
+   *
+   * Read from the engine's own platform census rather than recovered by regex
+   * over its boot transcript, so the costs are the engine's words and the two
+   * cannot drift. A full SWI answers nothing here; a WebAssembly build names
+   * concurrency, deadlines and subprocess.
+   */
+  get refusals(): readonly Capability[] {
     return this.#engine.refusals;
   }
 

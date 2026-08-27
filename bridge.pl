@@ -119,7 +119,7 @@ user:message_hook(_, _, Lines) :-
 
 %%%%%%%%%% The tagged codec %%%%%%%%%%
 %
-% The same tags bindings/python/metta/shim.pl's petta_py_encode/2 writes and
+% The same tags bindings/python/metta/shim.pl's metta_py_encode/2 writes and
 % bindings/node/src/wire.ts reads: s symbol, v variable, n number, g string,
 % b boolean, e expression, p portable space handle, o live host value.
 %
@@ -140,8 +140,7 @@ petta_node_encode(T, [o, Text]) :- petta_node_object_id(T, Id), !, number_string
 petta_node_encode(T, [n, Text]) :- number(T), !, petta_node_number_text(T, Text).
 petta_node_encode(T, [g, T])    :- string(T), !.
 petta_node_encode(T, [b, T])    :- ( T == true ; T == false ), !.
-petta_node_encode('&self', [p, "&self"]) :- !.
-petta_node_encode('&petta', [p, "&petta"]) :- !.
+petta_node_encode(T, [p, S]) :- atom(T), metta_space_operand(T), !, atom_string(T, S).
 petta_node_encode(T, [s, S])    :- atom(T), !, atom_string(T, S).
 petta_node_encode(T, [e, Es])   :- is_list(T), !, maplist(petta_node_encode, T, Es).
 petta_node_encode(T, _) :-
@@ -285,8 +284,8 @@ petta_node_text(In, Out) :- atom_string(In, Out).
 % is the same authority the command line's answers use, so host-only values
 % and non-finite floats render beside their wire forms instead of refusing
 % the whole answer. Round-trip storage keeps swrite/2's stricter contract.
-petta_node_answer('$petta_answer'(Term, NameState), [Wire, Text]) :- !,
-    petta_name_pairs(NameState, Names),
+petta_node_answer('$metta_answer'(Term, NameState), [Wire, Text]) :- !,
+    metta_name_pairs(NameState, Names),
     petta_node_encode_named(Term, Names, Wire),
     sdisplay_with_names(Term, NameState, Text).
 petta_node_answer(Term, [Wire, Text]) :-
@@ -383,9 +382,9 @@ petta_node_scope(module, [Space0], Goal) :- !,
     space_module(Space, Module),
     with_metta_module(Module, Goal).
 petta_node_scope(transaction, [], Goal) :- !,
-    petta_transaction(Goal).
+    metta_transaction(Goal).
 petta_node_scope(speculate, [], Goal) :- !,
-    petta_speculate(Goal).
+    metta_speculate(Goal).
 petta_node_scope(Unknown, _, _) :-
     throw(error(petta_node_unknown_scope(Unknown),
                 context(petta_node_scope/3, 'this binding has no such scope'))).
@@ -438,7 +437,8 @@ petta_node_verb(Verb) :- memberchk(Verb, [eval, source, run, load, add, remove,
                                           atoms, count, has, clear, spacenames,
                                           child, restrict, releasable, release,
                                           explain, effect, registerop, dropop,
-                                          watch, unwatch, drain, commit]).
+                                          watch, unwatch, drain, commit,
+                                          platform]).
 
 % Evaluate a term already built on the host side. This is the primary door:
 % going through text would lose a live host reference, which has no spelling.
@@ -453,7 +453,7 @@ petta_node_command(eval, [Wire, Space0], [answer, Out, Text]) :-
 petta_node_command(source, [Src, Space0], [answer, Out, Text]) :-
     petta_node_atom(Space0, Space),
     petta_node_text(Src, S),
-    sread(S, Term),
+    sread_with_names(S, Term, _Names),
     space_module(Space, Module),
     with_metta_module(Module, eval(Term, Result)),
     petta_node_answer(Result, [Out, Text]).
@@ -513,6 +513,23 @@ petta_node_command(spacenames, [], [value, [e, Wires]]) :-
     metta_space_names(Names),
     maplist(petta_node_space_wire, Names, Wires).
 
+% The engine's own platform census, which this host READS rather than
+% recovering by regex over SWI's stderr. A WebAssembly build has no threads,
+% no timers and no processes, and the engine now names each capability it
+% lacks and what the absence costs instead of letting three directives fail
+% loudly; nothing is printed, so a boot transcript carrying any ERROR: line is
+% an unnamed refusal and src/engine.ts refuses it, which is strictly stronger
+% than matching against a table this file used to keep in step by hand.
+% Every cell crosses as text so the host reads the row without decoding atoms.
+petta_node_command(platform, [], [value, [e, Rows]]) :-
+    findall([e, [[g, Name], [g, State], [g, Needs], [g, Costs]]],
+            ( metta_platform(Capability, Status, Requires, Cost),
+              atom_string(Capability, Name),
+              atom_string(Status, State),
+              term_string(Requires, Needs),
+              text_to_string(Cost, Costs) ),
+            Rows).
+
 petta_node_command(child, [Child0, Parent0], [value, [s, "ok"]]) :-
     petta_node_atom(Child0, Child),
     petta_node_atom(Parent0, Parent),
@@ -542,7 +559,7 @@ petta_node_command(explain, [Space0, Wires], [value, [g, Text]]) :-
 
 petta_node_command(effect, [Name0], [value, [s, Text]]) :-
     petta_node_atom(Name0, Name),
-    (   petta_operation_effect(Name, Class)
+    (   metta_operation_effect(Name, Class)
     ->  atom_string(Class, Text)
     ;   Text = "unknown"
     ).
@@ -632,7 +649,7 @@ petta_node_op_body(_, Name, Args, Result,
                    petta_node_dispatch_det(Name, Args, Result)).
 
 petta_node_declare_effect(Name, Effect) :-
-    metta_add_atoms('&petta', [[effect, Name, Effect]]).
+    metta_add_atoms('&metta', [[effect, Name, Effect]]).
 
 petta_node_drop_clauses(Name, Arity) :-
     PredArity is Arity + 1,

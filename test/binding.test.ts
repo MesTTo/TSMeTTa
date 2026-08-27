@@ -24,7 +24,6 @@ import {
   Grounded,
   type MeTTa,
   PettaError,
-  REFUSALS,
   S,
   SpaceHandle,
   Superpose,
@@ -50,16 +49,20 @@ after(() => {
 });
 
 describe("boot", () => {
-  it("refuses only what it names", () => {
+  it("reads what this build does without from the engine's own census", () => {
     assert.deepEqual(
-      m.refusals.map(({ file, missing }) => `${missing} in ${file}`),
-      REFUSALS.map(({ file, missing }) => `${missing} in ${file}`),
+      m.refusals.map(({ capability }) => capability).sort(),
+      ["concurrency", "deadlines", "subprocess"],
     );
   });
 
-  it("names what each refusal costs, and where it happened", () => {
+  it("names the library each absence needs, and what it costs", () => {
     for (const refusal of m.refusals) {
-      assert.ok(refusal.costs.length > 20, `${refusal.missing} says nothing about what it costs`);
+      assert.match(refusal.requires, /^library\(\w+\)$/);
+      assert.ok(
+        refusal.costs.length > 20,
+        `${refusal.capability} says nothing about what it costs`,
+      );
     }
   });
 });

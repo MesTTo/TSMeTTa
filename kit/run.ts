@@ -77,7 +77,7 @@ const corpus = JSON.parse(
 const engine = await boot();
 
 const report: Record<string, unknown> = {
-  refusals: engine.refusals.map(({ file, missing, line }) => ({ file, missing, line })),
+  refusals: engine.refusals.map(({ capability, requires }) => ({ capability, requires })),
   programs: [] as unknown[],
   atoms: [] as unknown[],
   refused: [] as unknown[],

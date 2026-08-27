@@ -6,8 +6,8 @@
  *   - swipl-wasm 8.0.6 is installed beside this package; it is the SWI-Prolog
  *     organisation's own WebAssembly build of SWI 10.1.13
  *     [source: https://github.com/SWI-Prolog/npm-swipl-wasm]
- *   - boot() sees exactly the refusals {@link REFUSALS} names; a fifth one is
- *     a new finding and throws rather than being absorbed
+ *   - the engine's boot transcript is SILENT; any ERROR: line in it is an
+ *     unnamed refusal and throws rather than being absorbed
  *   - `bridge.pl` sits beside this file's package root and speaks the job
  *     protocol documented there
  * Guarantees:
@@ -97,96 +97,37 @@ const VIRTUAL_ROOT = "/petta";
 // this binding IS the host, its bridge written into the image below.
 const ENGINE_DIRS = ["engine", "lib", "backends"] as const;
 
-/** One capability the WebAssembly build does without, and what it costs. */
-export interface Refusal {
-  /** The engine file that asked for it, relative to the checkout. */
-  readonly file: string;
-  /** The library or predicate that was not there. */
-  readonly missing: string;
+/** One capability the engine declares, and what its absence costs. */
+export interface Capability {
+  /** The engine's own name for it, such as `concurrency`. */
+  readonly capability: string;
+  /** The platform library it needs, written as the engine writes it. */
+  readonly requires: string;
   /** What its absence costs a program. */
   readonly costs: string;
-  /** The line the refusal was reported at, filled in when one is observed. */
-  readonly line?: number;
 }
 
 /**
- * What the WebAssembly build does not carry, and what each absence costs.
+ * The boot transcript must be SILENT.
  *
- * Measured 2026-08-20 against swipl-wasm 8.0.6, unchanged 2026-08-27. Every
- * line is a platform library the build genuinely has no substitute for, so
- * each one is a capability this host does without and not something to route
- * around; the engine loads and evaluates without all four.
- *
- * A refusal the table does not name raises out of boot(). An unnamed one is a
- * finding, and absorbing it is how a capability goes missing quietly.
- *
- * The entry is the FILE and the missing name rather than the line, because a
- * line moves whenever the file above it is edited and a capability does not:
- * two refusals here name library(process) and only the file tells them apart.
+ * This used to be a table of expected refusals plus a regex over SWI's
+ * stderr, because three `use_module` directives failed on a build without
+ * threads, timers or processes and the host recovered the losses by parsing
+ * the error text. The engine declares its platform capabilities now, so a
+ * reduced build loads quietly and the census is read through the `platform`
+ * command instead. That makes any ERROR: line an unnamed refusal, which is
+ * strictly stronger than matching against a table: a differently worded SWI
+ * error used to slip past both regexes without a sound.
  */
-export const REFUSALS: readonly Refusal[] = [
-  {
-    file: "engine/metta.pl",
-    missing: "library(thread)",
-    costs:
-      "concurrent_maplist and so jobs/2. The WebAssembly build is " +
-      "single-threaded; SWI engines are present and are what this binding " +
-      "streams answers with.",
-  },
-  {
-    file: "engine/metta.pl",
-    missing: "library(time)",
-    costs:
-      "alarm/4 and so metta_timeout/2. A host-side deadline has to bound " +
-      "the pull instead, which is what AbortSignal in the options position does.",
-  },
-  {
-    file: "engine/metta.pl",
-    missing: "library(process)",
-    costs: "subprocess operations. A WebAssembly instance has no processes to start.",
-  },
-  {
-    file: "lib/lib_gitimport.pl",
-    missing: "library(process)",
-    costs: "git import!, which shells out to git.",
-  },
-];
-
-// SWI writes a failed directive over two lines, the site and then the reason,
-// so both are read: two refusals in this build name library(process) and only
-// the site tells them apart.
-const REFUSAL_SITE = /^ERROR:\s+(?<file>\S+?):(?<line>\d+):$/;
-const REFUSAL_REASON =
-  /^ERROR:\s+(?:source_sink `(?<sink>[^']+)' does not exist|catch\/3: Unknown procedure: (?<procedure>\S+))$/;
-
-function readRefusals(lines: readonly string[], virtualPrefix: string): Refusal[] {
-  const seen: Refusal[] = [];
-  let file: string | null = null;
-  let line: number | null = null;
-  for (const written of lines) {
-    const location = REFUSAL_SITE.exec(written);
-    if (location !== null) {
-      const named = location.groups?.["file"] ?? "";
-      file = named.startsWith(virtualPrefix) ? named.slice(virtualPrefix.length) : named;
-      line = Number(location.groups?.["line"]);
-      continue;
-    }
-    const reason = REFUSAL_REASON.exec(written);
-    if (reason === null) continue;
-    const missing = reason.groups?.["sink"] ?? reason.groups?.["procedure"] ?? "";
-    const known = REFUSALS.find(
-      (refusal) => refusal.missing === missing && refusal.file === file,
-    );
-    if (known === undefined) {
-      throw new PettaError(
-        `the engine refused ${missing} at ${String(file)}:${String(line)} while ` +
-          `booting, which src/engine.ts does not name; add it to REFUSALS with ` +
-          `what it costs, or fix it`,
-      );
-    }
-    seen.push({ ...known, line: line ?? 0 });
-  }
-  return seen;
+function refuseUnnamedErrors(lines: readonly string[]): void {
+  const errors = lines.filter((line) => line.startsWith("ERROR:"));
+  if (errors.length === 0) return;
+  throw new PettaError(
+    `the engine reported ${String(errors.length)} error(s) while booting, ` +
+      `which this binding does not name: ${errors.join(" / ")}. The platform ` +
+      `census carries every capability the build lacks, so an ERROR: here is ` +
+      `something else and absorbing it is how a defect goes quiet.`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -574,9 +515,7 @@ export class Engine {
   /** The values this host has handed the engine a reference to. */
   readonly hostValues: HostValues = new HostValues();
   /** Names the engine introduced under `p`, so a bare `s` can be restored. */
-  readonly knownSpaces: Set<string> = new Set(["&self", "&petta"]);
-  /** What this build does without. */
-  readonly refusals: readonly Refusal[];
+  readonly knownSpaces: Set<string> = new Set(["&self", "&metta"]);
   /** The counters a stats scope reads. */
   readonly counters: Counters = { inferences: 0, crossings: 0, replays: 0 };
 
@@ -589,12 +528,41 @@ export class Engine {
    */
   scopes: Scope[] = [];
 
+  /**
+   * The engine's own platform census: every capability, present or absent.
+   *
+   * Read rather than recovered by regex over the boot transcript, so the
+   * costs are the engine's own words and the two cannot drift.
+   */
+  capabilities(): readonly (Capability & { readonly present: boolean })[] {
+    const event = this.start(["platform"]).sync();
+    if (event === null || event.kind !== "value" || event.wire[0] !== "e") return [];
+    const rows: (Capability & { present: boolean })[] = [];
+    for (const row of event.wire[1]) {
+      if (row[0] !== "e" || row[1].length !== 4) continue;
+      const cells = row[1].map((cell) => (cell[0] === "g" ? cell[1] : ""));
+      rows.push({
+        capability: cells[0] ?? "",
+        present: cells[1] === "present",
+        requires: cells[2] ?? "",
+        costs: cells[3] ?? "",
+      });
+    }
+    return rows;
+  }
+
+  /** What this build does WITHOUT, each with what its absence costs. */
+  get refusals(): readonly Capability[] {
+    return this.capabilities()
+      .filter((row) => !row.present)
+      .map(({ capability, requires, costs }) => ({ capability, requires, costs }));
+  }
+
   /** @internal Use {@link boot}. */
-  constructor(swipl: Swipl, output: string[], stderr: string[], refusals: readonly Refusal[]) {
+  constructor(swipl: Swipl, output: string[], stderr: string[]) {
     this.#swipl = swipl;
     this.#output = output;
     this.#stderr = stderr;
-    this.refusals = refusals;
   }
 
   /**
@@ -852,7 +820,7 @@ export async function boot(
     throw new PettaError(`the engine did not load: ${String(consulted.message)}`);
   }
 
-  const seen = readRefusals(stderr, `${VIRTUAL_ROOT}/`);
+  refuseUnnamedErrors(stderr);
   stderr.length = 0;
   output.length = 0;
 
@@ -861,5 +829,5 @@ export async function boot(
     throw new PettaError(`the Node bridge did not load: ${String(bridged.message)}`);
   }
 
-  return new Engine(swipl, output, stderr, seen);
+  return new Engine(swipl, output, stderr);
 }

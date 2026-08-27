@@ -92,7 +92,7 @@ const REPO_ROOT = repoRoot;
 const VIRTUAL_ROOT = "/petta";
 
 // The directories engine/metta.pl reaches for while it loads: its own, the
-// standard library, and the backend deciders. The seat deciders under
+// standard library, and the backend control files. The seat controls under
 // bindings/ stay unmounted: no substrate they gate on exists in wasm, and
 // this binding IS the host, its bridge written into the image below.
 const ENGINE_DIRS = ["engine", "lib", "backends"] as const;

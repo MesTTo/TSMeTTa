@@ -2,9 +2,9 @@
   "name": "petta-node",
   "version": "0.0.1-alpha.0",
   "private": true,
-  "comment": "Private until the package carries the engine tree it mounts: boot() reads src, lib, hosts and backends out of the checkout, the way the Python package copies them under metta/_runtime at build time.",
+  "comment": "Private until the package carries the engine tree it mounts: boot() reads engine, lib and backends out of the checkout, the way the Python package copies them under metta/_runtime at build time.",
   "type": "module",
-  "description": "MeTTa in Node on the PeTTa engine, in process over swipl-wasm",
+  "description": "MeTTa in TypeScript on the PeTTa engine, in process over swipl-wasm",
   "license": "MIT",
   "homepage": "https://github.com/trueagi-io/PeTTa",
   "repository": {
@@ -12,21 +12,39 @@
     "url": "git+https://github.com/trueagi-io/PeTTa.git",
     "directory": "bindings/node"
   },
+  "sideEffects": false,
   "exports": {
-    ".": "./index.mjs"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./bridge.pl": "./bridge.pl"
   },
+  "types": "./dist/index.d.ts",
   "files": [
-    "index.mjs",
+    "dist",
     "bridge.pl",
+    "example",
     "README.md"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "scripts": {
-    "test": "node --test test/binding.test.mjs"
+    "build": "tsc -p tsconfig.build.json",
+    "build:dist": "tsc -p tsconfig.dist.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "test": "npm run build --silent && node --test \"build/test/*.test.js\"",
+    "test:source": "node --test \"test/*.test.ts\"",
+    "kit": "npm run build --silent && node build/kit/run.js",
+    "prepare": "npm run build --silent"
   },
   "dependencies": {
+    "acorn": "^8.18.0",
     "swipl-wasm": "8.0.6"
+  },
+  "devDependencies": {
+    "@types/node": "^26.3.0",
+    "typescript": "^6.0.3"
   }
 }

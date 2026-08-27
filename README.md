@@ -1,4 +1,4 @@
-# PeTTa in Node
+# MeTTa in TypeScript, on the PeTTa engine
 
 The PeTTa engine runs inside a Node process here, in that process rather than
 behind a socket, over [swipl-wasm](https://github.com/SWI-Prolog/npm-swipl-wasm)
@@ -6,122 +6,406 @@ behind a socket, over [swipl-wasm](https://github.com/SWI-Prolog/npm-swipl-wasm)
 10.1.13. There is nothing to install besides npm packages: no SWI on the
 machine, no compiler, no shared library.
 
-It exists to prove the engine's seams carry a second language. The Python
-library in `python/` was the only consumer of the host contract, and a contract
-with one consumer is a description of that consumer. This binding rides the same
-published surface and answers the same conformance corpus.
-
-## Getting started
+TypeScript is the notation and MeTTa is the meaning. Every door here either
+builds a term or asks the engine one, and nothing on this side re-implements
+matching, rewriting or nondeterminism.
 
 ```sh
 cd bindings/node
-npm ci
+npm ci        # fetches swipl-wasm and builds the TypeScript
 npm test
 ```
 
-Then, from anywhere in the checkout:
+```ts
+import { metta, S, V } from "./bindings/node/src/index.ts";
 
-```js
-import { boot } from "./bindings/node/index.mjs";
+const m = await metta();
 
-const metta = await boot();
+m.add(S.parent(S.tom, S.bob), S.parent(S.bob, S.ann));
 
-// One group of answers per `!` directive, in source order.
-const [answers] = metta.run("(= (double $x) (* $x 2))\n!(double 21)");
-console.log(answers.map(String)); // [ '42' ]
-```
-
-`load()` takes a path instead of source. It mounts the file's directory into
-the engine's virtual filesystem at the same absolute path first, so a relative
-`import!` beside it resolves exactly as it does on disk, and it goes through
-the engine's own loader, so a second `load()` of the same file replaces that
-file's definitions rather than doubling them:
-
-```js
-const [collapsed] = metta.load("./bindings/node/example/streaming.metta");
-console.log(collapsed.map(String)); // [ '(1 2 3)' ]
-```
-
-## Answers arrive one at a time
-
-`stream()` hands back a JavaScript async iterator, so `for await` and `break`
-are what you write, and the engine computes an answer only when you ask for the
-next one. That is why an unbounded generator is usable:
-
-```js
-metta.run("(= (from $n) (superpose ($n (from (+ $n 1)))))");
-
-for await (const answer of metta.stream("(from 1)")) {
-  console.log(answer.text);
-  if (Number(answer.wire[1]) === 5) break;   // the sixth is never computed
+for await (const { child } of m.match(S.parent(S.tom, V.child))) {
+  console.log(String(child));            // bob
 }
 ```
 
-Behind it is an SWI engine, a goal suspended between answers. Tarau states the
-rule the shape follows: an engine "can, if asked, resume" after yielding an
-answer, and a binding wraps that ask-and-resume pair in the host's own stream
-abstraction so answers compose with the host's own machinery (*A Hitchhiker's
-Guide to Reinventing a Prolog Machine*, ICLP 2017, section 4.5, which wraps it
-in a Java Spliterator). JavaScript's abstraction is the async iterator.
+## Atoms
 
-Leaving the loop early closes the cursor: `for await` calls the iterator's
-`return()` on `break`, and that destroys the engine. Two streams may be open at
-once and stepped in any order, which is the reason an SWI engine holds the
-query rather than swipl-wasm's own query object: the raw one refuses a pull
-that is not the innermost, with `Attempt to access not innermost query`.
+An atom is an interned, frozen value, so `===` is structural and `Set`, `Map`
+and `includes` are structural with it, without any of them being
+reimplemented:
 
-## Space handles
-
-A portable `p` wire term decodes to `["p", handle]`, where `handle` is an
-immutable `SpaceHandle`. It carries the ampersand-prefixed engine name and no
-space contents. Separate decodes create separate JavaScript objects with the
-same name, exposing the same name-based identity as Python without pretending
-the referenced store crossed the wire. Names introduced by `p` retain that
-provenance when they return from the engine, while an explicit external `s`
-tag remains an ordinary symbol [tested: "round trips a space handle by name";
-commit=d0631377c5e01a5d34d1c3437e283f87a0fab86f]:
-
-```js
-import { SpaceHandle } from "./bindings/node/index.mjs";
-
-const [, handle] = metta.read("&self");
-console.log(handle instanceof SpaceHandle); // true
-console.log(handle.name, String(handle));   // &self &self
+```ts
+S.parent(S.tom, S.bob) === S.parent(S.tom, S.bob);   // true
+new Set([S.a, S.a]).size;                            // 1
 ```
 
-## Nothing reaches your console
+`S` mints symbols, `V` variables, `G` lifts a host value, `_` is the anonymous
+variable, and `fn` is the operation vocabulary. Applying a name builds an
+expression; a bare name is the symbol:
 
-An embedded engine that prints is printing over whatever the host was saying,
-so this one does not. A program's own `println!` is buffered and
-`metta.drainOutput()` hands it over; an engine error is raised as a
-`PettaError` carrying the engine's own message, never written out. Pass
-`boot({ verbose: true })` when you want the engine's trace, and both streams
-go to the console as well as into the buffers.
+```ts
+S.parent            // the symbol `parent`
+S.parent(S.tom)     // the expression `(parent tom)`
+V.x                 // `$x`
+G(new Date())       // a live host value, by reference
+[S.parent, S.tom]   // an array in term position IS an expression
+```
 
-That took work rather than being free: swipl-wasm writes every Prolog
-exception to the console before handing it back, and offers no switch, so
-`bridge.pl` catches inside the engine and the outcome crosses as data.
+`instanceof` narrows: `Sym`, `Var`, `Grounded`, `Expression`, `SpaceHandle`.
+`String(atom)` renders MeTTa text and so does a template literal, while
+`atom + 1` and `atom == "f"` REFUSE, because there is no answer to those that
+is not a wrong one.
+
+### Names, and the one map
+
+A TypeScript identifier reaches the meaning layer through TypeScript's own
+casing, so `S.carAtom` is `car-atom` and `function balanceOf` installs
+`balance-of`. The map fires only on a plain lowerCamelCase identifier, so
+`S.Number`, `S.StateMonad`, `S["%Undefined%"]`, `S["prime?"]` and
+`S["car-atom"]` are every one of them exactly themselves. `V` is exact,
+because a variable's name is the key you destructure an answer by.
+
+An operator's head is punctuation, which no casing map reaches, so `fn`
+consults an operator table first: `fn.add` is `+`, `fn.gte` is `>=`. Those are
+the same words the free functions export, so `fn.gte(a, b)` and `gte(a, b)`
+name one head by construction.
+
+## Answers
+
+An ask is a lazy description. Nothing runs until something consumes it.
+
+```ts
+const ans = m.match(S.parent(V.x, S.bob));   // nothing has run
+for await (const { x } of ans) { ... }        // one answer at a time
+const rows  = await ans;                      // the whole answer set
+const who   = await ans.one();                // exactly one, or a refusal
+const maybe = (await ans.find()) ?? S.none;   // at most one, so ?? composes
+ans.take(5).map(({ x }) => S.seen(x));        // lazily, and nothing has run yet
+```
+
+`await` executes and collapses, which is where Drizzle and Kysely put
+execution; it is the platform's own promise protocol rather than an invented
+`.all()`. One fence: returning an `Answers` from an `async function` awaits it
+implicitly, so the lazy handle does not survive an async return.
+
+Leaving a `for await` early closes the cursor and destroys the engine behind
+it, so an unbounded generator is safe to walk:
+
+```ts
+m.run("(= (from $n) (superpose ($n (from (+ $n 1)))))");
+for await (const answer of m.eval(S.from(1))) {
+  if (Number(hostValue(answer)) === 5) break;   // the sixth is never computed
+}
+```
+
+A deadline goes in the options position and is the platform's own:
+
+```ts
+await m.eval(term).until(AbortSignal.timeout(50));
+```
+
+Cancellation is checkpoint-granular: the engine is asked to stop between
+answers, so a single very long reduction runs to its next answer before it
+notices. That is `fetch`'s own contract, said plainly.
+
+## Spaces
+
+A space is a collection, and it means by `add`, `delete`, `has`, `size` and
+`clear` what `Set` means by them:
+
+```ts
+const kb = m.space(S.kb);
+kb.add(S.parent(S.tom, S.bob));      // answers the space, as Set.add does
+kb.has(S.parent(V.x, S.bob));        // true; a pattern asks the same question
+kb.delete(S.parent(S.tom, S.bob));   // answers whether anything went
+kb.size;
+for await (const atom of kb) { ... } // its stored atoms, unevaluated
+```
+
+`kb.match(pattern)` answers ROWS keyed by the pattern's own variable names, in
+first-seen order; `kb.match(pattern, template)` answers the template's
+instances, evaluated, which is MeTTa's own reading of the third argument of
+`match`.
+
+`kb.eval(term)` reduces a term IN this space, which is the engine's own
+`evalc`: the space's equations are the ones in force and its model is the one
+that applies.
+
+A space is named by an ATOM, so a parametric space is a handle like any other:
+`m.space(S.cache(primary, 100))` names one space per parameter set, and a
+program reads its own parameters back by matching the name. A name and creation
+OPTIONS compose freely, which the Python side records as a gap it wanted
+closed:
+
+```ts
+const locked = m.space(S.locked, { grants: [] });
+locked.add(m.parse("(= (double $x) (* $x 2))"));
+await locked.eval(S.double(21)).one();          // 42: ordinary computation stays
+await locked.eval(S.exists_file("x")).toArray();
+//  &locked cannot run exists_file because its restricted base does not publish
+//  the file capability; grant it explicitly when the space is created
+
+const reader = m.space(S.reader, { grants: ["file"] });   // and now it runs
+```
+
+`kb.readsThrough(parent)` declares that a space reads its parent's atoms and
+writes its own, which is what a world rides on.
+
+## The three doors
+
+### define, from a plain body
+
+A plain function's own source is LOWERED into one equation. The whole body
+lives in the engine afterwards, so a call costs no host crossing at all:
+
+```ts
+function findDivisor(n: number, d: number): number {
+  if (d * d > n) return n;
+  if (n % d === 0) return d;
+  return findDivisor(n, d + 1);
+}
+const divisor = m.define(findDivisor);
+// (= (find-divisor $n $d)
+//    (if (> (* $d $d) $n) $n (if (== (% $n $d) 0) $d (find-divisor $n (+ $d 1)))))
+```
+
+The body is real TypeScript, so `findDivisor(91, 2)` still answers `7` in
+TypeScript, its types check, and a second definition names it as an ordinary
+identifier:
+
+```ts
+const isPrime = m.define(function isPrime(n: number): boolean {
+  return n === findDivisor(n, 2);
+}, { name: "prime?" });
+
+await isPrime(53537257).one();       // True
+```
+
+`===` becomes the engine's `==`, `%` becomes `%`, and the recursion becomes a
+call. A construct with no MeTTa meaning refuses at DEFINITION time, naming
+both the construct and the remedy; a free name nothing defines refuses the
+same way, which is what makes a minified build say so instead of building a
+term out of `t` and `n`.
+
+The parser is [acorn](https://github.com/acornjs/acorn), never the `typescript`
+package: TypeScript 7 ships no Strada API, so `ts.createSourceFile` is absent
+there. Types are erased before `Function.prototype.toString()` ever runs, so
+what is parsed is always plain ECMAScript.
+
+### define, from a generator body
+
+A generator body is TRACED once with symbolic arguments. `yield*` ASKS a goal
+and `yield` EMITS an answer, and each spelling has exactly one meaning
+wherever it appears:
+
+```ts
+const grandparent = m.define(function* grandparent(x: Term) {
+  const { y } = yield* m.match(S.parent(x, V.y));
+  const { z } = yield* m.match(S.parent(y, V.z));
+  return z;
+});
+// (= (grandparent $x) (match &self (parent $x $y) (match &self (parent $y $z) $z)))
+```
+
+A conjunction of goals IS a nest of matches in MeTTa, because each one's
+template is the rest of the body. Several emissions are several clauses, each
+under the goals asked above it:
+
+```ts
+const descendants = m.define(function* descendants(x: Term) {
+  const { c } = yield* m.match(S.parent(x, V.c));
+  yield c;                    // a child is a descendant
+  yield S.descendants(c);     // and so is every deeper one
+});
+// (= (descendants $x) (match &self (parent $x $c) $c))
+// (= (descendants $x) (match &self (parent $x $c) (descendants $c)))
+```
+
+Recursion inside a traced body is a MENTION, `S.descendants(c)`, not a call: a
+named function expression binds its own name to the generator function, and
+the const being defined is still in its temporal dead zone. That is the
+mention law said twice: `S.f()` builds the term, `f(...)` asks. A LOWERED body
+needs no such care, because its own source is read.
+
+A body that branches on a symbolic binding refuses at definition time, naming
+both remedies: write the comparison as a term (`If(gt(x, 0), ...)`), or define
+the body as a plain function so its own source is lowered, where a real `if`
+works.
+
+### op, for host code the engine calls
+
+```ts
+const nowMs = m.op(function nowMs(): number { return Date.now(); },
+                   { effect: "oracleIO" });
+```
+
+A plain body answers once. A GENERATOR body is nondeterminism from JavaScript,
+pulled one answer at a time, so an unbounded generator is usable. An ASYNC
+body, or an async generator, is awaited between the engine's ask and its
+answer:
+
+```ts
+m.op(function* upto(n: number) { for (let i = 1; i <= n; i += 1) yield i; },
+     { effect: "pureStructural" });
+m.op(async function fetchJson(url: string) { return (await fetch(url)).json(); });
+```
+
+An operation declares the WEAKEST effect class that is honestly true of it,
+out of `pureStructural`, `readOnlyLookup`, `nondeterministicReadOnly`,
+`writesState` and `oracleIO`. An unstated one is `oracleIO`, which is the
+fail-closed reading. `{ raw: true }` hands the body ATOMS instead of values,
+for a body that looks at structure.
+
+`G(x)` crossing into the engine and back answers `x` ITSELF (`===`).
+
+## Scopes
+
+Resource-shaped constructs take `using`:
+
+```ts
+{
+  using _ = m.limits({ stack: 1_000_000 });
+  using s = m.stats();
+  await m.eval(term);
+  console.log(s.inferences, s.crossings, s.replays);
+}
+```
+
+Inferences are the engine's own counter: deterministic, transport independent.
+Crossings are this transport's N+1 counter, one per host-to-engine round trip,
+so a lowered body costs none per call and a live operation costs its yields.
+
+`using` is a Node 24 syntax (Node 22's V8 rejects it, though it does carry
+`Symbol.dispose`). On Node 22, compile, or call `.release()` and
+`[Symbol.dispose]()` directly; the objects themselves work either way.
+
+### Worlds
+
+A world is a DRAFT: claim, try, then commit or restore.
+
+```ts
+const w = m.world(todos);
+w.add(S.todo(id, text));
+try { await api.save(todo); w.commit(); } catch { w.restore(); }
+```
+
+Adds land in a child space the engine makes read through the parent, so a
+query inside the world sees the parent's atoms and the draft's together.
+Removals are journalled on this side, because a child cannot un-see its
+parent's atom, and applied when the world commits, inside ONE engine
+transaction. `restore()` is free, because the parent was never touched.
+
+**The one thing to know:** between `w.remove(a)` and `w.commit()`, a query made
+OUTSIDE the world still sees `a`. The world's own `match`, `has` and `atoms`
+honour the journal.
+
+A world cannot be an SWI transaction held open across host calls, because
+`engine_yield/1` cannot unwind through the nested query frame `transaction/1`
+opens; `m.speculate(term)` is the door for the engine's own discarded
+execution scope, for a plan the engine runs by itself.
+
+## Theories
+
+Equations group as a class, which is the grouping form and is required
+nowhere:
+
+```ts
+class Arithmetic {
+  twiceOver(n: number): number { return n * 2; }
+  thriceOver(n: number): number { return n * 3; }
+}
+m.theory(Arithmetic);          // installs `twice-over` and `thrice-over`
+```
+
+A class with no marks installs every own prototype method. `@equation`,
+`@grounded` and `@tabled` narrow that to the marked ones, for a class that also
+carries helpers, and they compose. They need a BUILD, though: TypeScript
+compiles Stage-3 method decorators and V8 has not shipped them, so a decorated
+class does not run under Node's own type stripping. The unmarked form runs
+everywhere.
+
+## Coordination
+
+```ts
+const row = await jobs.take(S.job(V.n), { signal: AbortSignal.timeout(50) });
+```
+
+`peek` waits until a matching atom is there and leaves it; `take` removes one.
+There is no engine-side blocking wait (`take-atom` needs `library(thread)`,
+which a WebAssembly SWI does not have), so these poll, bounded by the signal.
+The take is still a take rather than a race: the read and the removal are two
+synchronous engine calls with nothing between them, and this host is
+single-threaded.
+
+`m.race([a, b])` answers the first branch and cancels the rest through their
+signals; `Promise.any` is the platform's word for it, with the cancellation
+wired.
+
+## Live queries
+
+```ts
+for await (const { edge, atom } of kb.watch(S.todo(V.id, V.state))) { ... }
+```
+
+Admissions are the engine's own atom events, queued and drained. There is no
+engine-side blocking wait, because a WebAssembly SWI has no `library(thread)`,
+so this polls the queue; `{ pollMs }` sets the interval and an `AbortSignal`
+ends it.
+
+## Vocabulary
+
+```ts
+const kb = m.schema({
+  parent: "(-> Symbol Symbol %Undefined%)",
+  ageOf:  "(-> Symbol Number)",
+});
+```
+
+One writing, three realms: the TypeScript type, the runtime term, and the
+engine-side declaration all come from the same object literal. A declared name
+takes the same casing map as every other vocabulary door, so `ageOf` installs
+`age-of`.
+
+The `decodeWith` door speaks [Standard Schema](https://standardschema.dev), so
+Zod, Valibot, ArkType, TypeBox, Yup and Joi all validate an answer with no
+runtime dependency added here.
+
+## Libraries
+
+A library installs in BOTH realms through one call, and is DATA once it is
+here:
+
+```ts
+m.use({ name: "greetings", source: "(= (greet $who) (Hello $who))",
+        grants: ["network"], vocabulary: ["greet"] });
+
+await m.catalog.match(S.library(V.name, V.version));   // what is loaded
+```
+
+A library declares the capabilities it needs, so a restricted space refuses it
+by grant, and one that cannot find its own artifact refuses loudly rather than
+failing later somewhere else.
 
 ## Numbers
 
-MeTTa has `Number` and `BigInt`. A float and an integer from
--9223372036854775808 through 9223372036854775807 have type `Number`. An
-integer outside that inclusive range has type `BigInt`. The engine keeps all
-integer values exact in SWI, so arithmetic may cross the boundary in either
-direction.
+JavaScript has ONE number type and MeTTa has two, so the crossing has to
+choose, and the choice is stated rather than left to chance.
 
-Every Prolog integer arrives as a JavaScript `BigInt`, including the integers
-whose MeTTa type is `Number`. Every Prolog float arrives as a JavaScript
-`number`. The language type follows the integer value, while the JavaScript
-kind preserves the integer/float distinction. The distinction matters because
-the engine answers `False` to `(== 2 2.0)`. The private bridge carries a
-canonical decimal string before it constructs either host value. It never
-passes a wide integer through a JavaScript `number`.
+The distinction lives in the ATOM CLASS. `G(42)` is the integer `42` and
+`float(42)` is the float `42.0`; they are different atoms and both hold the
+JavaScript number `42`. `G(1.5)` and `float(1.5)` are the SAME atom, because a
+number with a fraction is already a float. A `bigint` is always an integer,
+however large, and an integer past the exactly-representable range stays one.
 
-Measured 2026-08-20 with Node 22.22.1 and swipl-wasm 8.0.6, both signed-i64
-boundaries and `2^127 + 12345` crossed exactly in both directions. Raw
-swipl-wasm changes its host representation from `Number` to `BigInt` at
-`2^53`, so the binding does not use raw conversion as its numeric wire.
+`(== 2 2.0)` answers **True**: numeric equality is by VALUE across the
+integer/float constructors, following LeaTTa's `Ground.equiv`. What tells them
+apart is IDENTITY, which is what a codec has to preserve:
+
+```
+!(=alpha 2 2.0)                      False
+!(case 2 ((2.0 float) ($_ other)))   other
+!(subtraction-atom (2 2.0) (2))      (2.0)
+```
 
 The one thing this host has no type for is a rational, and it says so:
 
@@ -130,18 +414,80 @@ the number 1r3 has no JavaScript type; a rational crosses as its Prolog
 spelling and this host has nothing to hold it in
 ```
 
+## Errors are data, and interruption is opt-in
+
+MeTTa answers an ERROR ATOM per failing branch and keeps the successful
+branches beside them, which is what makes an error data: a program may match
+on one, count them, or ignore them.
+
+```ts
+const answers = await m.eval(Superpose([S.bad(1), S["+"](1, 1)]));
+answers.filter(isError);       // one (Error (car-atom ()) "...")
+answers.filter((a) => !isError(a));   // the 2
+```
+
+`orThrow()` is the door for a caller who would rather be interrupted. One
+failing branch raises its own error; several raise the platform's own
+`AggregateError`, with one entry per branch, each carrying its error atom as
+`cause`, so reporting a failure never loses the data:
+
+```ts
+try {
+  await m.eval(term).orThrow();
+} catch (e) {
+  if (e instanceof AggregateError) console.log(e.errors);
+}
+```
+
+## Nothing reaches your console
+
+An embedded engine that prints is printing over whatever the host was saying,
+so this one does not. A program's own `println!` is buffered and
+`m.drainOutput()` hands it over; an engine error is raised as a `PettaError`
+carrying the engine's own message, never written out. Pass
+`metta({ verbose: true })` when you want the engine's trace.
+
+That took work rather than being free: swipl-wasm writes every Prolog
+exception to the console before handing it back, and offers no switch, so
+`bridge.pl` catches inside the engine and the outcome crosses as data.
+
+Every refusal carries a stable `code`, so a test or a tool matches the code
+and the prose stays free to improve: `ERR_METTA_ENGINE`, `ERR_METTA_WIRE`,
+`ERR_METTA_ABSENT`, `ERR_METTA_AMBIGUOUS`, `ERR_METTA_NAME`,
+`ERR_METTA_CAPABILITY`, `ERR_METTA_TRACE`, `ERR_METTA_LOWER`,
+`ERR_METTA_CLOSED`, `ERR_METTA_UNSUPPORTED`.
+
+## How a host operation reaches JavaScript
+
+Through SWI's own engine coroutine, not through `library(wasm)`'s `:=`.
+
+A goal running inside an SWI engine `engine_yield/1`s a host-call request to
+`engine_next/2`; this side computes the answer, `engine_post/2`s it back, and
+the goal resumes. That is the shape Lua takes for a host call and the shape
+Emscripten's Asyncify takes for a suspension. It needs no globals, no `eval`
+(so it is CSP-clean, which the browser target requires), and it lets the host
+`await` between the ask and the answer, which is what makes an async operation
+ordinary here.
+
+`library(wasm)`'s `:=/2` is present in this build and unusable from Node: its
+JavaScript half starts every chain with `obj = obj || window`, a bare
+identifier, so every call raises `ReferenceError: window is not defined`.
+Defining `globalThis.window` after boot does work, and would make every
+browser-detecting package in the host process believe it is in a browser, so
+it is refused here.
+
 ## What this build does not carry
 
 Four platform libraries are absent from a WebAssembly SWI and there is no
 substitute for any of them, so the capabilities that rest on them are absent
-too. `boot()` reports them on `metta.refusals`, each with what it costs, and
+too. `metta()` reports them on `m.refusals`, each with what it costs, and
 **raises on any refusal it does not name**, so an absence cannot creep in
 quietly:
 
 | missing | in | costs |
 |---|---|---|
 | `library(thread)` | `engine/metta.pl` | `concurrent_maplist`, so `jobs/2`. The build is single-threaded. |
-| `library(time)` | `engine/metta.pl` | `alarm/4`, so `metta_timeout/2`. Bound the pull from the host instead. |
+| `library(time)` | `engine/metta.pl` | `alarm/4`, so `metta_timeout/2`. An `AbortSignal` bounds the pull from this side instead. |
 | `library(process)` | `engine/metta.pl` | subprocess operations; a WebAssembly instance has none to start. |
 | `library(process)` | `lib/lib_gitimport.pl` | `import!` from git, which shells out. |
 
@@ -150,64 +496,84 @@ engine parses, translates and evaluates end to end.
 
 ## What the binding calls
 
-Only published surface. `bindings/node/bridge.pl` is this binding's Prolog half
-and every engine predicate it calls carries an `seam:kind/2` in
-`engine/ext_points.pl` as a `service` or a `host_service`, or is a MeTTa builtin
-that `builtin_fun/1` enumerates. That is checked rather than promised:
+Only published surface. `bridge.pl` is this binding's Prolog half and every
+engine predicate it calls carries an `seam:kind/2` in `engine/ext_points.pl`
+as a `service` or a `host_service`, or is a MeTTa builtin that `builtin_fun/1`
+enumerates. That is checked rather than promised:
 `tests/prolog/static_checks.pl`'s
 `a_host_binding_calls_only_published_surface` walks every host transport with
 SWI's own `prolog_walk_code/1`, so a call that reaches an internal fails the
-gate naming the pair. What it calls:
-
-- `parse_metta_source/2`, `prepare_parsed_forms/1`, `process_form/3` to run a
-  program, in the order the engine's own loader runs them
-- `import_when/4`, `replacing_previous_load/4`,
-  `load_imported_metta_file_impl/3`, `with_source_load/3`,
-  `read_metta_source/2` for a file, so both doors record the load under the
-  same canonical path and a reload replaces rather than doubles
-- `space_module/2` and `with_metta_module/2` to run in a named space
-- `swrite/2` for an answer's text, because the engine's writer is the only
-  authority on how an atom spells
-- `eval/2`, the MeTTa builtin, as the answer enumerator a cursor resumes
-- `catch_recover/2` for the working-directory probe
+gate naming the pair.
 
 ## The conformance kit
 
 The binding is held to the codec twice, and the two answer different
 questions.
 
-`kit/driver.mjs` exposes it as one `CodecDriver` for the golden corpus at
+`kit/driver.ts` exposes it as one `CodecDriver` for the golden corpus at
 `tests/codec/corpus.json`, which is the grammar's authority. A whole binding
-runs every leg the kit has, where a wire-carrying store runs two: it reads
-MeTTa source, prints through the engine's own writer, round trips an atom, and
-runs programs. Measured 2026-08-26 against the corpus: **67 cases in scope,
-zero complaints**, with only the `o` tag and protocol frames declared out of
-profile [tested:
-test_the_binding_runs_every_leg_and_says_which_cases_it_does_not;
-commit=d0631377c5e01a5d34d1c3437e283f87a0fab86f]. The kit earned that by catching a real defect first, which
-is what a kit is for: the decoder minted a fresh variable per occurrence, so
-`(f $x $x)` came back as `(f $x $y)`.
+runs every leg the kit has: it reads MeTTa source, prints through the engine's
+own writer, round trips an atom, and runs programs.
 
-`kit/corpus.json` and `kit/run.mjs` answer the other question. They record
-cases and never answers, because `bindings/python/tests/test_node_binding.py` runs the
-same programs through the shipped Python host in the same moment and compares
-the two. A codec can satisfy a written-down grammar and still disagree with
-the engine beside it, and that is what this half would catch.
-
-The runner prints the whole report as JSON:
+`kit/corpus.json` and `kit/run.ts` answer the other question. They record
+cases and never answers, because `bindings/python/tests/test_node_binding.py`
+runs the same programs through the shipped Python host in the same moment and
+compares the two. A codec can satisfy a written-down grammar and still
+disagree with the engine beside it, and that is what this half would catch.
 
 ```sh
-node kit/run.mjs | head -40
+npm run kit | head -40
 ```
+
+## Running the suite
+
+| command | what it runs | needs |
+|---|---|---|
+| `npm test` | compiles, then `node --test build/test/*.test.js` | any Node 22.18+ |
+| `npm run test:source` | `node --test test/*.test.ts` | a Node with type stripping, and Node 24 for `using` |
+| `npm run typecheck` | both tsconfigs | |
+| `npm run kit` | the live-host comparison report | |
+
+`npm test` compiles rather than type-stripping because a distro Node is often
+built without TypeScript support (`node -p
+process.config.variables.node_use_amaro` answers false on Debian and Ubuntu),
+and a gate that only ran on the official build would not run on the machine
+that most needs it.
 
 ## Layout
 
 | file | what it is |
 |---|---|
-| `index.mjs` | the binding: boot, run, load, read, stream, and the codec |
-| `bridge.pl` | its Prolog half: the codec, the program pipeline, the cursor |
-| `kit/driver.mjs` | the binding as one CodecDriver, for the golden corpus |
-| `kit/corpus.json` | the live-host comparison's own cases |
-| `kit/run.mjs` | the runner that answers them |
-| `test/binding.test.mjs` | `node --test` |
-| `example/streaming.metta` | the program the README and the tests run |
+| `src/atom.ts` | the interned atom algebra, its printing and its order |
+| `src/wire.ts` | the tagged codec, at both strictnesses |
+| `src/engine.ts` | boot, the job pump, and host-operation dispatch |
+| `src/answers.ts` | the lazy, thenable, async-iterable ask |
+| `src/space.ts` | a space as a collection, and its query doors |
+| `src/metta.ts` | the surface: the doors, the scopes, the reflection verbs |
+| `src/define/lower.ts` | a plain body, lowered from its own source |
+| `src/define/trace.ts` | a generator body, traced into clauses |
+| `src/define/define.ts` | the three definition doors |
+| `src/words.ts` | the word door, the control forms, the case tower |
+| `src/scopes.ts` | limits, stats and worlds, through `using` |
+| `src/schema.ts` | the vocabulary door and Standard Schema interop |
+| `src/library.ts` | the extension tier |
+| `src/state.ts` | a state cell |
+| `src/types/sexpr.ts` | MeTTa text, read at the type level |
+| `bridge.pl` | the Prolog half: the codec, the job pump, the host-op trampoline |
+| `test/*.test.ts` | `node --test` |
+| `kit/` | the conformance kit, both halves |
+| `example/` | the programs the README and the tests run |
+
+## A note on TypeScript versions
+
+The package is built with TypeScript 6. Under 5.9, `for await` over an ask
+sometimes resolves to the yieldable protocol's synchronous iterator rather
+than the async one, and reports that a bound name does not exist on
+`GoalRequest`. TypeScript 6.0.3 resolves it correctly, and the design this
+follows targets TS 6/7 semantics anyway. The runtime is unaffected: `for await`
+prefers `Symbol.asyncIterator` in every engine.
+
+A consumer with `noUncheckedIndexedAccess` on will see `S.parent` typed as
+`Name | undefined`, because the ambient factories spell any name through an
+index signature. Declaring vocabulary with `m.schema(...)`, or using the call
+door `S("parent")`, is exact under either setting.

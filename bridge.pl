@@ -1,56 +1,79 @@
-% Purpose: the Prolog half of the Node binding's transport. It runs a MeTTa
-%   program, holds one query open as a resumable answer stream, and speaks the
-%   seven-tag codec the other bindings speak, so a JavaScript host can embed
-%   the engine in its own process.
+% Purpose: the Prolog half of the Node binding's transport. It runs MeTTa
+%   inside an SWI engine that can suspend, so answers arrive one at a time and
+%   a host operation written in TypeScript is called from the middle of a
+%   reduction; it speaks the tagged codec the other bindings speak; and it
+%   carries the space, registration and scope verbs the TypeScript surface
+%   rests on.
 % Assumes:
 %   - every engine predicate called here carries an seam:kind/2 in
 %     engine/ext_points.pl, service or host_service, or is a MeTTa builtin that
 %     builtin_fun/1 already enumerates [tested: tests/prolog/static_checks.pl,
 %     a_host_binding_calls_only_published_surface]
-%   - engine_create/3 and engine_next/2 exist in the host SWI, including the
-%     WebAssembly build [measured 2026-08-20: swipl-wasm 8.0.6, SWI 100113,
-%     an engine held across separate host calls with unrelated calls in
-%     between resumed correctly]
+%   - engine_create/3, engine_next/2, engine_post/3, engine_yield/1 and
+%     engine_fetch/1 exist in the host SWI, including the WebAssembly build
+%     [measured 2026-08-27: swipl-wasm 8.0.6, a goal yielded a host request,
+%     the host posted an answer back and the goal resumed with it]
+%   - engine_yield/1 may NOT be called from inside transaction/1 or
+%     snapshot/1: both open a nested C query frame the yield cannot unwind
+%     through, and the attempt raises "No permission to execute vmi I_YIELD"
+%     [measured 2026-08-27; it works inside catch/3, once/1, call/1,
+%     if-then-else, forall/2, findall/3, aggregate_all/3 and
+%     setup_call_cleanup/3]
 %   - the transport carries a number as its canonical Prolog text, because
 %     the WebAssembly value conversion renders the float 2.0 as the
 %     JavaScript number 2, which is also what the integer 2 renders as, and
-%     MeTTa tells the two apart [measured 2026-08-20: (== 2 2.0) answers
-%     False, and both terms crossed as the JavaScript number 2]
+%     the two are DIFFERENT ATOMS [measured 2026-08-27: (=alpha 2 2.0) is
+%     False, (case 2 ((2.0 float) ($_ other))) answers other, and
+%     (subtraction-atom (2 2.0) (2)) answers (2.0)]. The header here used to
+%     cite (== 2 2.0) answering False; it answers True, and engine/metta/
+%     operators.pl says why: numeric equality is by VALUE across the
+%     integer/float constructors, following LeaTTa's Ground.equiv. Equality
+%     promotes, identity does not, and a codec has to preserve identity.
 % Guarantees:
-%   - petta_node_next/2 computes at most one answer per call, so a host that
+%   - petta_node_step/2 computes at most one event per call, so a host that
 %     stops pulling leaves the rest of an infinite stream uncomputed
-%     [tested: test_the_node_binding_leaves_the_third_answer_uncomputed]
+%     [tested: "leaves an abandoned stream's remaining answers uncomputed"]
 %   - a term the codec has no tag for raises rather than crossing as text
-%   - petta_node_close/1 is idempotent
-%   - no Prolog exception reaches the host: every call arrives through
-%     petta_node_do/2 and the outcome crosses as data
-%     [tested: the node --test suite, "raises an error rather than printing it"]
+%     [tested: "refuses a tag outside the grammar"]
+%   - petta_node_stop/1 is idempotent
+%     [tested: "closes a cursor that is abandoned before its first pull"]
+%   - no Prolog exception reaches the host: every synchronous call arrives
+%     through petta_node_do/2 and every job body through petta_node_guarded/2,
+%     so the outcome crosses as data
+%     [tested: "raises an error rather than printing it"]
+%   - a host operation's dispatch clause refuses with its own diagnostic when
+%     it is reached outside an engine, rather than with SWI's vmi message
+%     [tested: "refuses a host operation reached where the engine cannot
+%     suspend"]
 %   - signed-i64 Number values and wider BigInt values cross as exact decimal
-%     text in both directions [tested: the node --test suite,
-%     "carries Number and BigInt across the signed-i64 boundary"]
+%     text in both directions
+%     [tested: "carries Number and BigInt across the signed-i64 boundary"]
 %   - p accepts only an ampersand-prefixed space name, and the reserved engine
 %     spaces cross as p rather than collapsing into ordinary symbols
-%     [tested: test_a_second_language_binding_passes_the_same_conformance_kit;
-%     commit=d0631377c5e01a5d34d1c3437e283f87a0fab86f]
+%     [tested: "decodes a portable space reference into an interned handle",
+%     "reads a space reference back as an interned handle"]
 %   - runnable free variables retain source names in their wire value and host
-%     text [tested: test_the_node_binding_and_the_python_host_answer_the_same_programs;
-%     commit=916def0562c211143bb91cd0bd8b2c9dac7ab4fa]
-% Owns: one SWI engine per open cursor, released by petta_node_close/1, which
-%   the JavaScript iterator calls from its own return() so an abandoned
-%   for-await releases it.
-% Decides: a Prolog integer crosses as decimal text and a float as its ~q
-%   spelling. The JavaScript side reads every integer as a BigInt and every
-%   float as a number. The integer value determines its MeTTa Number or BigInt
-%   type after it crosses.
+%     text [tested: "keeps a source variable's own name in the answer and in
+%     the text"]
+% Owns: one SWI engine per open job, released by petta_node_stop/1, which the
+%   JavaScript iterator calls from its own return() so an abandoned for-await
+%   releases it; the watch queues; the registered-operation table.
+% Decides: a job, a host value and a watch are addressed by INTEGER, because
+%   the WebAssembly value conversion renders every Prolog blob as the same
+%   opaque {"$t":"b"} and a host that kept the blob could not hand it back.
+%   A Prolog integer crosses as decimal text and a float as its ~q spelling.
 % Open Obligations:
 %   To Do: None
 %   Hacks: None
 %   Future Enhancements: None
 
-:- dynamic petta_node_cursor/2.
+:- dynamic petta_node_job/2.
 :- dynamic petta_node_captured/1.
+:- dynamic petta_node_op/3.
+:- dynamic petta_node_watch/4.
+:- dynamic petta_node_event/3.
 
-%%%%%%%%%% Every call from the host comes through here %%%%%%%%%%
+%%%%%%%%%% Every synchronous call from the host comes through here %%%%%%%%%%
 %
 % swipl-wasm PRINTS a Prolog exception on the host's console before handing it
 % back: its query loop runs `console.error(msg)` or `console.log(msg)` in the
@@ -86,35 +109,34 @@ petta_node_render(Ball, Text) :-
 
 % Deaf outside petta_node_render/2, and it has to be: a hook that succeeds
 % suppresses the message, so an always-on one would swallow the loader's own
-% diagnostics. It is module-qualified because message_hook/3 is SWI's
-% protocol and not a seam of this engine's.
+% diagnostics. It is module-qualified because message_hook/3 is SWI's protocol
+% and not a seam of this engine's.
 :- multifile user:message_hook/3.
 user:message_hook(_, _, Lines) :-
     nb_current('$petta_node_capture', true),
     print_message_lines(atom(Text), '', Lines),
     assertz(petta_node_captured(Text)).
 
-%%%%%%%%%% The seven-tag codec %%%%%%%%%%
+%%%%%%%%%% The tagged codec %%%%%%%%%%
 %
 % The same tags bindings/python/metta/shim.pl's petta_py_encode/2 writes and
-% bindings/python/metta/_atom_wire.py reads: s symbol, v variable, n number, g string,
-% b boolean, e expression, p portable space handle. Two tags that codec has
-% are refused here rather than faked. `o` is a live host object and no
-% JavaScript object is ever inside this engine, and `h` is a native blob,
-% whose whole point is an identity a registry hands back; a binding that
-% stringified either would hand its caller something that cannot go home
-% again.
+% bindings/node/src/wire.ts reads: s symbol, v variable, n number, g string,
+% b boolean, e expression, p portable space handle, o live host value.
+%
+% `o` carries a JavaScript value BY REFERENCE. The engine has no JavaScript
+% values, so the honest representation is a handle: the host keeps the object
+% in its own table and the engine holds the integer, which is what makes
+% handing the reference back reach the very same object. `h`, a native engine
+% blob, is refused rather than faked, because its whole point is an identity a
+% registry hands back and this binding has no registry for one.
 %
 % The number payload is TEXT and that is this transport's own decision, not
 % the grammar's. Every other payload survives the WebAssembly value
 % conversion unchanged; raw swipl-wasm changes from JavaScript Number to
 % BigInt at 2^53, while the language changes from Number to BigInt at signed
-% i64. Text keeps those independent and preserves the integer/float split. It
-% is what the shipped JSON codec already falls back on for the same reason
-% (bindings/python/examples/integration/typescript_space/space_server.ts reads the JSON
-% source literal rather than the parsed number, so an integer past 2^53 is
-% caught instead of silently rounded).
+% i64. Text keeps those independent and preserves the integer/float split.
 petta_node_encode(T, [v, Name]) :- var(T), !, term_to_atom(T, A), atom_string(A, Name).
+petta_node_encode(T, [o, Text]) :- petta_node_object_id(T, Id), !, number_string(Id, Text).
 petta_node_encode(T, [n, Text]) :- number(T), !, petta_node_number_text(T, Text).
 petta_node_encode(T, [g, T])    :- string(T), !.
 petta_node_encode(T, [b, T])    :- ( T == true ; T == false ), !.
@@ -156,9 +178,7 @@ petta_node_number_text(T, Text) :- format(atom(A), '~q', [T]), atom_string(A, Te
 % The names travel with the walk, because a v payload is an IDENTITY WITHIN
 % ITS TERM and not a display name: two occurrences of one payload are two
 % occurrences of one variable, and (f $x $x) is a different term from
-% (f $x $y). Decoding each occurrence fresh made the two the same term, which
-% the codec kit's corpus caught on its expression-repeated-variable case
-% [measured 2026-08-20].
+% (f $x $y).
 %
 % `_` is the one reserved payload and the exception: fresh at every
 % occurrence and never recorded, exactly as $_ is in source, so two of them
@@ -184,6 +204,11 @@ petta_node_decode_([Tag, Payload], Names, Names, T) :- petta_node_tag(Tag, b), !
     petta_node_atom(Payload, T), ( T == true ; T == false ).
 petta_node_decode_([Tag, Payload], Names, Names, T) :- petta_node_tag(Tag, p), !,
     petta_node_atom(Payload, T), sub_atom(T, 0, 1, _, '&').
+petta_node_decode_([Tag, Payload], Names, Names, T) :- petta_node_tag(Tag, o), !,
+    petta_node_atom(Payload, A),
+    atom_number(A, Id),
+    integer(Id),
+    petta_node_object_atom(Id, T).
 petta_node_decode_([Tag, Payload], Names0, Names, T) :- petta_node_tag(Tag, v), !,
     petta_node_atom(Payload, Name),
     (   Name == '_'
@@ -203,9 +228,7 @@ petta_node_decode_items([W|Ws], Names0, Names, [T|Ts]) :-
 
 % The reader takes back every spelling ~q writes, the non-finite floats
 % included: 1.0Inf, -1.0Inf and 1.5NaN all read back as numbers, where the
-% MeTTa grammar's own inf, -inf and NaN read as symbols
-% [measured 2026-08-20, and the note beside metta_unwritable_symbol/2 in
-% engine/ext_points.pl is why the two spellings differ]. So one clause covers
+% MeTTa grammar's own inf, -inf and NaN read as symbols. So one clause covers
 % the whole numeric tower and the JavaScript side writes ~q's spelling.
 petta_node_number(A, T) :- term_to_atom(T, A), number(T).
 
@@ -215,27 +238,47 @@ petta_node_atom(In, Out) :- atom(In), !, Out = In.
 petta_node_atom(In, Out) :- string(In), !, atom_string(Out, In).
 petta_node_atom(In, Out) :- number(In), !, atom_number(Out, In).
 
-% MeTTa source text as one atom, through the engine's own reader. It is the
-% leg a whole binding has and a storage provider does not: a store carries
-% wire terms and never sees the text they were written as.
+% A live host value is an object of this bridge's own kind, and it is ATOMIC.
+%
+% A COMPOUND term that is not a list is not a MeTTa term at all: measured
+% 2026-08-27, eval/2 answered nothing for '$petta_node_object'(1), in argument
+% position and on its own, while the same handle spelled as an atom passed
+% through eval, sat inside an expression and came out of car-atom unchanged.
+% That is the same shape janus gives the Python side, where a live object is a
+% BLOB and a blob is atomic. The `$` prefix is what makes the name unforgeable
+% from MeTTa source: the reader takes a leading `$` as a variable, so no
+% program can write one of these by hand.
+%
+% The seam is the engine's question in front of every grounded-type lookup,
+% and answering it is what tells a handle apart from an ordinary symbol.
+:- multifile seam:host_object/1.
+seam:host_object(Term) :- petta_node_object_id(Term, _).
+
+petta_node_object_atom(Id, Atom) :-
+    format(atom(Atom), '$petta_node_object#~d', [Id]).
+
+petta_node_object_id(Term, Id) :-
+    atom(Term),
+    atom_concat('$petta_node_object#', Digits, Term),
+    atom_number(Digits, Id),
+    integer(Id).
+
+% MeTTa source text as one atom, through the engine's own reader.
+%
+% sread_with_names/3 rather than sread/2, so a variable keeps the name the
+% SOURCE spelled it with. Without it `(likes ada $drink)` reads back with the
+% writer's own counter for a name, and a host that keys an answer row by the
+% pattern's variables would key it by `_123` [measured 2026-08-27]. The name
+% map is what the engine already carries for exactly this.
 petta_node_read(Source, Wire) :-
     petta_node_text(Source, S),
-    sread(S, Term),
-    petta_node_encode(Term, Wire).
+    sread_with_names(S, Term, VarMap),
+    petta_node_encode_named(Term, VarMap, Wire).
 
-%%%%%%%%%% Running a program %%%%%%%%%%
-%
-% The grouping walk, the working-dir defaulting and the load lifecycle are
-% the engine's host run and load surface (engine/filereader.pl), shared with
-% the Python shim; this side maps its own codec over the term groups and
-% nothing else. One encoded group per ! directive, in source order.
-petta_node_run(Source, Groups) :-
-    petta_node_text(Source, S),
-    metta_host_run_source(S, '&self', [], TermGroups),
-    maplist(petta_node_group, TermGroups, Groups).
-
-petta_node_group(Terms, Encoded) :-
-    maplist(petta_node_answer, Terms, Encoded).
+% A JavaScript string arrives as an atom, because the WebAssembly conversion
+% has one text type going in where Prolog has two [measured 2026-08-20].
+petta_node_text(In, Out) :- string(In), !, Out = In.
+petta_node_text(In, Out) :- atom_string(In, Out).
 
 % Each answer crosses as its wire form AND the engine's own rendering of it.
 % The text is not a convenience, and it is PRESENTATION: the display writer
@@ -250,15 +293,10 @@ petta_node_answer(Term, [Wire, Text]) :-
     petta_node_encode(Term, Wire),
     sdisplay(Term, Text).
 
-% A file, loaded through the same engine door import! uses, so the file is
-% recorded under the canonical path both doors key on and a reload replaces
-% the first load's definitions rather than doubling them.
-petta_node_load(File, Groups) :-
-    petta_node_atom(File, FA),
-    metta_host_load_file(FA, '&self', TermGroups),
-    maplist(petta_node_group, TermGroups, Groups).
+petta_node_group(Terms, Encoded) :-
+    maplist(petta_node_answer, Terms, Encoded).
 
-%%%%%%%%%% One query, held open %%%%%%%%%%
+%%%%%%%%%% Jobs: one engine, suspended between events %%%%%%%%%%
 %
 % An SWI engine is a goal suspended between answers: it "can, if asked,
 % resume" after yielding one, which is the answer-stream reading Tarau states
@@ -266,51 +304,464 @@ petta_node_load(File, Groups) :-
 % Guide to Reinventing a Prolog Machine, ICLP 2017, sections 4.5 and 5). The
 % JavaScript half wraps this pair in an async iterator for the same reason.
 %
+% Two kinds of event come out of one engine and the host tells them apart by
+% shape. A SOLUTION of the job goal is an answer, a group of answers or a
+% value; a YIELD is a request that only the host can satisfy, which is how a
+% TypeScript function becomes a MeTTa operation without the engine ever
+% holding a JavaScript value. Exhaustion is engine_next/2 failing, so the host
+% needs no sentinel.
+%
 % The engine handle stays HERE and the host holds an integer. A blob has no
 % JavaScript identity to hold: the WebAssembly conversion renders every one of
 % them as the same opaque {"$t":"b"} [measured 2026-08-20], so a host that
 % kept the handle could not hand it back.
-%
-% with_metta_module/2 runs INSIDE the engine. An engine has its own stack, so
-% the module in force outside it is not in force within, and
-% current_metta_module/1 would fall back to &self's however the caller had
-% switched it.
-petta_node_open(Source, Space, Id) :-
-    petta_node_text(Source, S),
-    sread(S, Term),
-    space_module(Space, Module),
-    engine_create(Out, with_metta_module(Module, eval(Term, Out)), Engine),
+petta_node_start(Scopes, Command, Id) :-
+    engine_create(Event, petta_node_scoped(Scopes, Command, Event), Engine),
     petta_node_fresh_id(Id),
-    assertz(petta_node_cursor(Id, Engine)).
+    assertz(petta_node_job(Id, Engine)).
 
 petta_node_fresh_id(Id) :-
-    (   aggregate_all(max(N), petta_node_cursor(N, _), Highest)
+    (   aggregate_all(max(N), petta_node_job(N, _), Highest)
     ->  Id is Highest + 1
     ;   Id = 1
     ).
 
-% [] is exhaustion and [Answer] is one answer, so the host needs no sentinel.
-% A closed cursor is a caller bug rather than an empty stream, so it raises.
-petta_node_next(Id, Answer) :-
-    (   petta_node_cursor(Id, Engine)
+petta_node_engine(Id, Engine) :-
+    (   petta_node_job(Id, Engine)
     ->  true
-    ;   throw(error(petta_node_no_cursor(Id),
-                    context(petta_node_next/2, 'this cursor is closed')))
-    ),
-    (   engine_next(Engine, Term)
-    ->  petta_node_answer(Term, One), Answer = [One]
-    ;   Answer = []
+    ;   throw(error(petta_node_no_job(Id),
+                    context(petta_node_step/2, 'this job is closed')))
     ).
 
-% Idempotent: a host that closes after exhaustion, and again from an
-% abandoned iterator's return(), finds nothing the second time and is at peace.
-petta_node_close(Id) :-
-    (   retract(petta_node_cursor(Id, Engine))
+% [] is exhaustion and [Event] is one event, so the host needs no sentinel.
+petta_node_step(Id, Answer) :-
+    petta_node_engine(Id, Engine),
+    ( engine_next(Engine, Event) -> Answer = [Event] ; Answer = [] ).
+
+% Answer a host call and take the next event in one crossing, which is what
+% engine_post/3 is for.
+petta_node_resume(Id, Reply, Answer) :-
+    petta_node_engine(Id, Engine),
+    ( engine_post(Engine, Reply, Event) -> Answer = [Event] ; Answer = [] ).
+
+% Idempotent: a host that stops after exhaustion, and again from an abandoned
+% iterator's return(), finds nothing the second time and is at peace.
+petta_node_stop(Id) :-
+    (   retract(petta_node_job(Id, Engine))
     ->  catch(engine_destroy(Engine), error(existence_error(_, _), _), true)
     ;   true
     ).
 
-% A JavaScript string arrives as an atom, because the WebAssembly conversion
-% has one text type going in where Prolog has two [measured 2026-08-20].
-petta_node_text(In, Out) :- string(In), !, Out = In.
-petta_node_text(In, Out) :- atom_string(In, Out).
+%%%%%%%%%% Scopes: the wrappers a job runs inside %%%%%%%%%%
+%
+% A scope has to be established INSIDE the engine. An engine has its own
+% stack, so a module switch, a stack-limit flag or a transaction opened on the
+% host's side of engine_next/2 is not in force within, and current_metta_module/1
+% would fall back to &self's however the caller had switched it.
+%
+% transaction and speculate are the two scopes a host operation cannot fire
+% inside, because engine_yield/1 cannot unwind through the nested C query
+% frame either of them opens [measured 2026-08-27]. They are here for a plan
+% the ENGINE runs by itself; the TypeScript world door is a draft that commits
+% through the transaction scope with pure data in hand.
+% A scope arrives from the host as a list whose head names it, the same shape
+% every other message here takes, and its head arrives as a STRING because the
+% WebAssembly conversion has one text type going in. petta_node_atom/2 is
+% where the two spellings become one, here as everywhere else in this file.
+petta_node_scoped([], Command, Event) :- !,
+    petta_node_guarded(Command, Event).
+petta_node_scoped([Scope|Rest], Command, Event) :-
+    Scope = [Word|Details],
+    petta_node_atom(Word, Name),
+    petta_node_scope(Name, Details, petta_node_scoped(Rest, Command, Event)).
+
+:- meta_predicate petta_node_scope(+, +, 0).
+petta_node_scope(stack, [Bytes], Goal) :- !,
+    metta_host_with_stack_limit(Bytes, Goal).
+petta_node_scope(module, [Space0], Goal) :- !,
+    petta_node_atom(Space0, Space),
+    space_module(Space, Module),
+    with_metta_module(Module, Goal).
+petta_node_scope(transaction, [], Goal) :- !,
+    petta_transaction(Goal).
+petta_node_scope(speculate, [], Goal) :- !,
+    petta_speculate(Goal).
+petta_node_scope(Unknown, _, _) :-
+    throw(error(petta_node_unknown_scope(Unknown),
+                context(petta_node_scope/3, 'this binding has no such scope'))).
+
+% Every job reports what it spent, as its last event.
+%
+% SWI's inference counter is per ENGINE, so a job's cost cannot be read from
+% outside it: asking after the fact measures a different engine, and asking
+% before the answers are exhausted measures a prefix. The disjunction's second
+% branch runs exactly once, after the command has no more answers, which is
+% the one moment the whole cost is known. A job the host abandons never
+% reaches it and contributes nothing, which is the truth about work that was
+% never asked for.
+%
+% Inferences are the transport-independent gate the Python side proved;
+% crossings and replays are the host's own counters and stay there.
+petta_node_guarded(Command, Event) :-
+    statistics(inferences, Before),
+    (   catch(petta_node_perform(Command, Event),
+              Ball,
+              ( petta_node_render(Ball, Text), Event = [error, Text] ))
+    ;   statistics(inferences, After),
+        Spent is After - Before,
+        petta_node_number_text(Spent, Text),
+        Event = [spent, Text]
+    ).
+
+%%%%%%%%%% The command table %%%%%%%%%%
+%
+% One clause per verb the TypeScript surface needs, each of them a call to
+% published engine surface and nothing else. A command that answers many times
+% is nondeterministic here and the host pulls; one that answers once is
+% deterministic and the host sees a single event followed by exhaustion.
+%
+% The verb is normalised to an atom BEFORE dispatch and an unknown one is
+% refused there, which is what keeps the refusal off the backtracking path: a
+% catch-all clause under the table would fire when a real command ran out of
+% answers, turning "this space is empty" into "no such command".
+petta_node_perform(Command, Event) :-
+    (   Command = [Word|Args],
+        petta_node_atom(Word, Verb),
+        petta_node_verb(Verb)
+    ->  petta_node_command(Verb, Args, Event)
+    ;   throw(error(petta_node_unknown_command(Command),
+                    context(petta_node_perform/2,
+                            'this binding has no such command')))
+    ).
+
+petta_node_verb(Verb) :- memberchk(Verb, [eval, source, run, load, add, remove,
+                                          atoms, count, has, clear, spacenames,
+                                          child, restrict, releasable, release,
+                                          explain, effect, registerop, dropop,
+                                          watch, unwatch, drain, commit]).
+
+% Evaluate a term already built on the host side. This is the primary door:
+% going through text would lose a live host reference, which has no spelling.
+petta_node_command(eval, [Wire, Space0], [answer, Out, Text]) :-
+    petta_node_atom(Space0, Space),
+    petta_node_decode(Wire, Term),
+    space_module(Space, Module),
+    with_metta_module(Module, eval(Term, Result)),
+    petta_node_answer(Result, [Out, Text]).
+
+% Evaluate MeTTa source text, through the engine's own reader.
+petta_node_command(source, [Src, Space0], [answer, Out, Text]) :-
+    petta_node_atom(Space0, Space),
+    petta_node_text(Src, S),
+    sread(S, Term),
+    space_module(Space, Module),
+    with_metta_module(Module, eval(Term, Result)),
+    petta_node_answer(Result, [Out, Text]).
+
+% Run a program. The grouping walk, the working-dir defaulting and the load
+% lifecycle are the engine's own host run surface, shared with the Python
+% shim; this side maps its codec over the term groups and nothing else. One
+% encoded group per ! directive, in source order.
+petta_node_command(run, [Src], [groups, Groups]) :-
+    petta_node_text(Src, S),
+    metta_host_run_source(S, '&self', [], TermGroups),
+    maplist(petta_node_group, TermGroups, Groups).
+
+% A file, loaded through the same engine door import! uses, so the file is
+% recorded under the canonical path both doors key on and a reload replaces
+% the first load's definitions rather than doubling them.
+petta_node_command(load, [File0], [groups, Groups]) :-
+    petta_node_atom(File0, File),
+    metta_host_load_file(File, '&self', TermGroups),
+    maplist(petta_node_group, TermGroups, Groups).
+
+petta_node_command(add, [Space0, Wires], [value, [s, "ok"]]) :-
+    petta_node_atom(Space0, Space),
+    maplist(petta_node_decode, Wires, Terms),
+    metta_add_atoms(Space, Terms).
+
+petta_node_command(remove, [Space0, Wire], [value, [b, Verdict]]) :-
+    petta_node_atom(Space0, Space),
+    petta_node_decode(Wire, Term),
+    metta_host_remove_reported(Space, Term, Verdict).
+
+petta_node_command(atoms, [Space0], [answer, Out, Text]) :-
+    petta_node_atom(Space0, Space),
+    metta_host_stored(Space, Term),
+    petta_node_answer(Term, [Out, Text]).
+
+petta_node_command(count, [Space0], [value, [n, Text]]) :-
+    petta_node_atom(Space0, Space),
+    aggregate_all(count, metta_host_stored(Space, _), N),
+    petta_node_number_text(N, Text).
+
+% Existence is asked against a COPY, so the probe's own bindings cannot
+% narrow the question the caller asked.
+petta_node_command(has, [Space0, Wire], [value, [b, Verdict]]) :-
+    petta_node_atom(Space0, Space),
+    petta_node_decode(Wire, Term),
+    (   \+ \+ ( metta_host_stored(Space, Stored), Stored = Term )
+    ->  Verdict = true
+    ;   Verdict = false
+    ).
+
+petta_node_command(clear, [Space0], [value, [s, "ok"]]) :-
+    petta_node_atom(Space0, Space),
+    metta_host_clear_space(Space).
+
+petta_node_command(spacenames, [], [value, [e, Wires]]) :-
+    metta_space_names(Names),
+    maplist(petta_node_space_wire, Names, Wires).
+
+petta_node_command(child, [Child0, Parent0], [value, [s, "ok"]]) :-
+    petta_node_atom(Child0, Child),
+    petta_node_atom(Parent0, Parent),
+    metta_declare_space_parent(Child, Parent).
+
+petta_node_command(restrict, [Space0, Grants0], [value, [s, "ok"]]) :-
+    petta_node_atom(Space0, Space),
+    maplist(petta_node_atom, Grants0, Grants),
+    metta_declare_restricted_space(Space, Grants).
+
+petta_node_command(releasable, [Space0], [value, [s, "ok"]]) :-
+    petta_node_atom(Space0, Space),
+    metta_assert_space_releasable(Space).
+
+petta_node_command(release, [Space0], [value, [s, "ok"]]) :-
+    petta_node_atom(Space0, Space),
+    metta_release_space(Space).
+
+% The engine's own account of how a match will be answered: which conjuncts a
+% provider claimed, which the engine joins itself, and why one was refused.
+% Prose is the host's own presentation, so the report crosses as its term.
+petta_node_command(explain, [Space0, Wires], [value, [g, Text]]) :-
+    petta_node_atom(Space0, Space),
+    maplist(petta_node_decode, Wires, Patterns),
+    metta_host_explain_match(Space, Patterns, Report),
+    term_string(Report, Text).
+
+petta_node_command(effect, [Name0], [value, [s, Text]]) :-
+    petta_node_atom(Name0, Name),
+    (   petta_operation_effect(Name, Class)
+    ->  atom_string(Class, Text)
+    ;   Text = "unknown"
+    ).
+
+petta_node_command(registerop, [Name0, Arity, Kind0, Effect0], [value, [s, "ok"]]) :-
+    petta_node_atom(Name0, Name),
+    petta_node_atom(Kind0, Kind),
+    petta_node_atom(Effect0, Effect),
+    petta_node_register_op(Name, Arity, Kind, Effect).
+
+petta_node_command(dropop, [Name0, Arity], [value, [s, "ok"]]) :-
+    petta_node_atom(Name0, Name),
+    petta_node_drop_op(Name, Arity).
+
+petta_node_command(watch, [WatchId, Space0, Wire, Edges0], [value, [s, "ok"]]) :-
+    petta_node_atom(Space0, Space),
+    petta_node_decode(Wire, Pattern),
+    maplist(petta_node_atom, Edges0, Edges),
+    retractall(petta_node_watch(WatchId, _, _, _)),
+    assertz(petta_node_watch(WatchId, Space, Pattern, Edges)).
+
+petta_node_command(unwatch, [WatchId], [value, [s, "ok"]]) :-
+    retractall(petta_node_watch(WatchId, _, _, _)),
+    retractall(petta_node_event(WatchId, _, _)).
+
+% Drain the queue, one admission per pull, oldest first. retract/1 on
+% backtracking takes the next one, which is the standard queue walk.
+petta_node_command(drain, [WatchId], [admission, Edge, Wire, Text]) :-
+    retract(petta_node_event(WatchId, Edge, Wire)),
+    petta_node_decode(Wire, Term),
+    sdisplay(Term, Text).
+
+% Apply a world's recorded delta to its parent, atomically. By the time this
+% runs the delta is pure data, so the transaction scope around it is safe:
+% nothing left in it needs to yield to the host.
+petta_node_command(commit, [Child0, Parent0, RemoveWires], [value, [s, "ok"]]) :-
+    petta_node_atom(Child0, Child),
+    petta_node_atom(Parent0, Parent),
+    maplist(petta_node_decode, RemoveWires, Removals),
+    findall(A, metta_host_stored(Child, A), Added),
+    forall(member(R, Removals), metta_host_remove_reported(Parent, R, _)),
+    metta_add_atoms(Parent, Added),
+    metta_host_clear_space(Child).
+
+petta_node_space_wire(Name, [p, Text]) :- atom_string(Name, Text).
+
+%%%%%%%%%% Host operations %%%%%%%%%%
+%
+% A TypeScript function becomes a MeTTa operation the way every other host's
+% does: prove the name is free, assert a dispatch clause into the base tier's
+% module, then make the engine treat the name as a function. The engine
+% publishes that protocol as four calls and this file performs them in order;
+% the effect class travels with the registration, as a (effect Name Class)
+% atom in the catalog, because a registered name needs a reviewed class before
+% a world can decide whether to admit it.
+%
+% The dispatch clause is the only part that is this binding's own, and it is
+% the whole trampoline: encode the arguments, yield the request, take the
+% host's reply and unify. Nothing about it is Node-specific, which is the
+% point: the same clause works over a socket or a worker.
+petta_node_register_op(Name, Arity, Kind, Effect) :-
+    PredArity is Arity + 1,
+    (   petta_node_op(Name, Arity, _)
+    ->  true
+    ;   metta_host_open_function(Name, node, PredArity)
+    ),
+    petta_node_drop_clauses(Name, Arity),
+    length(Args, Arity),
+    append(Args, [Result], HeadArgs),
+    Head =.. [Name | HeadArgs],
+    petta_node_op_body(Kind, Name, Args, Result, Body),
+    space_module('&self', Base),
+    assertz(Base:(Head :- Body)),
+    assertz(petta_node_op(Name, Arity, Kind)),
+    petta_node_declare_effect(Name, Effect),
+    metta_host_adopt_function(Name, node, Kind, PredArity).
+
+% det answers once, many answers as often as the host has answers for. The
+% raw kinds differ only in what the HOST hands its own callback, an atom
+% rather than an unwrapped value, so they share these two bodies and the
+% catalog still records which one was registered.
+petta_node_op_body(many, Name, Args, Result,
+                   petta_node_dispatch_many(Name, Args, Result)) :- !.
+petta_node_op_body(raw_many, Name, Args, Result,
+                   petta_node_dispatch_many(Name, Args, Result)) :- !.
+petta_node_op_body(_, Name, Args, Result,
+                   petta_node_dispatch_det(Name, Args, Result)).
+
+petta_node_declare_effect(Name, Effect) :-
+    metta_add_atoms('&petta', [[effect, Name, Effect]]).
+
+petta_node_drop_clauses(Name, Arity) :-
+    PredArity is Arity + 1,
+    (   petta_node_op(Name, Arity, _)
+    ->  metta_host_drop_function(Name, PredArity),
+        retractall(petta_node_op(Name, Arity, _))
+    ;   true
+    ).
+
+petta_node_drop_op(Name, Arity) :-
+    petta_node_drop_clauses(Name, Arity),
+    (   petta_node_op(Name, _, _)
+    ->  true
+    ;   metta_host_forget_function(Name)
+    ).
+
+% The engine asks who a dispatch goal really is, so a purity refusal names the
+% operation rather than this file's dispatcher.
+:- multifile seam:effect_operation_name/3.
+seam:effect_operation_name(petta_node_dispatch_det(Name, Args, _), Name, Arity) :-
+    length(Args, Arity).
+seam:effect_operation_name(petta_node_dispatch_many(Name, Args, _), Name, Arity) :-
+    length(Args, Arity).
+
+petta_node_dispatch_det(Name, Args, Result) :-
+    petta_node_ask(Name, Args, Reply),
+    petta_node_det_reply(Reply, Result).
+
+petta_node_det_reply([ok, Wire], Result) :- !, petta_node_decode(Wire, Result).
+petta_node_det_reply([fail], _) :- !, fail.
+petta_node_det_reply([error, Text], _) :- !, petta_node_host_throw(Text).
+petta_node_det_reply(Reply, _) :-
+    throw(error(petta_node_bad_reply(Reply),
+                context(petta_node_dispatch_det/3, 'the host answered nothing this side reads'))).
+
+petta_node_dispatch_many(Name, Args, Result) :-
+    petta_node_ask(Name, Args, Reply),
+    petta_node_many_reply(Reply, Result).
+
+% A host operation that answers a whole set at once sends [many, Wires]; one
+% that answers lazily sends [stream] and then one answer per pull, which is
+% what an ordinary JavaScript generator or async generator gives without
+% being drained first. Backtracking into the disjunction is what asks for the
+% next one, so laziness on this side and laziness on that side are one thing.
+petta_node_many_reply([many, Wires], Result) :- !,
+    member(Wire, Wires),
+    petta_node_decode(Wire, Result).
+petta_node_many_reply([stream], Result) :- !,
+    petta_node_pull(Result).
+petta_node_many_reply([fail], _) :- !, fail.
+petta_node_many_reply([error, Text], _) :- !, petta_node_host_throw(Text).
+petta_node_many_reply(Reply, _) :-
+    throw(error(petta_node_bad_reply(Reply),
+                context(petta_node_dispatch_many/3, 'the host answered nothing this side reads'))).
+
+% repeat/0 rather than recursion, so the frame count does NOT grow with the
+% number of answers pulled. The recursive shape left one choice point and one
+% frame per answer and died inside swipl-wasm's own query at about eight
+% thousand of them [measured 2026-08-27]; this one is flat, and a host
+% operation may answer as long as it likes.
+petta_node_pull(Result) :-
+    repeat,
+    petta_node_yield([pull]),
+    engine_fetch(Reply),
+    (   Reply = [ok, Wire]
+    ->  petta_node_decode(Wire, Result)
+    ;   Reply = [done]
+    ->  !, fail
+    ;   Reply = [error, Text]
+    ->  !, petta_node_host_throw(Text)
+    ;   !, throw(error(petta_node_bad_reply(Reply),
+                       context(petta_node_pull/1,
+                               'the host answered nothing this side reads')))
+    ).
+
+petta_node_ask(Name, Args, Reply) :-
+    maplist(petta_node_encode, Args, Wires),
+    petta_node_yield([call, Name, Wires]),
+    engine_fetch(Reply).
+
+% SWI's own diagnostic for a yield outside an engine names a virtual machine
+% instruction, which tells an author of TypeScript nothing. The two places a
+% reduction can be running without one are a transaction scope and a direct
+% Prolog call, and both have a remedy worth naming.
+petta_node_yield(Request) :-
+    catch(engine_yield(Request),
+          error(permission_error(execute, _, _), _),
+          throw(error(petta_node_not_in_engine(Request),
+                      context(petta_node_yield/1,
+                              'a host operation was reached where the engine \c
+                               cannot suspend: it is running outside a job, or \c
+                               inside a transaction or speculate scope, and \c
+                               engine_yield/1 cannot unwind through either')))).
+
+petta_node_host_throw(Text) :-
+    petta_node_atom(Text, Message),
+    throw(error(petta_node_host_error(Message),
+                context(petta_node_host_throw/1, 'a host operation raised'))).
+
+:- multifile prolog:error_message//1.
+prolog:error_message(petta_node_host_error(Message)) -->
+    [ 'the host operation raised: ~w'-[Message] ].
+prolog:error_message(petta_node_not_in_engine(_)) -->
+    [ 'a host operation cannot answer here: the engine has no suspension \c
+       point'-[] ].
+
+%%%%%%%%%% Watching a space %%%%%%%%%%
+%
+% A live query is the engine's own admission event, queued. The two hooks are
+% the engine's atom events; each one records the wire form of every admission
+% a standing pattern matches, and the host drains the queue when it asks for
+% the next one. Matching is against a COPY, so a watch pattern's variables
+% never bind into the atom the space is storing.
+:- multifile seam:atom_added/2.
+seam:atom_added(Space, Atom) :-
+    petta_node_note(add, Space, Atom).
+
+:- multifile seam:atom_removed/2.
+seam:atom_removed(Space, Atom) :-
+    petta_node_note(remove, Space, Atom).
+
+petta_node_note(Edge, Space, Atom) :-
+    forall(( petta_node_watch(WatchId, Space, Pattern, Edges),
+             memberchk(Edge, Edges),
+             \+ \+ Pattern = Atom ),
+           petta_node_queue(WatchId, Edge, Atom)).
+
+petta_node_queue(WatchId, Edge, Atom) :-
+    catch(( petta_node_encode(Atom, Wire),
+            assertz(petta_node_event(WatchId, Edge, Wire)) ),
+          _,
+          true).

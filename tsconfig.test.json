@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "isolatedDeclarations": false,
+    "noUncheckedIndexedAccess": false
+  },
+  "include": [
+    "src",
+    "test",
+    "kit",
+    "example"
+  ]
+}

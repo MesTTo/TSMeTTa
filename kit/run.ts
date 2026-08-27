@@ -18,25 +18,28 @@
  */
 
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
-import { boot, fromTransport, toTransport } from "../index.mjs";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
+import {
+  type Wire,
+  boot,
+  fromTransport,
+  packageRoot,
+  toTransport,
+} from "../src/index.ts";
 
 /**
- * The form both hosts compare in. Three things differ between them and each
- * is settled here rather than in either binding:
+ * The form both hosts compare in. Three things differ between them and each is
+ * settled here rather than in either binding:
  *
- *   - an integer is a JavaScript BigInt or Python int and a float is a host
+ *   - an integer is a JavaScript bigint or a Python int and a float is a host
  *     number, so the kind travels beside the value and a float travels as its
  *     bits
  *   - a variable's wire name is what the writer numbered it, which changes
  *     between runs and between hosts, so only the tag is compared
  *   - a boolean's payload is a string on the janus wire and a boolean here
  */
-function comparable(wire) {
+function comparable(wire: Wire): unknown {
   const [tag, payload] = wire;
   switch (tag) {
     case "v":
@@ -49,63 +52,81 @@ function comparable(wire) {
       return ["b", payload ? "true" : "false"];
     case "e":
       return ["e", payload.map(comparable)];
+    case "p":
+      return ["p", payload.name];
     default:
       return [tag, payload];
   }
 }
 
-function floatBits(value) {
+function floatBits(value: number): string {
   const view = new DataView(new ArrayBuffer(8));
   view.setFloat64(0, value);
   return [...new Uint8Array(view.buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-const corpus = JSON.parse(readFileSync(join(HERE, "corpus.json"), "utf-8"));
-const petta = await boot();
+interface Corpus {
+  readonly programs: readonly { readonly source: string }[];
+  readonly atoms: readonly { readonly transport: unknown }[];
+  readonly refused: readonly { readonly transport: unknown }[];
+}
 
-const report = {
-  refusals: petta.refusals.map(({ file, missing, line }) => ({ file, missing, line })),
-  programs: [],
-  atoms: [],
-  refused: [],
+const corpus = JSON.parse(
+  readFileSync(join(packageRoot, "kit", "corpus.json"), "utf-8"),
+) as Corpus;
+const engine = await boot();
+
+const report: Record<string, unknown> = {
+  refusals: engine.refusals.map(({ file, missing, line }) => ({ file, missing, line })),
+  programs: [] as unknown[],
+  atoms: [] as unknown[],
+  refused: [] as unknown[],
   streaming: null,
 };
 
+const programs = report["programs"] as unknown[];
 for (const { source } of corpus.programs) {
   try {
-    report.programs.push({
+    const event = engine.start(["run", source]).sync();
+    const groups = event !== null && event.kind === "groups" ? event.groups : [];
+    programs.push({
       source,
-      groups: petta.run(source).map((group) =>
+      groups: groups.map((group) =>
         group.map((answer) => ({ wire: comparable(answer.wire), text: answer.text })),
       ),
     });
   } catch (error) {
-    report.programs.push({ source, error: error.message });
+    programs.push({ source, error: error instanceof Error ? error.message : String(error) });
   }
 }
 
+const atoms = report["atoms"] as unknown[];
 for (const { transport } of corpus.atoms) {
   try {
     const wire = fromTransport(transport);
-    report.atoms.push({
+    atoms.push({
       transport,
       wire: comparable(wire),
       backToTransport: toTransport(wire),
-      roundTrip: comparable(petta.roundTrip(wire)),
-      text: petta.text(wire),
+      roundTrip: comparable(engine.roundTrip(wire)),
+      text: engine.text(wire),
     });
   } catch (error) {
-    report.atoms.push({ transport, error: error.message });
+    atoms.push({ transport, error: error instanceof Error ? error.message : String(error) });
   }
 }
 
+const refused = report["refused"] as unknown[];
 for (const { transport } of corpus.refused) {
   try {
-    const wire = fromTransport(transport);
-    petta.roundTrip(wire);
-    report.refused.push({ transport, refused: false });
+    engine.roundTrip(fromTransport(transport));
+    refused.push({ transport, refused: false });
   } catch (error) {
-    report.refused.push({ transport, refused: true, message: error.message });
+    refused.push({
+      transport,
+      refused: true,
+      message: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -113,18 +134,33 @@ for (const { transport } of corpus.refused) {
 // language sees the evidence rather than the claim. The generator is
 // unbounded, so an eager binding could not reach the line after the loop, and
 // the witness space holds one atom per answer the engine actually produced.
-petta.run(`
+engine.start([
+  "run",
+  `
 (= (tick $n) (let $ignored (add-atom &kit-witness (produced $n)) $n))
 (= (unbounded $n) (superpose ((tick $n) (unbounded (+ $n 1)))))
-`);
-const pulled = [];
-for await (const answer of petta.stream("(unbounded 1)")) {
-  pulled.push(answer.text);
-  if (pulled.length === 2) break;
+`,
+]).sync();
+
+const pulled: string[] = [];
+const stream = engine.start(["source", "(unbounded 1)", "&self"]);
+for (;;) {
+  const event = await stream.next();
+  if (event === null || event.kind !== "answer") break;
+  pulled.push(event.text);
+  if (pulled.length === 2) {
+    stream.close();
+    break;
+  }
 }
-report.streaming = {
+
+const witness = engine.start(["run", "!(collapse (get-atoms &kit-witness))"]).sync();
+report["streaming"] = {
   pulled,
-  produced: petta.run("!(collapse (get-atoms &kit-witness))")[0].map((a) => a.text),
+  produced:
+    witness !== null && witness.kind === "groups"
+      ? (witness.groups[0] ?? []).map((answer) => answer.text)
+      : [],
 };
 
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

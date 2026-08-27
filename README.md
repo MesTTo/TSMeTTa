@@ -489,7 +489,7 @@ quietly:
 | `library(thread)` | `engine/metta.pl` | `concurrent_maplist`, so `jobs/2`. The build is single-threaded. |
 | `library(time)` | `engine/metta.pl` | `alarm/4`, so `metta_timeout/2`. An `AbortSignal` bounds the pull from this side instead. |
 | `library(process)` | `engine/metta.pl` | subprocess operations; a WebAssembly instance has none to start. |
-| `library(process)` | `lib/lib_gitimport.pl` | `import!` from git, which shells out. |
+| `library(process)` | `lib/lib_gitimport/lib_gitimport.pl` | `import!` from git, which shells out. |
 
 Everything else loads. Tabling is present, `library(sha)` is present, and the
 engine parses, translates and evaluates end to end.

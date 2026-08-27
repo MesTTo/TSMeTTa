@@ -96,7 +96,7 @@ user:message_hook(_, _, Lines) :-
 
 %%%%%%%%%% The seven-tag codec %%%%%%%%%%
 %
-% The same tags bindings/python/metta/shim.pl's petta_py_encode/2 writes and
+% The same tags bindings/python/metta/shim.pl's metta_py_encode/2 writes and
 % bindings/python/metta/_atom_wire.py reads: s symbol, v variable, n number, g string,
 % b boolean, e expression, p portable space handle. Two tags that codec has
 % are refused here rather than faked. `o` is a live host object and no
@@ -242,8 +242,8 @@ petta_node_group(Terms, Encoded) :-
 % is the same authority the command line's answers use, so host-only values
 % and non-finite floats render beside their wire forms instead of refusing
 % the whole answer. Round-trip storage keeps swrite/2's stricter contract.
-petta_node_answer('$petta_answer'(Term, NameState), [Wire, Text]) :- !,
-    petta_name_pairs(NameState, Names),
+petta_node_answer('$metta_answer'(Term, NameState), [Wire, Text]) :- !,
+    metta_name_pairs(NameState, Names),
     petta_node_encode_named(Term, Names, Wire),
     sdisplay_with_names(Term, NameState, Text).
 petta_node_answer(Term, [Wire, Text]) :-

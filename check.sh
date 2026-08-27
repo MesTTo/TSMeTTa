@@ -19,7 +19,7 @@
 # atom algebra, the codec, the boot inventory, the lazy answer surface, the
 # three definition doors, the scopes and the extension tier. The conformance
 # corpus is compared against the Python host by
-# bindings/python/tests/ch21_another_language_at_the_seam/test_node_binding.py,
+# extensions/python/tests/ch21_another_language_at_the_seam/test_node_binding.py,
 # in the pytest lane above.
 #
 # swipl-wasm is an npm dependency and this does not fetch it: a gate that
@@ -27,14 +27,14 @@
 # It says which step is missing instead, the same shape the C extension example
 # above takes when swipl-ld is absent.
 check_node_binding() {
-    binding="$HERE/bindings/node"
+    binding="$HERE/extensions/node"
     [ -d "$binding" ] || return 0
     if ! command -v node >/dev/null 2>&1; then
         echo "note: node not found, the Node binding suite will not run" >&2
         return 0
     fi
     if [ ! -d "$binding/node_modules/swipl-wasm" ]; then
-        echo "note: run 'npm ci' in bindings/node, the Node binding suite will \
+        echo "note: run 'npm ci' in extensions/node, the Node binding suite will \
 not run without swipl-wasm" >&2
         return 0
     fi
@@ -48,8 +48,8 @@ not run without swipl-wasm" >&2
     # The path is spelled out rather than reached through $binding because the
     # evidence gate models which files a lane runs by reading this text, and it
     # resolves $HERE/ and not a local variable. Without the literal it cannot
-    # see bindings/node/test/*.test.ts at all, and every evidence claim naming
+    # see extensions/node/test/*.test.ts at all, and every evidence claim naming
     # one of those tests reads as unbacked.
-    ( cd "$HERE/bindings/node" && npm run --silent typecheck && npm run --silent test )
+    ( cd "$HERE/extensions/node" && npm run --silent typecheck && npm run --silent test )
 }
 run GATE node-binding check_node_binding

@@ -12,11 +12,11 @@ set -eu
 HERE=$(cd -- "$(dirname -- "$0")" && pwd)
 
 if ! command -v npm >/dev/null 2>&1; then
-    echo "bindings/node/build.sh: npm not found; the Node binding will not build" >&2
+    echo "extensions/node/build.sh: npm not found; the Node binding will not build" >&2
     exit 0
 fi
 if [ ! -d "$HERE/node_modules" ]; then
-    echo "bindings/node/build.sh: node_modules is absent; run 'npm install' in $HERE" >&2
+    echo "extensions/node/build.sh: node_modules is absent; run 'npm install' in $HERE" >&2
     exit 0
 fi
 cd "$HERE" && npm run build --silent

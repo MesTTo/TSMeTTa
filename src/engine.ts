@@ -92,14 +92,13 @@ const REPO_ROOT = repoRoot;
 const VIRTUAL_ROOT = "/petta";
 
 // The directories engine/metta.pl reaches for while it loads: its own and the
-// standard library. The seat controls under bindings/ stay unmounted: no
-// substrate they gate on exists in wasm, and this binding IS the host, its
-// bridge written into the image below.
+// standard library. This binding IS a seat, and its own bridge is written into
+// the image below rather than mounted from the tree.
 const ENGINE_DIRS = ["engine", "lib"] as const;
 
-// Where the engine globs for a backend's control file. Mounted a file at a
-// time by mountControlFiles below, not as a directory.
-const CONTROL_ROOT = "backends";
+// Where the engine globs for a seat's control file. Mounted a file at a time
+// by mountControlFiles below, not as a directory.
+const CONTROL_ROOT = "extensions";
 
 /** One capability the engine declares, and what its absence costs. */
 export interface Capability {
@@ -255,12 +254,13 @@ function mountInto(
 }
 
 /**
- * Every backend's control file, and nothing else under `backends/`.
+ * Every seat's control file, and nothing else under `extensions/`.
  *
- * The engine READS these at boot to record which backends are present. None
- * of their `entry(engine, _)` files can load in a wasm build, which has no
- * dynamic linking and no janus, so the control file is the only thing here
- * the engine ever opens.
+ * The engine READS these at boot to record which seats are present. None of
+ * their `entry(engine, _)` files can load in a wasm build, which has no
+ * dynamic linking and no janus, and this binding's own seat declares only an
+ * `entry(host, _)` that the engine never loads at all. So the control file is
+ * the only thing under here the engine ever opens.
  *
  * mountInto would copy the whole tree, and a BUILT checkout carries the MORK
  * crate's Rust `target/` under it: 10,808 files and 3.2 GiB, which the image
@@ -268,7 +268,8 @@ function mountInto(
  * 2026-08-28 at e80fd4c3, same commit both ways: with `target/` present this
  * suite reported 70 tests, 62 pass and 8 test files aborted on `FATAL ERROR:
  * ... JavaScript heap out of memory`; with it moved aside, 203 tests and 203
- * pass].
+ * pass]. Merging the seat folders makes it worse rather than better: this
+ * package's own `node_modules` now sits under the same root.
  */
 function mountControlFiles(fs: EmscriptenFS, root: string): void {
   const controls = join(root, CONTROL_ROOT);
@@ -845,7 +846,7 @@ export async function boot(
   mountControlFiles(swipl.FS, root);
   swipl.FS.writeFile(`${VIRTUAL_ROOT}/bridge.pl`, readFileSync(join(PACKAGE_ROOT, "bridge.pl")));
 
-  const flags = verbose ? "['backends']" : "['backends', silent]";
+  const flags = verbose ? "['extensions']" : "['extensions', silent]";
   swipl.prolog.query(`set_prolog_flag(argv, ${flags}).`).once();
   const consulted = swipl.prolog.query(`consult('${VIRTUAL_ROOT}/engine/metta.pl').`).once();
   if (consulted?.error === true) {

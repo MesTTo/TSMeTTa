@@ -11,13 +11,13 @@ builds a term or asks the engine one, and nothing on this side re-implements
 matching, rewriting or nondeterminism.
 
 ```sh
-cd bindings/node
+cd extensions/node
 npm ci        # fetches swipl-wasm and builds the TypeScript
 npm test
 ```
 
 ```ts
-import { metta, S, V } from "./bindings/node/src/index.ts";
+import { metta, S, V } from "./extensions/node/src/index.ts";
 
 const m = await metta();
 
@@ -517,7 +517,7 @@ own writer, round trips an atom, and runs programs.
 
 `kit/corpus.json` and `kit/run.ts` answer the other question. They record cases
 and never answers, because
-`bindings/python/tests/ch21_another_language_at_the_seam/test_node_binding.py`
+`extensions/python/tests/ch21_another_language_at_the_seam/test_node_binding.py`
 runs the same programs through the shipped Python host in the same moment and
 compares the two. A codec can satisfy a written-down grammar and still disagree
 with the engine beside it, and that is what this half would catch.

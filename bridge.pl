@@ -119,8 +119,8 @@ user:message_hook(_, _, Lines) :-
 
 %%%%%%%%%% The tagged codec %%%%%%%%%%
 %
-% The same tags bindings/python/metta/shim.pl's metta_py_encode/2 writes and
-% bindings/node/src/wire.ts reads: s symbol, v variable, n number, g string,
+% The same tags extensions/python/metta/shim.pl's metta_py_encode/2 writes and
+% extensions/node/src/wire.ts reads: s symbol, v variable, n number, g string,
 % b boolean, e expression, p portable space handle, o live host value.
 %
 % `o` carries a JavaScript value BY REFERENCE. The engine has no JavaScript

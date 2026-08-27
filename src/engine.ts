@@ -26,10 +26,10 @@
  *   To Do: None
  *   Hacks: None
  *   Future Enhancements: publishing this to npm needs the engine tree beside
- *     it. boot() mounts engine/, lib/ and backends/ from the checkout, and a
- *     published package carries none of them, which is why package.json is
- *     private for now. The Python side solved the same problem by copying
- *     them under metta/_runtime at build time (setup.py).
+ *     it. boot() mounts engine/, lib/ and the backend control files from the
+ *     checkout, and a published package carries none of them, which is why
+ *     package.json is private for now. The Python side solved the same
+ *     problem by copying them under metta/_runtime at build time (setup.py).
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -91,11 +91,15 @@ export const repoRoot: string = resolve(PACKAGE_ROOT, "..", "..");
 const REPO_ROOT = repoRoot;
 const VIRTUAL_ROOT = "/petta";
 
-// The directories engine/metta.pl reaches for while it loads: its own, the
-// standard library, and the backend control files. The seat controls under
-// bindings/ stay unmounted: no substrate they gate on exists in wasm, and
-// this binding IS the host, its bridge written into the image below.
-const ENGINE_DIRS = ["engine", "lib", "backends"] as const;
+// The directories engine/metta.pl reaches for while it loads: its own and the
+// standard library. The seat controls under bindings/ stay unmounted: no
+// substrate they gate on exists in wasm, and this binding IS the host, its
+// bridge written into the image below.
+const ENGINE_DIRS = ["engine", "lib"] as const;
+
+// Where the engine globs for a backend's control file. Mounted a file at a
+// time by mountControlFiles below, not as a directory.
+const CONTROL_ROOT = "backends";
 
 /** One capability the engine declares, and what its absence costs. */
 export interface Capability {
@@ -247,6 +251,33 @@ function mountInto(
     } else if (keep === undefined || keep(name)) {
       fs.writeFile(virtualPath, readFileSync(hostPath));
     }
+  }
+}
+
+/**
+ * Every backend's control file, and nothing else under `backends/`.
+ *
+ * The engine READS these at boot to record which backends are present. None
+ * of their `entry(engine, _)` files can load in a wasm build, which has no
+ * dynamic linking and no janus, so the control file is the only thing here
+ * the engine ever opens.
+ *
+ * mountInto would copy the whole tree, and a BUILT checkout carries the MORK
+ * crate's Rust `target/` under it: 10,808 files and 3.2 GiB, which the image
+ * cannot hold. That is not a slow boot, it is a dead one [measured
+ * 2026-08-28 at e80fd4c3, same commit both ways: with `target/` present this
+ * suite reported 70 tests, 62 pass and 8 test files aborted on `FATAL ERROR:
+ * ... JavaScript heap out of memory`; with it moved aside, 203 tests and 203
+ * pass].
+ */
+function mountControlFiles(fs: EmscriptenFS, root: string): void {
+  const controls = join(root, CONTROL_ROOT);
+  if (!existsSync(controls)) return;
+  for (const seat of readdirSync(controls)) {
+    const control = join(controls, seat, "extension.pl");
+    if (!existsSync(control)) continue;
+    fs.mkdirTree(`${VIRTUAL_ROOT}/${CONTROL_ROOT}/${seat}`);
+    fs.writeFile(`${VIRTUAL_ROOT}/${CONTROL_ROOT}/${seat}/extension.pl`, readFileSync(control));
   }
 }
 
@@ -811,6 +842,7 @@ export async function boot(
   for (const directory of ENGINE_DIRS) {
     mountInto(swipl.FS, join(root, directory), `${VIRTUAL_ROOT}/${directory}`, source);
   }
+  mountControlFiles(swipl.FS, root);
   swipl.FS.writeFile(`${VIRTUAL_ROOT}/bridge.pl`, readFileSync(join(PACKAGE_ROOT, "bridge.pl")));
 
   const flags = verbose ? "['backends']" : "['backends', silent]";

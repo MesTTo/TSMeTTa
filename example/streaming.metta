@@ -3,7 +3,7 @@
 ; The first half is an ordinary bounded answer; the second is an unbounded
 ; generator, which is what the binding's async iterator is for. Nothing here
 ; is Node's: `superpose` recursing on itself is the generator every MeTTa
-; program writes, and control/metta4_streams.metta writes the bounded form of
+; program writes, and ch07-control-flow/07-04-bounded-and-committed-searches/02-metta4_streams.metta writes the bounded form of
 ; the same shape.
 
 (= (upto $k $n)

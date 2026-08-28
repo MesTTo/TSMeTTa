@@ -23,7 +23,7 @@ import { join } from "node:path";
 import {
   Grounded,
   type MeTTa,
-  PettaError,
+  MettaError,
   S,
   SpaceHandle,
   Superpose,
@@ -117,7 +117,7 @@ describe("running a program", () => {
     // The claim the engine's own loader buys, and the reason loadFile goes
     // through the engine's load door rather than reading the text here and
     // calling run(): a second load of one file replaces what it put there.
-    const directory = mkdtempSync(join(tmpdir(), "petta-node-reload-"));
+    const directory = mkdtempSync(join(tmpdir(), "metta-node-reload-"));
     const file = join(directory, "program.metta");
 
     writeFileSync(file, "(= (reloaded) 1)\n!(collapse (reloaded))\n");
@@ -144,8 +144,8 @@ describe("running a program", () => {
     console.log = (...parts: unknown[]) => written.push(parts.join(" "));
     console.error = (...parts: unknown[]) => written.push(parts.join(" "));
     try {
-      assert.throws(() => m.run("!(unclosed"), PettaError);
-      assert.throws(() => m.run("!(car-atom $u)"), PettaError);
+      assert.throws(() => m.run("!(unclosed"), MettaError);
+      assert.throws(() => m.run("!(car-atom $u)"), MettaError);
     } finally {
       console.log = log;
       console.error = error;
@@ -332,7 +332,7 @@ describe("the answer stream", () => {
     }, { effect: "pureStructural" });
     await assert.rejects(
       () => m.speculate(S["needs-the-host"]()).one(),
-      (error: PettaError) =>
+      (error: MettaError) =>
         /the engine has no suspension point/.test(error.message) &&
         /transaction or speculate scope/.test(error.message),
     );
@@ -340,7 +340,7 @@ describe("the answer stream", () => {
 
   it("ends a stream whose expression will not even open", async () => {
     const stream = m.eval(S["car-atom"](V.u))[Symbol.asyncIterator]();
-    await assert.rejects(() => stream.next(), PettaError);
+    await assert.rejects(() => stream.next(), MettaError);
     assert.deepEqual(await stream.next(), { done: true, value: undefined });
   });
 
@@ -386,11 +386,11 @@ describe("exactly one, and at most one", () => {
   it("refuses zero and more than one, with a code each", async () => {
     await assert.rejects(
       () => m.eval(S.empty()).one(),
-      (error: PettaError) => error.code === "ERR_METTA_ABSENT",
+      (error: MettaError) => error.code === "ERR_METTA_ABSENT",
     );
     await assert.rejects(
       () => m.eval(Superpose([1, 2])).one(),
-      (error: PettaError) => error.code === "ERR_METTA_AMBIGUOUS",
+      (error: MettaError) => error.code === "ERR_METTA_AMBIGUOUS",
     );
   });
 
@@ -419,7 +419,7 @@ describe("errors are data, and interruption is opt-in", () => {
   it("raises one branch's own error, and the platform's AggregateError for several", async () => {
     await assert.rejects(
       () => m.eval(S.bad(1)).orThrow(),
-      (error: unknown) => error instanceof PettaError && !(error instanceof AggregateError),
+      (error: unknown) => error instanceof MettaError && !(error instanceof AggregateError),
     );
     await assert.rejects(
       () => m.eval(Superpose([S.bad(1), S.bad(2)])).orThrow(),

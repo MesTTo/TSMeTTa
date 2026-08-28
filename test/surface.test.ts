@@ -18,7 +18,7 @@ import { after, before, describe, it } from "node:test";
 import {
   type Library,
   type MeTTa,
-  PettaError,
+  MettaError,
   S,
   Space,
   SpaceHandle,
@@ -179,7 +179,7 @@ describe("a restricted space", () => {
     const sealed = m.space(S.sealed, { grants: [] });
     await assert.rejects(
       () => sealed.eval(S.exists_file("package.json")).toArray(),
-      (error: PettaError) =>
+      (error: MettaError) =>
         /does not publish the file capability/.test(error.message) &&
         /grant it explicitly/.test(error.message),
     );
@@ -194,11 +194,11 @@ describe("a restricted space", () => {
     // package's bridge there, and the host's cwd is not in that filesystem at
     // all, so asking about one proves only that nothing refused.
     assert.deepEqual(
-      (await reader.eval(S.exists_file("/petta/bridge.pl"))).map(String),
+      (await reader.eval(S.exists_file("/metta/bridge.pl"))).map(String),
       ["True"],
     );
     assert.deepEqual(
-      (await reader.eval(S.exists_file("/petta/nothing-here"))).map(String),
+      (await reader.eval(S.exists_file("/metta/nothing-here"))).map(String),
       ["False"],
       "the capability let it run and it answered truthfully",
     );
@@ -274,7 +274,7 @@ describe("a world", () => {
     w.commit();
     assert.throws(
       () => w.add(S.late()),
-      (error: PettaError) => error.code === "ERR_METTA_CLOSED",
+      (error: MettaError) => error.code === "ERR_METTA_CLOSED",
     );
   });
 });
@@ -369,7 +369,7 @@ describe("the library tier", () => {
   it("refuses a library whose artifact is absent, rather than failing later", () => {
     assert.throws(
       () => m.use({ name: "absent", present: () => false }),
-      (error: PettaError) => error.code === "ERR_METTA_CAPABILITY",
+      (error: MettaError) => error.code === "ERR_METTA_CAPABILITY",
     );
   });
 });

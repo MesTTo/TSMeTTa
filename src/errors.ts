@@ -7,7 +7,7 @@
  *     convention for its own errors
  *     [source: https://nodejs.org/api/errors.html#errorcode]
  * Guarantees:
- *   - every refusal this binding raises is a `PettaError` with a `code` from
+ *   - every refusal this binding raises is a `MettaError` with a `code` from
  *     {@link Code}, so a test or a tool matches the code and the prose stays
  *     free to improve
  *   - a reduction that failed across several nondeterministic branches raises
@@ -48,12 +48,12 @@ export type Code =
   | "ERR_METTA_UNSUPPORTED";
 
 /** Every refusal this binding raises. */
-export class PettaError extends Error {
+export class MettaError extends Error {
   readonly code: Code;
 
   constructor(message: string, options: { code?: Code; cause?: unknown } = {}) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
-    this.name = "PettaError";
+    this.name = "MettaError";
     this.code = options.code ?? "ERR_METTA_ENGINE";
   }
 }

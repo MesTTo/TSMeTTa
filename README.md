@@ -443,7 +443,7 @@ try {
 
 An embedded engine that prints is printing over whatever the host was saying,
 so this one does not. A program's own `println!` is buffered and
-`m.drainOutput()` hands it over; an engine error is raised as a `PettaError`
+`m.drainOutput()` hands it over; an engine error is raised as a `MettaError`
 carrying the engine's own message, never written out. Pass
 `metta({ verbose: true })` when you want the engine's trace.
 

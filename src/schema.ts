@@ -24,7 +24,7 @@
  */
 
 import { type Atom, type Term, expr, exprOf, sym, toAtom } from "./atom.ts";
-import { PettaError } from "./errors.ts";
+import { MettaError } from "./errors.ts";
 import { type SymFactory, type VarFactory, S, V } from "./factories.ts";
 import { mettaName } from "./naming.ts";
 import type { ArrowResult, SchemaVars, SourceRow } from "./types/sexpr.ts";
@@ -48,7 +48,7 @@ export type StandardResult<Output> =
   | { readonly issues: readonly { readonly message: string }[] };
 
 /** Thrown when an answer does not satisfy the validator it was decoded with. */
-export class SchemaError extends PettaError {
+export class SchemaError extends MettaError {
   readonly issues: readonly { readonly message: string }[];
 
   constructor(issues: readonly { readonly message: string }[], vendor: string) {
@@ -117,7 +117,7 @@ export class Schema<D extends SchemaDeclarations> {
   typeOf<K extends keyof D & string>(name: K): Atom {
     const text = this.declarations[name];
     if (text === undefined) {
-      throw new PettaError(`this schema declares no ${name}`, { code: "ERR_METTA_NAME" });
+      throw new MettaError(`this schema declares no ${name}`, { code: "ERR_METTA_NAME" });
     }
     return parseType(text, name);
   }
@@ -138,14 +138,14 @@ export class Schema<D extends SchemaDeclarations> {
 export function parseType(text: string, name: string): Atom {
   const tokens = text.match(/\(|\)|[^\s()]+/g);
   if (tokens === null) {
-    throw new PettaError(`the declaration for ${name} is empty`, { code: "ERR_METTA_NAME" });
+    throw new MettaError(`the declaration for ${name} is empty`, { code: "ERR_METTA_NAME" });
   }
   let at = 0;
   const read = (): Atom => {
     const token = tokens[at];
     at += 1;
     if (token === undefined) {
-      throw new PettaError(`the declaration for ${name} ends early: ${text}`, {
+      throw new MettaError(`the declaration for ${name} ends early: ${text}`, {
         code: "ERR_METTA_NAME",
       });
     }
@@ -153,7 +153,7 @@ export function parseType(text: string, name: string): Atom {
       const items: Atom[] = [];
       while (tokens[at] !== ")") {
         if (at >= tokens.length) {
-          throw new PettaError(`the declaration for ${name} is missing a )`, {
+          throw new MettaError(`the declaration for ${name} is missing a )`, {
             code: "ERR_METTA_NAME",
           });
         }
@@ -163,7 +163,7 @@ export function parseType(text: string, name: string): Atom {
       return exprOf(items);
     }
     if (token === ")") {
-      throw new PettaError(`the declaration for ${name} has an extra )`, {
+      throw new MettaError(`the declaration for ${name} has an extra )`, {
         code: "ERR_METTA_NAME",
       });
     }
@@ -171,7 +171,7 @@ export function parseType(text: string, name: string): Atom {
   };
   const built = read();
   if (at !== tokens.length) {
-    throw new PettaError(`the declaration for ${name} has more than one term: ${text}`, {
+    throw new MettaError(`the declaration for ${name} has more than one term: ${text}`, {
       code: "ERR_METTA_NAME",
     });
   }
@@ -192,7 +192,7 @@ export function decodeWith<Output>(
   const props = schema["~standard"];
   const result = props.validate(value);
   if (result instanceof Promise) {
-    throw new PettaError(
+    throw new MettaError(
       `the ${props.vendor} schema validates asynchronously; use decodeWithAsync`,
       { code: "ERR_METTA_UNSUPPORTED" },
     );

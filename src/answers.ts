@@ -35,7 +35,7 @@ import { inspect } from "node:util";
 
 import { Atom, Expression, Sym } from "./atom.ts";
 import type { Var } from "./atom.ts";
-import { PettaError, branchFailure } from "./errors.ts";
+import { MettaError, branchFailure } from "./errors.ts";
 
 /**
  * Whether an atom is one of MeTTa's own error atoms, `(Error culprit why)`.
@@ -56,14 +56,14 @@ export function isError(atom: unknown): atom is Expression {
 }
 
 /** One error atom, as the host error it describes. The atom rides as the cause. */
-export function errorOf(atom: Expression): PettaError {
+export function errorOf(atom: Expression): MettaError {
   const why = atom.items[2];
   const culprit = atom.items[1];
   const message =
     why === undefined
       ? atom.text
       : `${String(culprit ?? "")} ${why instanceof Sym ? why.name : why.text}`.trim();
-  return new PettaError(message, { cause: atom });
+  return new MettaError(message, { cause: atom });
 }
 
 /**
@@ -92,7 +92,7 @@ export type Plan =
     };
 
 /** The marker a yieldable ask produces, so a driver can tell it from an emission. */
-export const GOAL: unique symbol = Symbol("petta.goal");
+export const GOAL: unique symbol = Symbol("metta.goal");
 
 /** One asked goal, as it reaches the body's driver. */
 export interface GoalRequest<T = unknown> {
@@ -268,14 +268,14 @@ export class Answers<T> implements AsyncIterable<T>, PromiseLike<T[]> {
     const iterator = this[Symbol.asyncIterator]();
     const first = await iterator.next();
     if (first.done === true) {
-      throw new PettaError(`no answer to ${this.description}, where exactly one was required`, {
+      throw new MettaError(`no answer to ${this.description}, where exactly one was required`, {
         code: "ERR_METTA_ABSENT",
       });
     }
     const second = await iterator.next();
     if (second.done !== true) {
       await iterator.return?.(undefined);
-      throw new PettaError(
+      throw new MettaError(
         `more than one answer to ${this.description}, where exactly one was required`,
         { code: "ERR_METTA_AMBIGUOUS" },
       );

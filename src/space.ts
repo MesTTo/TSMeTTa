@@ -42,7 +42,7 @@ import {
 } from "./atom.ts";
 import { Answers, type AskOptions, type Row } from "./answers.ts";
 import { type Engine, type Job, type JobEvent } from "./engine.ts";
-import { PettaError } from "./errors.ts";
+import { MettaError } from "./errors.ts";
 import { atomFromWire, wireFromAtom } from "./wire.ts";
 
 const QUOTE = sym("quote");
@@ -96,7 +96,7 @@ export interface WatchOptions extends AskOptions {
 
 function valueOf(event: JobEvent | null, what: string): Atom {
   if (event === null || event.kind !== "value") {
-    throw new PettaError(`the engine answered nothing for ${what}`);
+    throw new MettaError(`the engine answered nothing for ${what}`);
   }
   return atomFromWire(event.wire);
 }
@@ -466,7 +466,7 @@ export function answerIterator(job: Job): AsyncIterator<Atom> {
         const event = await job.next();
         if (event === null) return { done: true, value: undefined as never };
         if (event.kind !== "answer") {
-          throw new PettaError(`this ask produced a ${event.kind} where an answer was expected`);
+          throw new MettaError(`this ask produced a ${event.kind} where an answer was expected`);
         }
         return { done: false, value: atomFromWire(event.wire) };
       } catch (error) {
@@ -488,17 +488,17 @@ export function answerIterator(job: Job): AsyncIterator<Atom> {
 /** Strip the `quote` carrier and zip the tuple against the pattern's variables. */
 export function rowOf(answer: Atom, vars: readonly Var[]): Row {
   if (!(answer instanceof Expression) || answer.items.length !== 2) {
-    throw new PettaError(`a binding row came back as ${answer.text}, which is not a quoted tuple`);
+    throw new MettaError(`a binding row came back as ${answer.text}, which is not a quoted tuple`);
   }
   const carried = answer.items[1];
   if (!(carried instanceof Expression)) {
-    throw new PettaError(`a binding row came back as ${answer.text}, which is not a quoted tuple`);
+    throw new MettaError(`a binding row came back as ${answer.text}, which is not a quoted tuple`);
   }
   const row: Row = {};
   vars.forEach((variable, index) => {
     const bound = carried.items[index];
     if (bound === undefined) {
-      throw new PettaError(
+      throw new MettaError(
         `a binding row came back with ${String(carried.items.length)} columns where ` +
           `the pattern has ${String(vars.length)}`,
       );

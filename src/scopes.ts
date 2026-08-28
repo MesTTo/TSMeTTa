@@ -30,7 +30,7 @@
 import { type Atom, type Term, substitute, toAtom } from "./atom.ts";
 import { Answers, type AskOptions, type Row } from "./answers.ts";
 import { type Counters, type Engine, type Scope } from "./engine.ts";
-import { PettaError } from "./errors.ts";
+import { MettaError } from "./errors.ts";
 import { Space } from "./space.ts";
 import { wireFromAtom } from "./wire.ts";
 
@@ -178,7 +178,7 @@ export class World implements Disposable {
 
   #open(): void {
     if (this.#settled !== "open") {
-      throw new PettaError(`this world was already ${this.#settled}`, {
+      throw new MettaError(`this world was already ${this.#settled}`, {
         code: "ERR_METTA_CLOSED",
       });
     }

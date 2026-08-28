@@ -30,7 +30,7 @@
 import { type Atom, type Sym, type Term, expr, sym, toAtom, variable } from "../atom.ts";
 import { type Answers, type AskOptions } from "../answers.ts";
 import { type EffectClass, type OpKind } from "../engine.ts";
-import { PettaError } from "../errors.ts";
+import { MettaError } from "../errors.ts";
 import { mettaName } from "../naming.ts";
 import { type Space } from "../space.ts";
 import { type Body, type Clause, nest, trace } from "./trace.ts";
@@ -139,7 +139,7 @@ function headOf(
   if (explicit !== undefined && explicit !== "") return explicit;
   const own = target.name;
   if (own === "") {
-    throw new PettaError(
+    throw new MettaError(
       `${door} needs a name: give the function one (${door}(function myName() {...})) ` +
         `or say the head exactly with { name: "my-name" }`,
       { code: "ERR_METTA_NAME" },

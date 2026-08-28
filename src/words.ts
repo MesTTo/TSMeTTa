@@ -31,7 +31,7 @@
  */
 
 import { type Atom, type Term, type Var, expr, exprOf, sym, toAtom, variable } from "./atom.ts";
-import { PettaError } from "./errors.ts";
+import { MettaError } from "./errors.ts";
 
 function apply(head: string, ...args: readonly Term[]): Atom {
   return expr(sym(head), ...args.map(toAtom));
@@ -232,7 +232,7 @@ export function typed(x: Term, type: Term): Atom {
 /** `(-> a b ... r)`, an arrow type as a value. */
 export function arrow(...types: readonly Term[]): Atom {
   if (types.length < 2) {
-    throw new PettaError("an arrow type needs at least an argument and a result", {
+    throw new MettaError("an arrow type needs at least an argument and a result", {
       code: "ERR_METTA_NAME",
     });
   }

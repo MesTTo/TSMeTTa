@@ -38,7 +38,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Atom, G } from "./atom.ts";
-import { PettaError } from "./errors.ts";
+import { MettaError } from "./errors.ts";
 import {
   HostValues,
   type Transport,
@@ -71,7 +71,7 @@ function findPackageRoot(from: string): string {
     if (existsSync(join(at, "bridge.pl")) && existsSync(join(at, "package.json"))) return at;
     const up = dirname(at);
     if (up === at) {
-      throw new PettaError(
+      throw new MettaError(
         `this package's own bridge.pl is not above ${from}; the binding cannot ` +
           `find the engine tree it mounts`,
       );
@@ -89,7 +89,7 @@ const PACKAGE_ROOT = packageRoot;
 /** The PeTTa checkout this package's engine tree is mounted from. */
 export const repoRoot: string = resolve(PACKAGE_ROOT, "..", "..");
 const REPO_ROOT = repoRoot;
-const VIRTUAL_ROOT = "/petta";
+const VIRTUAL_ROOT = "/metta";
 
 // The directories engine/metta.pl reaches for while it loads: its own and the
 // standard library. This binding IS a seat, and its own bridge is written into
@@ -125,7 +125,7 @@ export interface Capability {
 function refuseUnnamedErrors(lines: readonly string[]): void {
   const errors = lines.filter((line) => line.startsWith("ERROR:"));
   if (errors.length === 0) return;
-  throw new PettaError(
+  throw new MettaError(
     `the engine reported ${String(errors.length)} error(s) while booting, ` +
       `which this binding does not name: ${errors.join(" / ")}. The platform ` +
       `census carries every capability the build lacks, so an ERROR: here is ` +
@@ -337,7 +337,7 @@ export class Job {
         continue;
       }
       this.close();
-      throw new PettaError(
+      throw new MettaError(
         "a host operation answered with a promise on a synchronous door; use " +
           "the awaiting form so this side can wait for it",
         { code: "ERR_METTA_UNSUPPORTED" },
@@ -359,7 +359,7 @@ export class Job {
   async only(): Promise<JobEvent> {
     const event = await this.next();
     if (event === null) {
-      throw new PettaError("the engine answered nothing where one answer was required");
+      throw new MettaError("the engine answered nothing where one answer was required");
     }
     // Drain, so the job's inference spend is recorded and its engine released.
     await this.next();
@@ -406,7 +406,7 @@ export class Job {
       }
       if (tag === "error") {
         this.close();
-        throw new PettaError(hostText(event[1]).trimEnd());
+        throw new MettaError(hostText(event[1]).trimEnd());
       }
       if (tag !== "call" && tag !== "pull") {
         return { done: true, event: this.#engine.decodeEvent(tag, event) };
@@ -600,7 +600,7 @@ export class Engine {
   /**
    * Run a goal that must succeed exactly once, and return its bindings.
    *
-   * Through bridge.pl's petta_node_do/2, so a Prolog exception never reaches
+   * Through bridge.pl's metta_node_do/2, so a Prolog exception never reaches
    * the WebAssembly boundary: swipl-wasm prints one on the host's console
    * before handing it back and has no switch for it, so the outcome crosses as
    * data and the raising happens here instead.
@@ -608,18 +608,18 @@ export class Engine {
   once(goal: string, input: Record<string, unknown> = {}): PrologAnswer {
     this.counters.crossings += 1;
     const result = this.#swipl.prolog
-      .query(`petta_node_do((${goal}), Outcome).`, input)
+      .query(`metta_node_do((${goal}), Outcome).`, input)
       .once();
     if (result?.error === true) {
-      throw new PettaError(`${String(result.message)} (running ${goal})`);
+      throw new MettaError(`${String(result.message)} (running ${goal})`);
     }
     if (result === undefined || result["success"] === false) {
-      throw new PettaError(`the engine could not run ${goal}`);
+      throw new MettaError(`the engine could not run ${goal}`);
     }
     const outcome = result["Outcome"] as readonly unknown[];
     const kind = hostText(outcome[0]);
-    if (kind === "error") throw new PettaError(`${hostText(outcome[1]).trimEnd()}\nrunning ${goal}`);
-    if (kind !== "ok") throw new PettaError(`the engine goal failed: ${goal}`);
+    if (kind === "error") throw new MettaError(`${hostText(outcome[1]).trimEnd()}\nrunning ${goal}`);
+    if (kind !== "ok") throw new MettaError(`the engine goal failed: ${goal}`);
     return result;
   }
 
@@ -632,7 +632,7 @@ export class Engine {
 
   /** Start a job. The scopes are established inside its own engine. */
   start(command: Command, scopes: readonly Scope[] = []): Job {
-    const answer = this.once("petta_node_start(Sc, Cmd, Id)", {
+    const answer = this.once("metta_node_start(Sc, Cmd, Id)", {
       Sc: [...this.scopes, ...scopes].map((scope) => [...scope]),
       Cmd: command,
     });
@@ -641,21 +641,21 @@ export class Engine {
 
   /** @internal One raw event, or null on exhaustion. */
   rawStep(id: number): unknown {
-    const answer = this.once("petta_node_step(Id, Ev)", { Id: id });
+    const answer = this.once("metta_node_step(Id, Ev)", { Id: id });
     const events = answer["Ev"] as readonly unknown[];
     return events.length === 0 ? null : events[0];
   }
 
   /** @internal Post a reply and take the next raw event in one crossing. */
   rawResume(id: number, reply: readonly unknown[]): unknown {
-    const answer = this.once("petta_node_resume(Id, R, Ev)", { Id: id, R: reply });
+    const answer = this.once("metta_node_resume(Id, R, Ev)", { Id: id, R: reply });
     const events = answer["Ev"] as readonly unknown[];
     return events.length === 0 ? null : events[0];
   }
 
   /** @internal Release a job's engine. */
   rawStop(id: number): void {
-    this.once("petta_node_stop(Id)", { Id: id });
+    this.once("metta_node_stop(Id)", { Id: id });
   }
 
   /** @internal Decode a transport term with this session's knowledge. */
@@ -708,7 +708,7 @@ export class Engine {
           text: hostText(event[3]),
         };
       default:
-        throw new PettaError(`the bridge produced an event this host does not read: ${tag}`);
+        throw new MettaError(`the bridge produced an event this host does not read: ${tag}`);
     }
   }
 
@@ -741,7 +741,7 @@ export class Engine {
   /** @internal The operation behind a dispatch, or a refusal naming it. */
   operation(name: string): HostOp {
     for (const op of this.#ops.values()) if (op.name === name) return op;
-    throw new PettaError(`the engine called ${name}, which this host has not registered`, {
+    throw new MettaError(`the engine called ${name}, which this host has not registered`, {
       code: "ERR_METTA_NAME",
     });
   }
@@ -750,14 +750,14 @@ export class Engine {
 
   /** One atom of MeTTa source, through the engine's own reader. */
   read(text: string): Wire {
-    const answer = this.once("petta_node_read(Src, Wire)", { Src: text });
+    const answer = this.once("metta_node_read(Src, Wire)", { Src: text });
     return this.decodeWire(answer["Wire"]);
   }
 
   /** An atom's round trip through the engine: decode it, then encode it back. */
   roundTrip(wire: Wire): Wire {
     const transport = this.encodeWire(wire);
-    const answer = this.once("petta_node_decode(W, T), petta_node_encode(T, Out)", {
+    const answer = this.once("metta_node_decode(W, T), metta_node_encode(T, Out)", {
       W: transport,
     });
     return fromRoundTrip(transport, answer["Out"]);
@@ -772,7 +772,7 @@ export class Engine {
    * Prolog side.
    */
   text(wire: Wire): string {
-    const answer = this.once("petta_node_decode(W, T), sdisplay(T, S)", {
+    const answer = this.once("metta_node_decode(W, T), sdisplay(T, S)", {
       W: this.encodeWire(wire),
     });
     return hostText(answer["S"]);
@@ -850,7 +850,7 @@ export async function boot(
   swipl.prolog.query(`set_prolog_flag(argv, ${flags}).`).once();
   const consulted = swipl.prolog.query(`consult('${VIRTUAL_ROOT}/engine/metta.pl').`).once();
   if (consulted?.error === true) {
-    throw new PettaError(`the engine did not load: ${String(consulted.message)}`);
+    throw new MettaError(`the engine did not load: ${String(consulted.message)}`);
   }
 
   refuseUnnamedErrors(stderr);
@@ -859,7 +859,7 @@ export async function boot(
 
   const bridged = swipl.prolog.query(`consult('${VIRTUAL_ROOT}/bridge.pl').`).once();
   if (bridged?.error === true) {
-    throw new PettaError(`the Node bridge did not load: ${String(bridged.message)}`);
+    throw new MettaError(`the Node bridge did not load: ${String(bridged.message)}`);
   }
 
   return new Engine(swipl, output, stderr);

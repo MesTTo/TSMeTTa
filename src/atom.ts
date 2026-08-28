@@ -34,7 +34,7 @@
 
 import { inspect } from "node:util";
 
-import { PettaError } from "./errors.ts";
+import { MettaError } from "./errors.ts";
 
 /** Which of the five shapes an atom is. Narrows a union in `switch`. */
 export type Kind = "symbol" | "variable" | "grounded" | "expression" | "space";
@@ -120,7 +120,7 @@ export abstract class Atom {
    */
   [Symbol.toPrimitive](hint: string): string {
     if (hint === "string") return this.text;
-    throw new PettaError(REFUSE_COERCION, { code: "ERR_METTA_UNSUPPORTED" });
+    throw new MettaError(REFUSE_COERCION, { code: "ERR_METTA_UNSUPPORTED" });
   }
 }
 
@@ -267,12 +267,12 @@ export class SpaceHandle extends Atom {
   constructor(name: string) {
     super();
     if (typeof name !== "string") {
-      throw new PettaError(`the p tag carries text, not ${JSON.stringify(name)}`, {
+      throw new MettaError(`the p tag carries text, not ${JSON.stringify(name)}`, {
         code: "ERR_METTA_WIRE",
       });
     }
     if (!name.startsWith("&")) {
-      throw new PettaError(
+      throw new MettaError(
         `the p tag carries an ampersand-prefixed space name, not ${JSON.stringify(name)}`,
         { code: "ERR_METTA_WIRE" },
       );
@@ -412,7 +412,7 @@ export interface TermList extends ReadonlyArray<Term> {}
  * functions. The key lives here rather than in the factory so that `toAtom`
  * needs no import from it.
  */
-export const ATOM_OF: unique symbol = Symbol("petta.atom");
+export const ATOM_OF: unique symbol = Symbol("metta.atom");
 
 /** Anything carrying its own atom: a name, a defined callable, a space. */
 export interface HasAtom {

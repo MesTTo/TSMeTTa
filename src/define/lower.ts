@@ -41,7 +41,7 @@ import type {
 } from "acorn";
 
 import { type Atom, type Term, expr, exprOf, sym, toAtom, variable } from "../atom.ts";
-import { PettaError, nearest } from "../errors.ts";
+import { MettaError, nearest } from "../errors.ts";
 import { mettaName } from "../naming.ts";
 
 /** What the lowering may reach for beside the function's own parameters. */
@@ -65,7 +65,7 @@ export interface Lowered {
 }
 
 function refuse(what: string, remedy: string): never {
-  throw new PettaError(`${what}; ${remedy}`, { code: "ERR_METTA_LOWER" });
+  throw new MettaError(`${what}; ${remedy}`, { code: "ERR_METTA_LOWER" });
 }
 
 // The operators that ARE engine heads, so the body's arithmetic and its

@@ -13,7 +13,7 @@ import { after, before, describe, it } from "node:test";
 
 import {
   type MeTTa,
-  PettaError,
+  MettaError,
   S,
   type StandardSchemaV1,
   Superpose,
@@ -56,7 +56,7 @@ describe("a theory", () => {
     class Empty {}
     assert.throws(
       () => m.theory(Empty),
-      (error: PettaError) => error.code === "ERR_METTA_NAME",
+      (error: MettaError) => error.code === "ERR_METTA_NAME",
     );
   });
 });
@@ -171,7 +171,7 @@ describe("a refusal computes its remedy", () => {
         m.define(function reporting(account: number): number {
           return balanaceOf(account) as number;
         }),
-      (error: PettaError) => /nearest declared: balance-of/.test(error.message),
+      (error: MettaError) => /nearest declared: balance-of/.test(error.message),
     );
   });
 });

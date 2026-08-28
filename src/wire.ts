@@ -50,7 +50,7 @@ import {
   sym,
   variable,
 } from "./atom.ts";
-import { PettaError } from "./errors.ts";
+import { MettaError } from "./errors.ts";
 
 /** The tags this binding speaks. `h` is the engine's own blob and is refused here. */
 export type Tag = "s" | "v" | "n" | "g" | "b" | "e" | "p" | "o";
@@ -69,8 +69,8 @@ export type Wire =
 /** A transport term as it crosses the WebAssembly boundary: payloads are text. */
 export type Transport = readonly [string, unknown];
 
-function wireError(message: string): PettaError {
-  return new PettaError(message, { code: "ERR_METTA_WIRE" });
+function wireError(message: string): MettaError {
+  return new MettaError(message, { code: "ERR_METTA_WIRE" });
 }
 
 /**
@@ -227,7 +227,7 @@ function decodeTransport(term: unknown, context: DecodeContext): Wire {
     case "s": {
       const text = hostText(payload);
       // The engine's generic encoder emits a named space other than &self and
-      // &petta as s, because a Prolog atom carries no record of the p tag it
+      // &metta as s, because a Prolog atom carries no record of the p tag it
       // entered under. A name the engine introduced under p keeps that
       // provenance here, while the strict decoder honours an explicit s tag.
       if (context.knownSpaces?.has(text) === true) return ["p", space(text)];

@@ -187,7 +187,7 @@ export {
 export { mapsExactly, mettaName, tsName } from "./naming.ts";
 
 // Errors.
-export { type Code, PettaError, branchFailure, nearest } from "./errors.ts";
+export { type Code, MettaError, branchFailure, nearest } from "./errors.ts";
 
 // The engine layer, for a conformance kit and for a host that needs the floor.
 export {

@@ -21,7 +21,7 @@
  */
 
 import { type Term, expr, sym, toAtom } from "./atom.ts";
-import { PettaError } from "./errors.ts";
+import { MettaError } from "./errors.ts";
 import { type Grant } from "./space.ts";
 
 /** A library: one npm package, two realms. */
@@ -69,7 +69,7 @@ export interface LibraryHost {
  */
 export function useLibrary(surface: LibraryHost, library: Library): void {
   if (library.present !== undefined && !library.present()) {
-    throw new PettaError(
+    throw new MettaError(
       `the library ${library.name} needs an artifact this deployment does not have; ` +
         `it refuses here rather than failing later somewhere else`,
       { code: "ERR_METTA_CAPABILITY" },

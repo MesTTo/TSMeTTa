@@ -20,7 +20,7 @@ import {
   Collapse,
   Expression,
   type MeTTa,
-  PettaError,
+  MettaError,
   S,
   Superpose,
   type Term,
@@ -126,7 +126,7 @@ describe("a lowered body", () => {
           for (let i = 0; i < n; i += 1) n += 1;
           return n;
         }),
-      (error: PettaError) =>
+      (error: MettaError) =>
         error.code === "ERR_METTA_LOWER" && /ForStatement/.test(error.message),
     );
     assert.throws(
@@ -134,14 +134,14 @@ describe("a lowered body", () => {
         m.define(function reading(x: { a: number }): number {
           return x.a;
         }),
-      (error: PettaError) => error.code === "ERR_METTA_LOWER" && /reads a property/.test(error.message),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /reads a property/.test(error.message),
     );
     assert.throws(
       () =>
         m.define(async function waiting(x: number): Promise<number> {
           return await Promise.resolve(x);
         }),
-      (error: PettaError) => error.code === "ERR_METTA_LOWER" && /awaits/.test(error.message),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /awaits/.test(error.message),
     );
   });
 
@@ -151,7 +151,7 @@ describe("a lowered body", () => {
         m.define(function reaching(n: number): number {
           return somethingUndeclared(n) as number;
         }),
-      (error: PettaError) =>
+      (error: MettaError) =>
         error.code === "ERR_METTA_LOWER" &&
         /somethingUndeclared/.test(error.message) &&
         /scope/.test(error.message),
@@ -161,7 +161,7 @@ describe("a lowered body", () => {
   it("refuses a body with no name at all, naming both ways to give it one", () => {
     assert.throws(
       () => m.define((n: number): number => n),
-      (error: PettaError) => error.code === "ERR_METTA_NAME",
+      (error: MettaError) => error.code === "ERR_METTA_NAME",
     );
   });
 });
@@ -214,7 +214,7 @@ describe("a traced body", () => {
           if ((y as unknown as number) > 0) yield y;
           yield S.done;
         }),
-      (error: PettaError) =>
+      (error: MettaError) =>
         error.code === "ERR_METTA_TRACE" &&
         /If\(gt/.test(error.message) &&
         /own source is lowered/.test(error.message),
@@ -228,7 +228,7 @@ describe("a traced body", () => {
           const row = yield* m.match(S.parent(x, V.y)).filter(() => true);
           yield row;
         }),
-      (error: PettaError) => error.code === "ERR_METTA_TRACE" && /no MeTTa spelling/.test(error.message),
+      (error: MettaError) => error.code === "ERR_METTA_TRACE" && /no MeTTa spelling/.test(error.message),
     );
   });
 
@@ -238,7 +238,7 @@ describe("a traced body", () => {
         m.define(function* silent(x: Term) {
           yield* m.match(S.parent(x, V.y));
         }),
-      (error: PettaError) => error.code === "ERR_METTA_TRACE" && /emits nothing/.test(error.message),
+      (error: MettaError) => error.code === "ERR_METTA_TRACE" && /emits nothing/.test(error.message),
     );
   });
 });
@@ -315,7 +315,7 @@ describe("a host operation", () => {
     });
     assert.throws(
       () => m.runOne(S["slow-thing"]()),
-      (error: PettaError) =>
+      (error: MettaError) =>
         error.code === "ERR_METTA_UNSUPPORTED" && /awaiting form/.test(error.message),
     );
   });

@@ -1,6 +1,6 @@
-# MeTTa in TypeScript, on the PeTTa engine
+# MeTTa in TypeScript, on the MeTTa Kernel engine
 
-The PeTTa engine runs inside a Node process here, in that process rather than
+The MeTTa Kernel engine runs inside a Node process here, in that process rather than
 behind a socket, over [swipl-wasm](https://github.com/SWI-Prolog/npm-swipl-wasm)
 8.0.6, which is the SWI-Prolog organisation's own WebAssembly build of SWI
 10.1.13. There is nothing to install besides npm packages: no SWI on the
@@ -443,7 +443,7 @@ try {
 
 An embedded engine that prints is printing over whatever the host was saying,
 so this one does not. A program's own `println!` is buffered and
-`m.drainOutput()` hands it over; an engine error is raised as a `PettaError`
+`m.drainOutput()` hands it over; an engine error is raised as a `MettaError`
 carrying the engine's own message, never written out. Pass
 `metta({ verbose: true })` when you want the engine's trace.
 

@@ -1,15 +1,15 @@
 {
-  "name": "petta-node",
+  "name": "metta-node",
   "version": "0.0.1-alpha.0",
   "private": true,
   "comment": "Private until the package carries the engine tree it mounts: boot() reads engine, lib and every seat's control file out of the checkout, the way the Python package copies them under metta/_runtime at build time.",
   "type": "module",
-  "description": "MeTTa in TypeScript on the PeTTa engine, in process over swipl-wasm",
+  "description": "MeTTa in TypeScript on the MeTTa Kernel engine, in process over swipl-wasm",
   "license": "MIT",
-  "homepage": "https://github.com/trueagi-io/PeTTa",
+  "homepage": "https://github.com/MesTTo/MeTTa-Kernel",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/trueagi-io/PeTTa.git",
+    "url": "git+https://github.com/MesTTo/MeTTa-Kernel.git",
     "directory": "extensions/node"
   },
   "sideEffects": false,

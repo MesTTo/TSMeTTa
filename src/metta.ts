@@ -40,7 +40,7 @@ import {
   type Scope,
   boot as bootEngine,
 } from "./engine.ts";
-import { PettaError } from "./errors.ts";
+import { MettaError } from "./errors.ts";
 import { type Library, useLibrary } from "./library.ts";
 import { mettaName } from "./naming.ts";
 import { Schema, type SchemaDeclarations } from "./schema.ts";
@@ -64,7 +64,7 @@ export interface AnswerGroup {
 
 /** What `boot` accepts. */
 export interface BootOptions {
-  /** The PeTTa checkout to mount. The one this package lives in, by default. */
+  /** The MeTTa Kernel checkout to mount. The one this package lives in, by default. */
   readonly root?: string;
   /** Whether the engine's own trace also reaches the console. */
   readonly verbose?: boolean;
@@ -283,12 +283,12 @@ export class MeTTa implements Disposable {
       return await Promise.any(
         asks.map(async (ask) => {
           const first = await ask.until(controller.signal).find();
-          if (first === undefined) throw new PettaError("this branch answered nothing");
+          if (first === undefined) throw new MettaError("this branch answered nothing");
           return first;
         }),
       );
     } finally {
-      controller.abort(new PettaError("another branch answered first"));
+      controller.abort(new MettaError("another branch answered first"));
     }
   }
 
@@ -385,7 +385,7 @@ export class MeTTa implements Disposable {
     const wire = this.#engine.encodeWire(wireFromAtom(built));
     const event = this.#engine.start(["eval", wire, space.name]).sync();
     if (event === null || event.kind !== "answer") {
-      throw new PettaError(`${built.text} answered nothing, where one answer was required`, {
+      throw new MettaError(`${built.text} answered nothing, where one answer was required`, {
         code: "ERR_METTA_ABSENT",
       });
     }

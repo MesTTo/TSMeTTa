@@ -530,16 +530,74 @@ npm run kit | head -40
 
 | command | what it runs | needs |
 |---|---|---|
+| `sh build.sh` | `npm run build` | npm |
+| `sh test.sh` | typecheck, then the whole suite | npm |
+| `sh bench.sh` | every benchmark case against its pins | npm, a Python with `metta.testing`, perf |
 | `npm test` | compiles, then `node --test build/test/*.test.js` | any Node 22.18+ |
 | `npm run test:source` | `node --test test/*.test.ts` | a Node with type stripping, and Node 24 for `using` |
 | `npm run typecheck` | both tsconfigs | |
 | `npm run kit` | the live-host comparison report | |
+
+The first three are the ones the gate runs, so a developer and `check.sh` call
+one thing rather than two that can drift. None of them fetches or builds what a
+step above them makes: each says which command is missing and exits 0, because
+a gate that reaches the network fails for a reason that is not the tree.
 
 `npm test` compiles rather than type-stripping because a distro Node is often
 built without TypeScript support (`node -p
 process.config.variables.node_use_amaro` answers false on Debian and Ubuntu),
 and a gate that only ran on the official build would not run on the machine
 that most needs it.
+
+## What the surface costs
+
+`sh bench.sh` measures six workloads and holds each to a committed pin in
+`benchmarks/baseline.json`. The comparison, the bands and the re-pin belong to
+the shared harness in `extensions/python/metta/benchmarking.py`, so one
+baseline format and one regression protocol cover every component.
+
+Which counter decides is a property of the case, not a policy:
+
+| case | what it does | decided by |
+|---|---|---|
+| `atom-intern` | 20,000 interned expressions, each minted twice | `instructions:u` |
+| `wire-roundtrip` | 50,000 atoms out through the codec and back | `instructions:u` |
+| `query-rows` | 2,000 rows asked and drained through `await` | inferences |
+| `answers-lazy` | 20 of those 2,000 rows, abandoned, fifty times | inferences, pinned at 0 |
+| `define-call` | 500 calls of a lowered `define`d body | inferences |
+| `host-op` | 2,000 yields of a generator `op` the engine pulls | inferences |
+
+Inferences decide wherever the engine does the work, because they are
+deterministic where wall clock is not: the four inference rows read the same
+number in all nine samples of three consecutive runs, on a box under load,
+while wall clock moved several percent over the same runs. Where the work is on
+this side of the wire the engine's counter cannot move at all, so retired
+instructions decide instead, and the three rows that straddle the boundary pin
+both because each counter sees one half.
+
+`answers-lazy` is the interesting one. bridge.pl reports what a job spent as
+that job's LAST event, reached only once the command has no more answers, so an
+abandoned job reports nothing: its inference pin of zero is a statement that
+the ask really was abandoned, and a lazy path that quietly began draining would
+report `query-rows`' 282,622 and fail by four orders of magnitude. Its size is
+`instructions:u`, since a counter fixed at zero cannot say whether twenty rows
+cost twenty rows' work or two thousand.
+
+A Node process is not deterministic enough to gate on retired instructions
+without help, so the instruction rows run under `--predictable
+--predictable-gc-schedule --liftoff-only` and the baseline's configuration
+stamp records them. Bare, one engine workload spreads 29% across four rounds;
+`--liftoff-only` alone takes it to 2.6%, which names the mechanism as TurboFan
+tiering swipl-wasm up on background threads part way through the window, and
+the full set reaches 0.03%. Those rows therefore measure Liftoff-compiled
+WebAssembly rather than the tier a long-lived process settles into, which is
+the right trade for a gate that reads the change rather than the absolute.
+
+```sh
+sh bench.sh                       # every case against its pins
+sh bench.sh query-rows host-op    # two of them
+sh bench.sh --update              # re-pin, after reviewing the workload
+```
 
 ## Layout
 
@@ -564,6 +622,13 @@ that most needs it.
 | `test/*.test.ts` | `node --test` |
 | `kit/` | the conformance kit, both halves |
 | `example/` | the programs the README and the tests run |
+| `benchmarks/cases.ts` | the six workloads, and which counter decides each |
+| `benchmarks/sampler.ts` | one sample, with setup outside perf's window |
+| `benchmarks/run.ts` | the command line the Python driver and a reader use |
+| `benchmarks/bench.py` | the driver over the shared `BenchmarkBaseline` |
+| `benchmarks/configuration.py` | the stamp a pin refuses to compare across |
+| `benchmarks/baseline.json` | the committed pins |
+| `build.sh`, `check.sh`, `test.sh`, `bench.sh` | the component contract |
 
 ## A note on TypeScript versions
 

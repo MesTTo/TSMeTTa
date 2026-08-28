@@ -7,7 +7,8 @@
 # Guarantees: every path a lane runs is written literally. tests/checks/
 #   evidence_runners.py models which files a lane covers by READING this text
 #   and resolving $HERE/, so a path reached through a local variable is a path
-#   the evidence gate cannot see.
+#   the evidence gate cannot see. Each lane below names the component script it
+#   runs, and that script's own text carries the rest.
 # Open Obligations:
 #   To Do: None
 #   Hacks: None
@@ -17,39 +18,38 @@
 # a WebAssembly SWI inside a Node process, so it needs neither the SWI on this
 # machine nor janus. It is a TypeScript library, and its own suite covers the
 # atom algebra, the codec, the boot inventory, the lazy answer surface, the
-# three definition doors, the scopes and the extension tier. The conformance
-# corpus is compared against the Python host by
+# three definition doors, the scopes, the extension tier and the benchmark
+# case table. The conformance corpus is compared against the Python host by
 # extensions/python/tests/ch21_another_language_at_the_seam/test_node_binding.py,
 # in the pytest lane above.
 #
-# swipl-wasm is an npm dependency and this does not fetch it: a gate that
-# reaches the network is a gate that fails for a reason that is not the tree.
-# It says which step is missing instead, the same shape the C extension example
-# above takes when swipl-ld is absent.
+# The lane runs extensions/node/test.sh, which is the same command a developer
+# runs by hand, so the gate and the developer cannot drift apart. That script
+# owns the skip protocol: swipl-wasm is an npm dependency and nothing here
+# fetches it, because a gate that reaches the network is a gate that fails for
+# a reason that is not the tree. It names the missing step instead, the same
+# shape the C extension example takes when swipl-ld is absent.
 check_node_binding() {
-    binding="$HERE/extensions/node"
-    [ -d "$binding" ] || return 0
-    if ! command -v node >/dev/null 2>&1; then
-        echo "note: node not found, the Node binding suite will not run" >&2
-        return 0
-    fi
-    if [ ! -d "$binding/node_modules/swipl-wasm" ]; then
-        echo "note: run 'npm ci' in extensions/node, the Node binding suite will \
-not run without swipl-wasm" >&2
-        return 0
-    fi
-    # The binding is TypeScript, and this COMPILES it and runs the build rather
-    # than running the sources. Node's own type stripping would be the shorter
-    # route, but a distro build is often compiled without it
-    # (`node -p process.config.variables.node_use_amaro` answers false on
-    # Debian and Ubuntu), and a gate that only ran on the official build would
-    # not run at all on the machine that most needs it. The build also
-    # downlevels `using`, which Node 22's V8 does not carry.
-    # The path is spelled out rather than reached through $binding because the
-    # evidence gate models which files a lane runs by reading this text, and it
-    # resolves $HERE/ and not a local variable. Without the literal it cannot
-    # see extensions/node/test/*.test.ts at all, and every evidence claim naming
-    # one of those tests reads as unbacked.
-    ( cd "$HERE/extensions/node" && npm run --silent typecheck && npm run --silent test )
+    [ -d "$HERE/extensions/node" ] || return 0
+    sh "$HERE/extensions/node/test.sh"
 }
 run GATE node-binding check_node_binding
+
+# What this seat's surface costs, against committed baselines.
+#
+# The same skip protocol, with two more steps it can name: this one also needs
+# a made TypeScript build and a Python carrying metta.testing, because the
+# comparison, the two-sided bands, the configuration stamp and the atomic
+# re-pin are the shared harness's rather than this seat's.
+#
+# Six cases, and the counter that decides each is a property of the case rather
+# than a policy: inferences where the engine does the work, because they are
+# deterministic under load where wall clock is not, and perf's instructions:u
+# where the work is on the TypeScript side of the wire, where the engine's
+# counter cannot move at all. extensions/node/benchmarks/cases.ts says which
+# and why, per case.
+check_node_bench() {
+    [ -d "$HERE/extensions/node" ] || return 0
+    sh "$HERE/extensions/node/bench.sh"
+}
+run GATE node-bench check_node_bench

@@ -8,6 +8,7 @@
     "src",
     "test",
     "kit",
-    "example"
+    "example",
+    "benchmarks"
   ]
 }

@@ -18,7 +18,116 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./bridge.pl": "./bridge.pl"
+    "./algebra": {
+      "types": "./dist/algebra.d.ts",
+      "default": "./dist/algebra.js"
+    },
+    "./ambient": {
+      "types": "./dist/ambient.d.ts",
+      "default": "./dist/ambient.js"
+    },
+    "./arrays": {
+      "types": "./dist/arrays.d.ts",
+      "default": "./dist/arrays.js"
+    },
+    "./bridge.pl": "./bridge.pl",
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    },
+    "./convert": {
+      "types": "./dist/convert.d.ts",
+      "default": "./dist/convert.js"
+    },
+    "./derivation": {
+      "types": "./dist/derivation.d.ts",
+      "default": "./dist/derivation.js"
+    },
+    "./events": {
+      "types": "./dist/events.d.ts",
+      "default": "./dist/events.js"
+    },
+    "./integrate": {
+      "types": "./dist/integrate.d.ts",
+      "default": "./dist/integrate.js"
+    },
+    "./lint": {
+      "types": "./dist/lint.d.ts",
+      "default": "./dist/lint.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "default": "./dist/manifest.js"
+    },
+    "./matching": {
+      "types": "./dist/matching.d.ts",
+      "default": "./dist/matching.js"
+    },
+    "./package.json": "./package.json",
+    "./parallel": {
+      "types": "./dist/parallel.d.ts",
+      "default": "./dist/parallel.js"
+    },
+    "./paths": {
+      "types": "./dist/paths.d.ts",
+      "default": "./dist/paths.js"
+    },
+    "./provider": {
+      "types": "./dist/provider.d.ts",
+      "default": "./dist/provider.js"
+    },
+    "./random": {
+      "types": "./dist/random.d.ts",
+      "default": "./dist/random.js"
+    },
+    "./remote": {
+      "types": "./dist/remote.d.ts",
+      "default": "./dist/remote.js"
+    },
+    "./saga": {
+      "types": "./dist/saga.d.ts",
+      "default": "./dist/saga.js"
+    },
+    "./spaces": {
+      "types": "./dist/spaces.d.ts",
+      "default": "./dist/spaces.js"
+    },
+    "./strategies": {
+      "types": "./dist/strategies.d.ts",
+      "default": "./dist/strategies.js"
+    },
+    "./structures": {
+      "types": "./dist/structures.d.ts",
+      "default": "./dist/structures.js"
+    },
+    "./subscribe": {
+      "types": "./dist/subscribe.d.ts",
+      "default": "./dist/subscribe.js"
+    },
+    "./tables": {
+      "types": "./dist/tables.d.ts",
+      "default": "./dist/tables.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    },
+    "./tokens": {
+      "types": "./dist/tokens.d.ts",
+      "default": "./dist/tokens.js"
+    },
+    "./version": {
+      "types": "./dist/version.d.ts",
+      "default": "./dist/version.js"
+    },
+    "./vocabularies": {
+      "types": "./dist/vocabularies.d.ts",
+      "default": "./dist/vocabularies.js"
+    },
+    "./wire": {
+      "types": "./dist/wire.d.ts",
+      "default": "./dist/wire.js"
+    }
   },
   "types": "./dist/index.d.ts",
   "files": [
@@ -37,7 +146,8 @@
     "test": "npm run build --silent && node --test \"build/test/*.test.js\"",
     "test:source": "node --test \"test/*.test.ts\"",
     "kit": "npm run build --silent && node build/kit/run.js",
-    "prepare": "npm run build --silent"
+    "prepare": "npm run build:dist --silent",
+    "cli": "npm run build:dist --silent && node dist/cli.js"
   },
   "dependencies": {
     "acorn": "^8.18.0",
@@ -46,5 +156,20 @@
   "devDependencies": {
     "@types/node": "^26.3.0",
     "typescript": "^6.0.3"
-  }
+  },
+  "bin": {
+    "metta-node": "./dist/cli.js"
+  },
+  "keywords": [
+    "metta",
+    "hyperon",
+    "opencog",
+    "knowledge-graph",
+    "logic-programming",
+    "prolog",
+    "rewriting",
+    "pattern-matching",
+    "atomspace",
+    "reasoning"
+  ]
 }

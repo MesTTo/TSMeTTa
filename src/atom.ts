@@ -32,9 +32,8 @@
  *   Future Enhancements: None
  */
 
-import { inspect } from "node:util";
-
-import { PettaError } from "./errors.ts";
+import { MettaError, UnsupportedError, WireError } from "./errors.ts";
+import { showsAs } from "./present.ts";
 
 /** Which of the five shapes an atom is. Narrows a union in `switch`. */
 export type Kind = "symbol" | "variable" | "grounded" | "expression" | "space";
@@ -120,27 +119,13 @@ export abstract class Atom {
    */
   [Symbol.toPrimitive](hint: string): string {
     if (hint === "string") return this.text;
-    throw new PettaError(REFUSE_COERCION, { code: "ERR_METTA_UNSUPPORTED" });
+    throw new UnsupportedError(REFUSE_COERCION);
   }
 }
 
-/**
- * Console honesty: an atom prints as MeTTa text in `console.log` and in
- * `util.inspect`, not as a field dump.
- *
- * Installed on the prototype rather than declared as a class member because
- * `--isolatedDeclarations` refuses a computed member name it cannot resolve to
- * a late-bound symbol, and `inspect.custom` is a property access. The method is
- * not part of the typed surface anyway: it is Node's own presentation hook.
- */
-Object.defineProperty(Atom.prototype, inspect.custom, {
-  value: function inspectAtom(this: Atom): string {
-    return this.text;
-  },
-  enumerable: false,
-  writable: false,
-  configurable: false,
-});
+// Console honesty: an atom prints as MeTTa text in `console.log` and in
+// `util.inspect`, not as a field dump.
+showsAs(Atom.prototype, (atom) => atom.text);
 
 /** A MeTTa symbol. The phantom `N` carries its spelling when it is a literal. */
 export class Sym<N extends string = string> extends Atom {
@@ -267,14 +252,11 @@ export class SpaceHandle extends Atom {
   constructor(name: string) {
     super();
     if (typeof name !== "string") {
-      throw new PettaError(`the p tag carries text, not ${JSON.stringify(name)}`, {
-        code: "ERR_METTA_WIRE",
-      });
+      throw new WireError(`the p tag carries text, not ${JSON.stringify(name)}`);
     }
     if (!name.startsWith("&")) {
-      throw new PettaError(
+      throw new WireError(
         `the p tag carries an ampersand-prefixed space name, not ${JSON.stringify(name)}`,
-        { code: "ERR_METTA_WIRE" },
       );
     }
     this.name = name;
@@ -412,7 +394,7 @@ export interface TermList extends ReadonlyArray<Term> {}
  * functions. The key lives here rather than in the factory so that `toAtom`
  * needs no import from it.
  */
-export const ATOM_OF: unique symbol = Symbol("petta.atom");
+export const ATOM_OF: unique symbol = Symbol("metta.atom");
 
 /** Anything carrying its own atom: a name, a defined callable, a space. */
 export interface HasAtom {
@@ -421,8 +403,23 @@ export interface HasAtom {
 
 /** Coerce anything in term position to an atom. */
 export function toAtom(value: Term): Atom {
-  if (value instanceof Atom) return value;
   if (Array.isArray(value)) return exprOf((value as readonly Term[]).map(toAtom));
+  return lift(value);
+}
+
+/**
+ * Lift a host VALUE to an atom, reading an array as data rather than as an
+ * expression.
+ *
+ * The difference from {@link toAtom} is one row and it is deliberate. In TERM
+ * position an array is an expression, which is what makes `[S.parent, S.tom]`
+ * a term. In VALUE position — what a host operation answered, what a provider
+ * yielded — an array is the datum, and `[1, 2, 3]` means the array. A callable
+ * carrying its own atom is honoured either way, so an operation answering
+ * `S.done` answers the SYMBOL and not a live JavaScript function.
+ */
+export function lift(value: unknown): Atom {
+  if (value instanceof Atom) return value;
   if (value !== null && (typeof value === "object" || typeof value === "function")) {
     const carried = (value as Partial<HasAtom>)[ATOM_OF];
     if (carried instanceof Atom) return carried;
@@ -432,6 +429,46 @@ export function toAtom(value: Term): Atom {
 
 // ---------------------------------------------------------------------------
 // Printing a grounded value.
+
+/**
+ * How a caller's own type renders, when it has said.
+ *
+ * Keyed by the CONSTRUCTOR rather than by a name, so two libraries with one
+ * class name do not collide and a renaming refactor carries the registration
+ * with it.
+ */
+const renderings = new Map<Function, (value: never) => string>();
+
+/**
+ * Say how a host type renders inside an atom.
+ *
+ * ```ts
+ * registerRepr(Date, (when) => `(date "${when.toISOString()}")`);
+ * String(G(new Date(0)));      // (date "1970-01-01T00:00:00.000Z")
+ * ```
+ *
+ * Without one, a live host value renders as `(js Date)`: honest, and useless
+ * for reading a query's answers. This is the door that makes it readable
+ * without pretending the value has a MeTTa form it does not have.
+ */
+export function registerRepr<T>(
+  constructor: abstract new (...args: never[]) => T,
+  render: (value: T) => string,
+): void {
+  renderings.set(constructor, render as (value: never) => string);
+}
+
+/** Forget a rendering. Answers whether one was registered. */
+export function unregisterRepr(constructor: abstract new (...args: never[]) => unknown): boolean {
+  return renderings.delete(constructor);
+}
+
+/** The rendering registered for a value's own constructor, or nothing. */
+function registeredText(value: object): string | undefined {
+  const own = (value as { constructor?: Function }).constructor;
+  const render = own === undefined ? undefined : renderings.get(own);
+  return render === undefined ? undefined : render(value as never);
+}
 
 /**
  * How a host value reads as MeTTa text.
@@ -461,6 +498,8 @@ function groundedText(value: unknown): string {
   }
   if (value === null) return "(js null)";
   if (value === undefined) return "(js undefined)";
+  const registered = registeredText(value as object);
+  if (registered !== undefined) return registered;
   const named = value as { constructor?: { name?: string } };
   return `(js ${named.constructor?.name ?? "Object"})`;
 }

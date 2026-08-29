@@ -1,0 +1,220 @@
+# MeTTa in TypeScript
+
+> The engine runs inside your Node process, on a WebAssembly SWI-Prolog. No
+> system SWI, no Python, no separate server. This file is how to USE the seat;
+> the repository root's llms.txt covers the language and every other surface.
+
+## Install
+
+```sh
+npm ci --prefix extensions/node
+```
+
+That fetches swipl-wasm and builds the TypeScript through the package's own
+`prepare` script. Node 22.18 or newer, which is what package.json declares.
+
+## First call
+
+```ts
+import { metta, S, V } from "./extensions/node/src/index.ts";
+
+const m = await metta();
+await m.eval(S.add(1, 2)).one();      // 3
+```
+
+## Building terms
+
+`S` makes symbols and expressions, `V` makes variables. A call on `S` is an
+expression with that head:
+
+```ts
+S.parent(S.alice, S.bob)      // (parent alice bob)
+V.x                           // $x
+```
+
+## Asking, lazily
+
+An answer set is a thenable and nothing runs until you await it:
+
+```ts
+const ans   = m.match(S.parent(V.x, S.bob));   // nothing has run yet
+const rows  = await ans;                        // the whole answer set
+const who   = await ans.one();                  // exactly one, or a refusal
+const maybe = (await ans.find()) ?? S.none;     // at most one, so ?? composes
+```
+
+Abandoning an answer set stops the work: taking two rows of two thousand costs
+two rows.
+
+## Bounding and cancelling
+
+```ts
+await m.eval(term).until(AbortSignal.timeout(50));
+```
+
+## Spaces
+
+```ts
+const kb = m.space(S.kb);
+```
+
+A space can be created with restricted grants, and ordinary computation still
+runs inside one that has none:
+
+```ts
+const locked = m.space(S.locked, { grants: [] });
+await locked.eval(S.double(21)).one();        // 42
+const reader = m.space(S.reader, { grants: ["file"] });
+```
+
+## Spaces implemented in TypeScript
+
+The engine queries your own data. A `Map`, an array, a `Set` or a plain object
+attaches as a live view in one line; anything with a shape of its own
+implements `SpaceProvider` and only the methods its backend has.
+
+```ts
+const rows = new Map([["ada", 3]]);
+const scores = m.attach("&scores", rows);      // live: no publication step
+await scores.match(S.kv(V.who, V.n));
+
+m.attach("&table", {
+  *match(pattern) { /* yield CANDIDATES; the engine unifies */ },
+  add(atom) { ... },
+});
+```
+
+Capabilities are derived from the methods present, so what a provider cannot do
+is refused by name. `metta-node/spaces` composes them: `union`, `readOnly`,
+`overlay`, `mapped`, `diff`, `objectView`.
+
+## Proofs, and asking the engine about itself
+
+```ts
+String(await m.why(S.quad(3)));   // the first proof, rendered
+m.derivation(target);             // every proof, as a discriminated union
+m.doc(S.area);                    // the (@doc ...) atom
+m.solve(4, sub(V.x, 1));          // { x: 5 }: the relation, backwards
+m.cast(S.Ann, S.Person);          // narrowed, or CastError naming its real types
+m.forms(source);                  // every top-level form, read and not run
+m.trace("!(quad 3)");             // the engine's own call and exit events
+m.disassemble("dbl");             // the clauses the name compiled to
+using _ = m.strict();             // refuse a directive answered unreduced
+using _ = m.limits({ inferences: 100_000 });
+```
+
+## Standing queries
+
+```ts
+using watch = subscribe(kb, S.alarm(V.what), { onEvent: (e) => log(e) });
+await using view = await LiveView.open(kb, S.alarm(V.what));
+```
+
+## Coordination
+
+`race`, `merge`, `parMap`, `every`, `Channel`, `spawn` — the platform's own
+concurrency, each taking an `AbortSignal`. The engine's `library(thread)` is
+absent from a WebAssembly build, so this is where concurrency lives.
+
+## The satellites
+
+The root carries what a program reaches for. Everything else is one of 27
+subpaths and costs nothing unimported: `metta-node/ambient` (a lazily booted
+default engine), `/spaces`, `/structures` (`AlphaSet`, `PatternMap`,
+`MatchIndex`, `ClosureView`, `TabledMap`), `/matching` (unification and alpha
+keys, no engine needed), `/testing` (generators and a shrinking property
+runner), `/vocabularies` (the engine's 32 closed value sets, checked against
+`&metta`), `/strategies`, `/paths`, `/parallel`, `/subscribe`, `/derivation`,
+`/provider`, `/wire`, `/convert`, `/integrate`, `/algebra`, `/remote`,
+`/arrays`, `/tables`, `/tokens`, `/saga`, `/lint`, `/manifest`, `/events`,
+`/config`, `/random`, `/version`.
+
+## Crossing a host type, and a value that owns its matching
+
+```ts
+import { registerType } from "metta-node/convert";
+registerType(Person, {
+  name: "Person",
+  toAtom: (p) => [p.name, p.age],
+  fromAtom: (name: string, age: number) => new Person(name, age),
+});
+// project(new Person("Ada", 36))  ->  (Person "Ada" 36)
+```
+
+A registration picks one of four images, and the four are the engine's own
+`registry-image` vocabulary: `expression` (the default shaped form), `symbol`
+(a bare name, which is how an enum reads, and it runs backwards too), `handle`
+and `operations` (by reference). `autoImage(value)` is the rung beneath a
+declared image and answers `"transparent"` or `"opaque"` in constant time; an
+iterator is always opaque, because measuring one drains it.
+
+A host value can also decide what it unifies with, which is Hyperon's
+`CustomMatch`: give the class a `[CUSTOM_MATCH](other)` method and call
+`registerCustomMatch(m.engine, TheClass)`. Registration is what turns the seam
+on, so a program that does not use it carries no clause for it at all.
+
+## Integrating a library
+
+`metta-node/integrate` wraps a module, an object or one function as operations,
+installs atomically, and discovers packages that advertise themselves in their
+own `package.json` under `metta.integrations`, `metta.spaces` or
+`metta.libraries`. `entryPoints(group)` answers advertised names without
+importing anything; `discover()` returns integrations in install order and
+refuses a requirement cycle. `installReflectionOps(m)` adds `(js-attr $o $n)`
+and the two-mode relation `(js-field $o $n)`, which answers a `(name value)`
+pair whether the name arrives bound or unbound.
+
+## What a space declares, and a notation of your own
+
+`kb.handles(pattern, "Exact" | "Partial" | "Sound" | "Refuse")` declares how
+faithfully a space answers one query shape, keyed by shape so a second adds a
+row and routing takes the most specific. `kb.covers(effect)`, `kb.writes(atomicity)`
+and `kb.emits(policy)` are keyed by space and REPLACE. `kb.digest()` is a sha256
+of the content, order-independent and refused for a space holding a live host
+reference. `kb.transaction(term)` runs one term atomically; the body is a term
+rather than a callable because `engine_yield/1` cannot unwind through a
+transaction, which is the engine's own words for it.
+
+`registerToken(m.engine, /#[0-9a-f]{6}/, (lexeme) => G(...))` extends the
+READER: the constructor gets the complete lexeme and the callable never leaves
+the host. Needs `library(pcre)`, which `m.engine.capabilities()` reports.
+
+## Reactions, and undoing what already committed
+
+`kb.reacts(pattern, operation, {priority})` declares a rule the ENGINE runs
+when a matching atom lands, under the match's bindings; the managed heads are
+`insert`, `retract` and `revise`. `kb.agenda(policy)` picks which of several
+fires first, from a production system's own conflict-resolution vocabulary:
+declaration, recency, specificity, priority, user.
+
+`saga(m, receiptSpace)` is the compensating-transaction journal. Declare
+`compensates(m, "charge", "refund")`, run steps with `await book.run(term)`,
+and `await book.rollback()` undoes them in reverse. A receipt is an ordinary
+`(did op args result)` atom. A failed step commits none; rollback preflights
+every compensation before undoing anything; a failed compensation keeps its
+suffix so a retry resumes. The step is not itself atomic here, because
+`engine_yield/1` cannot unwind through a transaction, which leaves the
+classical saga [source: Garcia-Molina and Salem, SIGMOD 1987].
+
+## What a definition says about itself
+
+`definitionFacts(m, fn)` lowers a function's body to find out what it reaches
+and throws the term away, so nothing is installed. It answers the free names,
+the source span, a block comment, the join over the effects the engine
+declares, and `unresolved` for the heads it declares none for. `pure` is
+conservative: a body reaching an unresolved head is never called pure.
+
+## The command line
+
+```sh
+npx metta-node run program.metta
+npx metta-node eval "(+ 1 2)"
+npx metta-node why "(quad 3)"
+npx metta-node repl
+```
+
+## Where to read next
+
+- `extensions/node/README.md` is the full surface with worked examples.
+- `extensions/node/example/` are runnable programs.
+- The site publishes the same README at `/extensions/node`.

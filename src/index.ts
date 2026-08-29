@@ -32,7 +32,10 @@ export {
   float,
   fresh,
   internedCount,
+  lift,
   mapTerm,
+  registerRepr,
+  unregisterRepr,
   space,
   substitute,
   sym,
@@ -61,16 +64,25 @@ export {
 
 // The word door and the case tower.
 export {
+  Accept,
   type Bound,
   CaseBuilder,
   Collapse,
+  Drop,
   Empty,
   If,
   Let,
   LetStar,
   Match,
+  ATOM_TYPE,
+  FALSE,
+  In,
   Quote,
+  Refuse,
   Superpose,
+  TRUE,
+  UNDEFINED,
+  UNIT,
   abs,
   add,
   and,
@@ -108,6 +120,7 @@ export {
 export {
   Answers,
   type AskOptions,
+  Rows,
   type GoalRequest,
   type Plan,
   type Row,
@@ -120,7 +133,7 @@ export {
 // Spaces.
 export {
   type Admission,
-  type Grant,
+  type DerivationOptions,
   Space,
   type WaitOptions,
   type SpaceOptions,
@@ -141,13 +154,29 @@ export {
 } from "./define/define.ts";
 export { type Body, type Clause, type TracedGoal } from "./define/trace.ts";
 export { type Lowered, type LowerScope, lower } from "./define/lower.ts";
+export {
+  type DefinitionFacts,
+  type EffectSource,
+  type FactsOptions,
+  type SourceOrigin,
+  type SourceSpan,
+  definitionFacts,
+  docOf,
+  spanOf,
+} from "./define/facts.ts";
 
 // The surface.
 export {
   type AnswerGroup,
   type BootOptions,
+  type DirectiveStatus,
+  type Form,
   MeTTa,
   type ReconcileReport,
+  type StatusGroup,
+  type StatusRow,
+  type TraceEvent,
+  type TraceOptions,
   mention,
   metta,
 } from "./metta.ts";
@@ -186,8 +215,202 @@ export {
 // The naming map, so a program can ask what a name images to.
 export { mapsExactly, mettaName, tsName } from "./naming.ts";
 
-// Errors.
-export { type Code, PettaError, branchFailure, nearest } from "./errors.ts";
+// The engine's own closed value sets that the core surface itself names. The
+// other twenty-eight are the `metta-node/vocabularies` satellite, because a
+// program that never mentions `agenda-policy` should not carry its table.
+// Each name below is a frozen table AND the union of its values, because a
+// `const` object carries both meanings: `EffectClass.oracleIO` is the word and
+// `EffectClass` is the type of the five.
+export {
+  Delivery,
+  EffectClass,
+  EventOrder,
+  Semiring,
+  SpaceCapability,
+  SubscriptionEdge,
+  type VocabularyName,
+  effectRank,
+  joinEffects,
+} from "./vocabularies.ts";
+
+// Errors: one family, one base, one `code` per condition.
+export {
+  CapabilityError,
+  CastError,
+  AssertionError,
+  ClosedError,
+  type Code,
+  CompileError,
+  EngineError,
+  InferenceLimitError,
+  InterruptedError,
+  type MettaErrorOptions,
+  MettaError,
+  MettaSyntaxError,
+  NameError,
+  NotReducibleError,
+  ProviderError,
+  ResourceLimitError,
+  ResultError,
+  SourceNotFoundError,
+  StrictError,
+  SubscriberError,
+  TimeLimitError,
+  TransportError,
+  UnsupportedError,
+  WireError,
+  branchFailure,
+  engineError,
+  isTransportError,
+  nearest,
+  unknownName,
+} from "./errors.ts";
+
+// The structural operations that need no engine: unification, one-way
+// matching, alpha-canonical keys, renaming.
+export {
+  type Bindings,
+  alphaCanonical,
+  alphaEqual,
+  alphaKey,
+  isGround,
+  matchTerms,
+  nameAnonymous,
+  renameVariables,
+  unifies,
+  unifyTerms,
+} from "./matching.ts";
+
+// Spaces implemented in TypeScript.
+export {
+  type Adder,
+  CAPABILITIES,
+  CUSTOM_MATCH,
+  type Clearer,
+  type CustomMatch,
+  type DeliveryPromise,
+  type Enumerable,
+  type Matcher,
+  type ProviderCapability,
+  type Remover,
+  type SpaceProvider,
+  type Subscribable,
+  capabilitiesOf,
+  customMatchers,
+  hasProvider,
+  providerOf,
+  providers,
+  registerCustomMatch,
+  registerProvider,
+  requireCapability,
+  unregisterCustomMatch,
+  unregisterProvider,
+} from "./provider.ts";
+
+// The live view of a host collection, which is the shortest useful provider.
+// The rest of the space algebra is the `metta-node/spaces` satellite.
+export { view } from "./spaces.ts";
+
+// Proofs.
+export {
+  type Builtin,
+  Derivation,
+  type Fact,
+  type ProofNode,
+  type Step,
+  derivationOf,
+  readable,
+} from "./derivation.ts";
+
+// Coordination, on the platform's own concurrency.
+export {
+  Channel,
+  type ConcurrencyOptions,
+  Task,
+  every,
+  merge,
+  parMap,
+  race,
+  spawn,
+} from "./parallel.ts";
+
+// Standing queries, and the fold that carries state across them.
+export { type EventStream, Fold, STATELESS, fold, publish, stream } from "./events.ts";
+export {
+  type Event,
+  LiveView,
+  SUBSCRIPTION_QUEUE_MAX,
+  type SubscribeOptions,
+  Subscription,
+  subscribe,
+} from "./subscribe.ts";
+
+// The compensating-transaction journal.
+export {
+  Saga,
+  compensates,
+  compensations,
+  saga,
+} from "./saga.ts";
+
+// Reader classes of the host's own, for a notation this engine should parse.
+export {
+  type TokenConstructor,
+  construct,
+  registerToken,
+  tokens,
+  unregisterToken,
+} from "./tokens.ts";
+
+// The presentation hook, for a caller extending this surface with handles of
+// its own that should print as what they are.
+export { showsAs } from "./present.ts";
+
+// The seeded source everything here that draws draws from.
+export { Random } from "./random.ts";
+
+// The settings a process runs under, and the version it declares.
+export { Config, type Setting, type Settings, config } from "./config.ts";
+export { version } from "./version.ts";
+
+// The two-way projection between a host value and an atom.
+export {
+  AUTO_TRANSPARENT_LIMIT,
+  FROM_ATOM,
+  IMAGES,
+  type Image,
+  type Projected,
+  type Projection,
+  type Registration,
+  type SelfProjecting,
+  TO_ATOM,
+  type Transparency,
+  autoImage,
+  build,
+  declarations,
+  ensureRegistered,
+  imageOf,
+  isProjectable,
+  project,
+  projected,
+  registerType,
+  unregisterType,
+} from "./convert.ts";
+
+// The value carriers a program reads answers under. The declaration door, the
+// law checks and the tagged-program evaluator are `metta-node/algebra`.
+export {
+  Algebra,
+  Amplitude,
+  type Carrier,
+  Rational,
+  type TaggedAnswer,
+  counting,
+  prob,
+  prov,
+  ranked,
+  tropical,
+} from "./algebra.ts";
 
 // The engine layer, for a conformance kit and for a host that needs the floor.
 export {
@@ -196,8 +419,8 @@ export {
   type Command,
   type Counters,
   type Capability,
-  type EffectClass,
   Engine,
+  type EngineCounters,
   type GroupsEvent,
   Job,
   type JobEvent,

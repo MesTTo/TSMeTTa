@@ -30,7 +30,8 @@
 import { type Atom, type Term, substitute, toAtom } from "./atom.ts";
 import { Answers, type AskOptions, type Row } from "./answers.ts";
 import { type Counters, type Engine, type Scope } from "./engine.ts";
-import { PettaError } from "./errors.ts";
+import { ClosedError, MettaError } from "./errors.ts";
+import { showsAs } from "./present.ts";
 import { Space } from "./space.ts";
 import { wireFromAtom } from "./wire.ts";
 
@@ -38,6 +39,15 @@ import { wireFromAtom } from "./wire.ts";
 export interface Limits {
   /** The engine's stack ceiling, in bytes, for every job started in this scope. */
   readonly stack?: number;
+  /**
+   * The engine's inference budget for every job started in this scope.
+   *
+   * Deterministic under load where a wall clock is not, which is why it is the
+   * bound this build carries. There is no `timeout` beside it: a WebAssembly
+   * SWI has no `library(time)`, so a deadline is enforced on the host side
+   * with an `AbortSignal` and the surface says so rather than pretending.
+   */
+  readonly inferences?: number;
 }
 
 /**
@@ -129,6 +139,8 @@ export class Stats implements Disposable {
   }
 }
 
+showsAs(Stats.prototype, (stats: Stats) => stats.toString());
+
 let worlds = 0;
 
 /**
@@ -178,9 +190,7 @@ export class World implements Disposable {
 
   #open(): void {
     if (this.#settled !== "open") {
-      throw new PettaError(`this world was already ${this.#settled}`, {
-        code: "ERR_METTA_CLOSED",
-      });
+      throw new ClosedError(`this world was already ${this.#settled}`);
     }
   }
 
@@ -271,6 +281,11 @@ export class World implements Disposable {
     this.restore();
   }
 }
+
+showsAs(
+  World.prototype,
+  (world: World) => `World(${world.space.name} over ${world.over.name})`,
+);
 
 /**
  * Whether a row came only from an atom the world removed.

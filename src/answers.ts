@@ -31,11 +31,10 @@
  *   Future Enhancements: None
  */
 
-import { inspect } from "node:util";
-
 import { Atom, Expression, Sym } from "./atom.ts";
 import type { Var } from "./atom.ts";
-import { PettaError, branchFailure } from "./errors.ts";
+import { MettaError, ResultError, branchFailure } from "./errors.ts";
+import { showsAs } from "./present.ts";
 
 /**
  * Whether an atom is one of MeTTa's own error atoms, `(Error culprit why)`.
@@ -56,14 +55,14 @@ export function isError(atom: unknown): atom is Expression {
 }
 
 /** One error atom, as the host error it describes. The atom rides as the cause. */
-export function errorOf(atom: Expression): PettaError {
+export function errorOf(atom: Expression): MettaError {
   const why = atom.items[2];
   const culprit = atom.items[1];
   const message =
     why === undefined
       ? atom.text
       : `${String(culprit ?? "")} ${why instanceof Sym ? why.name : why.text}`.trim();
-  return new PettaError(message, { cause: atom });
+  return new MettaError(message, { cause: atom });
 }
 
 /**
@@ -92,7 +91,7 @@ export type Plan =
     };
 
 /** The marker a yieldable ask produces, so a driver can tell it from an emission. */
-export const GOAL: unique symbol = Symbol("petta.goal");
+export const GOAL: unique symbol = Symbol("metta.goal");
 
 /** One asked goal, as it reaches the body's driver. */
 export interface GoalRequest<T = unknown> {
@@ -268,14 +267,12 @@ export class Answers<T> implements AsyncIterable<T>, PromiseLike<T[]> {
     const iterator = this[Symbol.asyncIterator]();
     const first = await iterator.next();
     if (first.done === true) {
-      throw new PettaError(`no answer to ${this.description}, where exactly one was required`, {
-        code: "ERR_METTA_ABSENT",
-      });
+      throw new ResultError(`no answer to ${this.description}, where exactly one was required`);
     }
     const second = await iterator.next();
     if (second.done !== true) {
       await iterator.return?.(undefined);
-      throw new PettaError(
+      throw new ResultError(
         `more than one answer to ${this.description}, where exactly one was required`,
         { code: "ERR_METTA_AMBIGUOUS" },
       );
@@ -410,21 +407,171 @@ export class Answers<T> implements AsyncIterable<T>, PromiseLike<T[]> {
     return true;
   }
 
+  /**
+   * Every answer as a ROW TABLE, with the columns the pattern binds.
+   *
+   * The eager door for a query whose answers a program is about to show, sort
+   * or write out: `await ans` gives loose rows, and this gives the same rows
+   * knowing what their columns are.
+   */
+  async rows(this: Answers<Row>): Promise<Rows> {
+    const collected = await this.toArray();
+    const plan = this.plan;
+    const columns =
+      plan?.kind === "match"
+        ? plan.vars.map((variable) => variable.name)
+        : [...new Set(collected.flatMap((row) => Object.keys(row)))];
+    return new Rows(columns, collected);
+  }
+
   /** The same ask under a deadline or a cancellation. */
   until(signal: AbortSignal): Answers<T> {
     return new Answers<T>(this.description, this.#open, signal, this.plan);
   }
+
+  /**
+   * The same ask, bounded by a deadline in milliseconds.
+   *
+   * `ans.timeout(50)` is `ans.until(AbortSignal.timeout(50))`, which is the
+   * platform's own deadline and aborts with the platform's own `TimeoutError`.
+   * Checkpoint-granular, like every other deadline here.
+   */
+  timeout(ms: number): Answers<T> {
+    return this.until(AbortSignal.timeout(ms));
+  }
+
+  /**
+   * The answer at one position, counting from the end when negative.
+   *
+   * `Array.prototype.at`'s contract, done lazily: a non-negative index stops
+   * pulling as soon as it is reached, so `ans.at(0)` costs one answer.
+   */
+  async at(index: number): Promise<T | undefined> {
+    if (index >= 0) {
+      let seen = 0;
+      for await (const answer of this) {
+        if (seen === index) return answer;
+        seen += 1;
+      }
+      return undefined;
+    }
+    // From the end: keep the last |index| answers in a ring rather than the
+    // whole set, so `at(-1)` over a million answers holds one.
+    const wanted = -index;
+    const ring: T[] = [];
+    for await (const answer of this) {
+      ring.push(answer);
+      if (ring.length > wanted) ring.shift();
+    }
+    return ring.length === wanted ? ring[0] : undefined;
+  }
+
+  /** The last answer, or undefined. Pulls the whole set, holding one answer. */
+  async last(): Promise<T | undefined> {
+    return this.at(-1);
+  }
+
+  /**
+   * Each distinct answer, lazily, keeping the first of each.
+   *
+   * Atoms are interned, so the default key IS the atom and a `Set` decides
+   * distinctness structurally with no comparison written here. Pass `key` for
+   * a row, where the whole row is rarely the identity that matters.
+   *
+   * Multiplicity is MeTTa's law, so this is an explicit narrowing rather than
+   * something the ask does on its own.
+   */
+  unique(key?: (answer: T) => unknown): Answers<T> {
+    return this.#derive<T>(`${this.description}.unique`, (source) => uniquely(source, key));
+  }
+
+  /**
+   * The answers in runs of `size`, lazily; the last run may be short.
+   *
+   * The door for a bulk write: `for await (const batch of ans.chunk(500))
+   * other.add(...batch)` costs one crossing per five hundred answers rather
+   * than one per answer.
+   */
+  chunk(size: number): Answers<T[]> {
+    if (size <= 0) {
+      throw new MettaError(`a chunk needs a positive size, not ${String(size)}`, {
+        code: "ERR_METTA_UNSUPPORTED",
+      });
+    }
+    return this.#derive<T[]>(`${this.description}.chunk(${String(size)})`, (source) =>
+      chunking(source, size),
+    );
+  }
+
+  /**
+   * Each answer through `visit`, unchanged, lazily.
+   *
+   * The observation door: logging or counting inside a pipeline without
+   * collapsing it. `map` would change the answers; this cannot.
+   */
+  tap(visit: (answer: T, index: number) => void | Promise<void>): Answers<T> {
+    return this.#derive<T>(`${this.description}.tap`, (source) => tapping(source, visit));
+  }
+
+  /** Every answer as a Map, keyed by `key`. A repeated key keeps the last. */
+  async toMap<K, V = T>(
+    key: (answer: T, index: number) => K,
+    value?: (answer: T, index: number) => V,
+  ): Promise<Map<K, V>> {
+    const collected = new Map<K, V>();
+    let index = 0;
+    for await (const answer of this) {
+      collected.set(key(answer, index), value === undefined ? (answer as unknown as V) : value(answer, index));
+      index += 1;
+    }
+    return collected;
+  }
+
+  /**
+   * The answers grouped by a key, in first-seen order.
+   *
+   * `Map.groupBy`'s contract for an ASYNCHRONOUS source, which the platform
+   * has no door for: `Map.groupBy` takes an iterable, and an ask is not one.
+   */
+  async groupBy<K>(key: (answer: T, index: number) => K): Promise<Map<K, T[]>> {
+    const grouped = new Map<K, T[]>();
+    let index = 0;
+    for await (const answer of this) {
+      const at = key(answer, index);
+      const held = grouped.get(at);
+      if (held === undefined) grouped.set(at, [answer]);
+      else held.push(answer);
+      index += 1;
+    }
+    return grouped;
+  }
+
+  /**
+   * This ask as a Web `ReadableStream`, so it composes with the platform.
+   *
+   * The bridge to everything that speaks streams: `Response`, `pipeThrough`,
+   * `Readable.fromWeb`. Backpressure is real, because a stream only pulls when
+   * its consumer asks, and cancelling the reader closes the cursor behind it.
+   */
+  stream(): ReadableStream<T> {
+    let iterator: AsyncIterator<T> | undefined;
+    const open = (): AsyncIterator<T> => (iterator ??= this[Symbol.asyncIterator]());
+    return new ReadableStream<T>({
+      pull: async (controller): Promise<void> => {
+        const step = await open().next();
+        if (step.done === true) controller.close();
+        else controller.enqueue(step.value);
+      },
+      cancel: async (): Promise<void> => {
+        await iterator?.return?.(undefined);
+      },
+    });
+  }
 }
 
-/** Console honesty: a lazy ask prints as its description. */
-Object.defineProperty(Answers.prototype, inspect.custom, {
-  value: function inspectAnswers(this: Answers<unknown>): string {
-    return this.toString();
-  },
-  enumerable: false,
-  writable: false,
-  configurable: false,
-});
+// Console honesty: a lazy ask prints as its description, and printing it does
+// not consume it.
+showsAs(Answers.prototype, (answers: Answers<unknown>) => answers.toString());
 
 // ---------------------------------------------------------------------------
 // The helper family. Each one closes the source it wraps when it stops early,
@@ -496,6 +643,43 @@ async function* dropping<T>(source: AsyncIterable<T>, count: number): AsyncGener
   }
 }
 
+async function* uniquely<T>(
+  source: AsyncIterable<T>,
+  key: ((answer: T) => unknown) | undefined,
+): AsyncGenerator<T> {
+  const seen = new Set<unknown>();
+  for await (const answer of source) {
+    const at = key === undefined ? answer : key(answer);
+    if (seen.has(at)) continue;
+    seen.add(at);
+    yield answer;
+  }
+}
+
+async function* chunking<T>(source: AsyncIterable<T>, size: number): AsyncGenerator<T[]> {
+  let run: T[] = [];
+  for await (const answer of source) {
+    run.push(answer);
+    if (run.length >= size) {
+      yield run;
+      run = [];
+    }
+  }
+  if (run.length > 0) yield run;
+}
+
+async function* tapping<T>(
+  source: AsyncIterable<T>,
+  visit: (answer: T, index: number) => void | Promise<void>,
+): AsyncGenerator<T> {
+  let index = 0;
+  for await (const answer of source) {
+    await visit(answer, index);
+    index += 1;
+    yield answer;
+  }
+}
+
 async function* flatMapping<T, U>(
   source: AsyncIterable<T>,
   transform: (answer: T, index: number) => Iterable<U> | AsyncIterable<U>,
@@ -511,6 +695,76 @@ async function* flatMapping<T, U>(
     index += 1;
   }
 }
+
+/**
+ * Every answer to a query, in the order the engine produced them, with the
+ * columns it was asked for.
+ *
+ * ```ts
+ * const rows = await m.match(S.parent(V.parent, V.child)).rows();
+ * rows.columns;                     // ["parent", "child"]
+ * rows.column("child");             // every child, in order
+ * console.log(rows.toTable());      // an aligned table, for a terminal
+ * ```
+ *
+ * An ordinary array underneath, so `map`, `filter`, `length` and destructuring
+ * all mean what they mean. What it adds is the two things an array of loose
+ * objects cannot say: which columns there ARE, and how to show them.
+ */
+export class Rows extends Array<Row> {
+  /** The columns, in the order the pattern binds them. */
+  readonly columns: readonly string[];
+
+  /** @internal Use `Answers.rows()`. */
+  constructor(columns: readonly string[], rows: readonly Row[] = []) {
+    super();
+    // `Array`'s own constructor reads a single number as a LENGTH, so the rows
+    // are pushed rather than spread into it.
+    this.columns = [...columns];
+    for (const row of rows) this.push(row);
+  }
+
+  /**
+   * Answer plain arrays from `map`, `filter` and the rest.
+   *
+   * Without this, every derived array would be a `Rows` built by the species
+   * constructor with a NUMBER, which `Array` reads as a length. The columns
+   * belong to the query, not to whatever a caller mapped its rows into.
+   */
+  static override get [Symbol.species](): ArrayConstructor {
+    return Array;
+  }
+
+  /** One column's values, in row order. */
+  column(name: string): Atom[] {
+    if (!this.columns.includes(name)) {
+      throw new MettaError(
+        `no column ${name}; this query binds ${this.columns.join(", ") || "nothing"}`,
+      );
+    }
+    return this.map((row) => row[name] as Atom);
+  }
+
+  /** Every row as plain text, which is what a log or a CSV wants. */
+  toTable(): string {
+    const widths = this.columns.map((name) =>
+      Math.max(name.length, ...this.map((row) => String(row[name] ?? "").length), 0),
+    );
+    const line = (cells: readonly string[]): string =>
+      cells.map((cell, at) => cell.padEnd(widths[at] ?? 0)).join("  ").trimEnd();
+    return [
+      line(this.columns),
+      line(this.columns.map((_, at) => "-".repeat(widths[at] ?? 0))),
+      ...this.map((row) => line(this.columns.map((name) => String(row[name] ?? "")))),
+    ].join("\n");
+  }
+
+  override toString(): string {
+    return `Rows(${String(this.length)} x ${this.columns.join(", ")})`;
+  }
+}
+
+showsAs(Rows.prototype, (rows: Rows) => (rows.length === 0 ? rows.toString() : rows.toTable()));
 
 /** An ask over answers already in hand. The empty case and the test case. */
 export function answersOf<T>(description: string, values: readonly T[]): Answers<T> {

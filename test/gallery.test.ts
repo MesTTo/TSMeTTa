@@ -69,6 +69,12 @@ describe("the gallery", () => {
     assert.equal(lines.get("the parent, untouched"), "1");
     assert.equal(lines.get("after the commit"), '(todo 1 "write the guide" done)');
     assert.equal(lines.get("a case tower"), '"finished"');
+    assert.equal(lines.get("a live Map, queried"), "2");
+    assert.equal(lines.get("two spaces read as one"), "(kv ada 3) (kv bob 5) (kv cy 7)");
+    assert.equal(lines.get("a union refuses writes"), "refused");
+    assert.equal(lines.get("why it holds"), "12");
+    assert.equal(lines.get("the rules it used"), "2");
+    assert.equal(lines.get("a standing query saw"), "(alarm fire)");
   });
 
   it("keeps the repository README's own snippet running", () => {

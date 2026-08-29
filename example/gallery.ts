@@ -1,5 +1,5 @@
 /**
- * Purpose: the gallery. Four programs that use the whole surface, each one
+ * Purpose: the gallery. Five programs that use the whole surface, each one
  *   runnable, so the README's claims are executable rather than asserted.
  * Assumes:
  *   - it is run from this checkout, so `metta()` finds the engine tree beside
@@ -21,7 +21,9 @@ import {
   caseOf,
   hostValue,
   metta,
+  subscribe,
 } from "../src/index.ts";
+import { union } from "../src/spaces.ts";
 
 /** Everything the gallery printed, in order, so a test can read it back. */
 export const printed: string[] = [];
@@ -136,4 +138,42 @@ const label = caseOf(S.done)
   .otherwise(() => "unknown");
 say("a case tower", await m.eval(label).one());
 
+// ---------------------------------------------------------------------------
+// Program V: the engine queries YOUR data, composes it, and explains itself.
+//
+// A live `Map` is a space in one line. The union of it with a second one reads
+// as one space and refuses writes by capability, because neither combinator
+// implements a write door. Then a proof of an answer, as data.
+
+const scores = new Map<string, number>([["ada", 3]]);
+const held = m.attach("&scores", scores);
+scores.set("bob", 5); // no publication step: the next query reads the Map
+say("a live Map, queried", (await held.match(S.kv(V.who, V.n))).length);
+
+const extra = m.attach("&extra", new Map([["cy", 7]]));
+const both = m.attach("&both", union(held, extra));
+say("two spaces read as one", (await both.atoms()).map(String).join(" "));
+say("a union refuses writes", refused(() => both.add(S.kv(S.dee, 9))));
+
+m.run("(= (dbl $x) (* 2 $x))\n(= (quad $x) (dbl (dbl $x)))");
+const proof = await m.why(S.quad(3));
+say("why it holds", proof === undefined ? "no proof" : String(proof.answer));
+say("the rules it used", proof === undefined ? "" : String(proof.rules.length));
+
+const alarms = m.space(S.alarms);
+using watch = subscribe(alarms, S.alarm(V.what), { on: "add" });
+alarms.add(S.alarm(S.fire));
+await watch.settled();
+say("a standing query saw", watch.drain().map((event) => event.atom.text).join(" "));
+
 m.dispose();
+
+/** What a refusal said, in one word, so a printed line stays a line. */
+function refused(work: () => unknown): string {
+  try {
+    work();
+    return "nothing";
+  } catch {
+    return "refused";
+  }
+}

@@ -250,9 +250,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     except AssertionError as drift:
         # A refusal is not a regression and reads differently: nothing was
         # compared, so there is no number to look at. Exit 2 rather than 1 says
-        # so, and the message already names both configurations and the remedy,
-        # which a traceback around it would only bury.
+        # so, and the message already names both configurations, which a
+        # traceback around it would only bury.
+        #
+        # The remedy it names is another seat's flag, because the message comes
+        # from the shared harness. Only a WHOLE run restamps here -- a subset
+        # cannot speak for the rows it did not measure -- so this seat's remedy
+        # is the whole-suite re-pin, said in this seat's own words.
         print(f"cannot compare: {drift}", file=sys.stderr)
+        if not whole:
+            print(
+                "in this seat the stamp is written by a whole-suite re-pin: run "
+                "`sh extensions/node/bench.sh --update` with no case names and "
+                "without --counter-only",
+                file=sys.stderr,
+            )
         return 2
 
     failures: list[str] = []

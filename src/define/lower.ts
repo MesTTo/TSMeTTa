@@ -41,7 +41,7 @@ import type {
 } from "acorn";
 
 import { type Atom, type Term, expr, exprOf, sym, toAtom, variable } from "../atom.ts";
-import { PettaError, nearest } from "../errors.ts";
+import { CompileError, MettaError, nearest } from "../errors.ts";
 import { mettaName } from "../naming.ts";
 
 /** What the lowering may reach for beside the function's own parameters. */
@@ -56,16 +56,26 @@ export interface LowerScope {
   readonly scope?: Readonly<Record<string, Term>>;
   /** Every head the engine knows, so a refusal can name the nearest one. */
   readonly declared?: () => Iterable<string>;
+  /**
+   * Where a resolved free identifier is recorded, when a caller wants them.
+   *
+   * `resolve` is the ONE place a name the body's own source cannot bind is
+   * decided, so collecting here is the same answer the lowering acts on rather
+   * than a second walk that could disagree with it.
+   */
+  readonly free?: Set<string>;
 }
 
-/** A lowered body: the head's parameters and the one term they reduce to. */
+/** A lowered body: the head's parameters, the term they reduce to, and the names it reached. */
 export interface Lowered {
   readonly params: readonly Atom[];
   readonly body: Atom;
+  /** Every name the body reached that its own source could not bind, sorted. */
+  readonly free: readonly string[];
 }
 
 function refuse(what: string, remedy: string): never {
-  throw new PettaError(`${what}; ${remedy}`, { code: "ERR_METTA_LOWER" });
+  throw new CompileError(`${what}; ${remedy}`);
 }
 
 // The operators that ARE engine heads, so the body's arithmetic and its
@@ -149,7 +159,11 @@ function findFunction(node: Node): AcornFunction | null {
  * around everything after it, and an `if` without an `else` becomes an `if`
  * whose else branch is everything after it.
  */
-export function lower(target: (...args: never[]) => unknown, scope: LowerScope): Lowered {
+export function lower(target: (...args: never[]) => unknown, given: LowerScope): Lowered {
+  // The free set rides the scope so `resolve` can record into it without a
+  // second parameter on every lowering function between here and there.
+  const free = given.free ?? new Set<string>();
+  const scope: LowerScope = { ...given, free };
   const parsed = parseFunction(Function.prototype.toString.call(target));
   const bindings = new Map<string, Atom>();
   const params: Atom[] = [];
@@ -171,7 +185,7 @@ export function lower(target: (...args: never[]) => unknown, scope: LowerScope):
     body.type === "BlockStatement"
       ? lowerBlock((body as BlockStatement).body, bindings, scope)
       : lowerExpression(body as AcornExpression, bindings, scope);
-  return { params, body: term };
+  return { params, body: term, free: [...free].sort() };
 }
 
 function lowerBlock(statements: readonly Statement[], bindings: Bindings, scope: LowerScope): Atom {
@@ -427,6 +441,7 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
  */
 function resolve(name: string, scope: LowerScope, position: string): Atom {
   if (name === scope.selfIdentifier || name === scope.selfName) return sym(scope.selfName);
+  scope.free?.add(name);
   const supplied = scope.scope?.[name];
   if (supplied !== undefined) return toAtom(supplied);
   const mapped = mettaName(name);

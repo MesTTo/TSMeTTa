@@ -32,18 +32,18 @@
  *   Future Enhancements: None
  */
 
-import {
-  Collapse,
-  type MeTTa,
-  S,
-  V,
-  atomFromWire,
-  fromTransport,
-  metta,
-  sym,
-  toTransport,
-  wireFromAtom,
-} from "../src/index.ts";
+// Imported from the modules the workloads actually use rather than from the
+// package barrel. A barrel import pulls in every satellite, and the module
+// loading that costs lands in the INSTRUCTION rows of every case: adding the
+// twelve satellites moved four pinned rows by a constant ten to twelve million
+// instructions, which is 0.13% of the largest and 1.5% of the smallest
+// [measured 2026-08-28]. A benchmark should measure its workload, not the
+// import graph of the package it lives in.
+import { S, V } from "../src/factories.ts";
+import { sym } from "../src/atom.ts";
+import { type MeTTa, metta } from "../src/metta.ts";
+import { atomFromWire, fromTransport, toTransport, wireFromAtom } from "../src/wire.ts";
+import { Collapse } from "../src/words.ts";
 
 /** Which counter decides a case. A case may name both when it straddles the boundary. */
 export type Counter = "inferences" | "instructions";

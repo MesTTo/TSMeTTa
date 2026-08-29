@@ -16,6 +16,7 @@ import { after, before, describe, it } from "node:test";
 import {
   Collapse,
   Empty,
+  G,
   If,
   Let,
   LetStar,
@@ -161,7 +162,10 @@ describe("control forms", () => {
   });
 
   it("unify at arity two and at arity four", async () => {
-    assert.equal(await answer(unify(S.f(1), S.f(V.x))), "True");
+    // Arity two is the HOST matcher: a substitution, and no engine at all.
+    assert.deepEqual(unify(S.f(1), S.f(V.x)), { x: G(1) });
+    assert.equal(unify(S.f(1), S.g(1)), undefined);
+    // Arity four is the engine's own conditional form.
     assert.equal(await answer(unify(S.f(1), S.f(V.x), V.x, S.nope)), "1");
     assert.equal(await answer(unify(S.f(1), S.g(2), S.yes, S.no)), "no");
   });

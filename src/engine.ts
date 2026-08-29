@@ -37,8 +37,19 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Atom, G } from "./atom.ts";
-import { MettaError } from "./errors.ts";
+import { Atom, G, lift } from "./atom.ts";
+import { config } from "./config.ts";
+import { type EffectClass, type OpKind as CatalogOpKind, effectRank } from "./vocabularies.ts";
+import {
+  CapabilityError,
+  EngineError,
+  MettaError,
+  NameError,
+  ResultError,
+  TransportError,
+  UnsupportedError,
+  engineError,
+} from "./errors.ts";
 import {
   HostValues,
   type Transport,
@@ -71,7 +82,7 @@ function findPackageRoot(from: string): string {
     if (existsSync(join(at, "bridge.pl")) && existsSync(join(at, "package.json"))) return at;
     const up = dirname(at);
     if (up === at) {
-      throw new MettaError(
+      throw new EngineError(
         `this package's own bridge.pl is not above ${from}; the binding cannot ` +
           `find the engine tree it mounts`,
       );
@@ -125,7 +136,7 @@ export interface Capability {
 function refuseUnnamedErrors(lines: readonly string[]): void {
   const errors = lines.filter((line) => line.startsWith("ERROR:"));
   if (errors.length === 0) return;
-  throw new MettaError(
+  throw new EngineError(
     `the engine reported ${String(errors.length)} error(s) while booting, ` +
       `which this binding does not name: ${errors.join(" / ")}. The platform ` +
       `census carries every capability the build lacks, so an ERROR: here is ` +
@@ -169,6 +180,7 @@ export type JobEvent = AnswerEvent | GroupsEvent | ValueEvent | AdmissionEvent;
 /** A scope a job runs inside, established within its own engine. */
 export type Scope =
   | readonly ["stack", number]
+  | readonly ["inferences", number]
   | readonly ["module", string]
   | readonly ["transaction"]
   | readonly ["speculate"];
@@ -176,16 +188,18 @@ export type Scope =
 /** A command posted to bridge.pl's table. Payloads are transport terms. */
 export type Command = readonly unknown[];
 
-/** How a host operation answers. */
-export type OpKind = "det" | "many" | "raw_det" | "raw_many";
+/**
+ * How a host operation answers.
+ *
+ * The catalog's `op-kind` vocabulary minus `async`, which this transport does
+ * not need: a JavaScript operation that answers a promise is awaited by the
+ * pump whatever kind it declared, so asynchrony is a property of the ANSWER
+ * here rather than a kind an author picks.
+ */
+export type OpKind = Exclude<CatalogOpKind, "async">;
 
 /** The five ranked effect classes an operation declares. */
-export type EffectClass =
-  | "pureStructural"
-  | "readOnlyLookup"
-  | "nondeterministicReadOnly"
-  | "writesState"
-  | "oracleIO";
+export type { EffectClass };
 
 /** A registered host operation, as the pump needs it. */
 export interface HostOp {
@@ -213,6 +227,28 @@ export interface Counters {
   crossings: number;
   /** Bodies re-run to reach a second branch, the multi-shot cost. */
   replays: number;
+}
+
+/**
+ * The engine's own runtime counters, read in one crossing.
+ *
+ * Absolutes rather than deltas, because the scope that wants a delta is the
+ * one that knows when it opened. Every field is the engine's own
+ * `statistics/2` reading, so nothing here is derived or estimated.
+ */
+export interface EngineCounters {
+  /** Total inferences this engine has retired. */
+  readonly inferences: number;
+  /** CPU seconds this engine has spent. */
+  readonly cpuSeconds: number;
+  /** How many garbage collections have run. */
+  readonly collections: number;
+  /** How many bytes those collections freed. */
+  readonly freedBytes: number;
+  /** How many milliseconds they spent. */
+  readonly collectionMs: number;
+  /** How many bytes the answer tables hold. */
+  readonly tableBytes: number;
 }
 
 type PrologAnswer = Record<string, unknown> & { error?: boolean; message?: string };
@@ -282,6 +318,54 @@ function mountControlFiles(fs: EmscriptenFS, root: string): void {
   }
 }
 
+/** One effectful crossing a saga recorded, before it becomes a receipt atom. */
+export interface CapturedEffect {
+  /** The operation's engine name. */
+  readonly name: string;
+  /** Its arguments, on the wire, exactly as the engine sent them. */
+  readonly args: readonly unknown[];
+  /** What the body answered. */
+  readonly result: unknown;
+}
+
+// The open capture, or null. A module-level slot rather than a field, because
+// the operation path reads it per call and this seat has one thread: there is
+// no second capture to confuse it with, and a per-crossing map lookup is not
+// what a program with no saga should pay.
+let capturing: CapturedEffect[] | null = null;
+
+/** The rank a receipt needs, read once rather than per crossing. */
+const WRITES = effectRank("writesState");
+
+/**
+ * Route effectful operation crossings into `into` while `walk` runs.
+ *
+ * Restores the previous capture rather than clearing it, so a compensation
+ * that itself runs operations does not journal them into the saga that is
+ * compensating -- which would make an undo into an obligation to undo.
+ */
+export async function whileCapturing<T>(
+  into: CapturedEffect[] | null,
+  walk: () => Promise<T>,
+): Promise<T> {
+  const outer = capturing;
+  // The slot spans an await, which is safe because this seat drives one engine
+  // and one job at a time; two OPEN captures would interleave, so the second
+  // is refused rather than journalled into the first. Closing one (the null
+  // case, which is how a compensation runs) always nests.
+  if (into !== null && outer !== null) {
+    throw new MettaError(
+      "two sagas cannot record at once: finish or roll back the open one first",
+    );
+  }
+  capturing = into;
+  try {
+    return await walk();
+  } finally {
+    capturing = outer;
+  }
+}
+
 /**
  * One job: an engine suspended between events, pumped by the host.
  *
@@ -293,7 +377,13 @@ function mountControlFiles(fs: EmscriptenFS, root: string): void {
 export class Job {
   #engine: Engine;
   #id: number | null;
-  #pending: AsyncIterator<unknown> | Iterator<unknown> | null = null;
+  // A MAP rather than one slot. A single slot could hold one live stream, so a
+  // second one opened before the first was exhausted replaced it and the first
+  // could never be resumed: every conjunction over a TypeScript-backed space
+  // answered its first row and stopped, silently.
+  // [tested: "answers a conjunction over a provider needing two live enumerations at once"]
+  #pending = new Map<number, AsyncIterator<unknown> | Iterator<unknown>>();
+  #nextStream = 1;
 
   /** @internal */
   constructor(engine: Engine, id: number) {
@@ -337,10 +427,9 @@ export class Job {
         continue;
       }
       this.close();
-      throw new MettaError(
+      throw new UnsupportedError(
         "a host operation answered with a promise on a synchronous door; use " +
           "the awaiting form so this side can wait for it",
-        { code: "ERR_METTA_UNSUPPORTED" },
       );
     }
   }
@@ -359,7 +448,7 @@ export class Job {
   async only(): Promise<JobEvent> {
     const event = await this.next();
     if (event === null) {
-      throw new MettaError("the engine answered nothing where one answer was required");
+      throw new ResultError("the engine answered nothing where one answer was required");
     }
     // Drain, so the job's inference spend is recorded and its engine released.
     await this.next();
@@ -371,7 +460,11 @@ export class Job {
     const id = this.#id;
     if (id === null) return;
     this.#id = null;
-    this.#pending = null;
+    // A stream the engine cut rather than drained is still here, and this is
+    // where it goes. `return()` runs a generator's own `finally`, so a body
+    // holding a resource releases it rather than being dropped on the floor.
+    for (const iterator of this.#pending.values()) this.#close(iterator);
+    this.#pending.clear();
     this.#engine.rawStop(id);
   }
 
@@ -406,12 +499,12 @@ export class Job {
       }
       if (tag === "error") {
         this.close();
-        throw new MettaError(hostText(event[1]).trimEnd());
+        throw engineError(hostText(event[1]));
       }
       if (tag !== "call" && tag !== "pull") {
         return { done: true, event: this.#engine.decodeEvent(tag, event) };
       }
-      const reply = tag === "call" ? this.#callReply(event) : this.#pullReply();
+      const reply = tag === "call" ? this.#callReply(event) : this.#pullReply(event);
       // A pending reply is handed BACK rather than resumed here, so a
       // synchronous door that refuses it leaves nothing scheduled against an
       // engine it is about to release.
@@ -424,6 +517,9 @@ export class Job {
   #callReply(event: readonly unknown[]): readonly unknown[] | Promise<readonly unknown[]> {
     const name = hostText(event[1]);
     const wires = event[2] as readonly unknown[];
+    // The engine sends the space it is reducing in, so an operation may ask
+    // where it is without the space being one of its arguments.
+    const where = event[3] === undefined ? undefined : hostText(event[3]);
     let op: HostOp;
     try {
       op = this.#engine.operation(name);
@@ -432,11 +528,24 @@ export class Job {
     }
     const raw = op.kind === "raw_det" || op.kind === "raw_many";
     let answered: unknown;
+    const outer = this.#engine.callingSpace;
+    if (where !== undefined) this.#engine.callingSpace = where;
     try {
       const args = wires.map((wire) => atomFromWire(this.#engine.decodeWire(wire)));
       answered = op.run(raw ? args : args.map((atom) => unwrap(atom)));
     } catch (error) {
       return ["error", messageOf(error)];
+    } finally {
+      // Restored rather than cleared, so an operation that reaches the engine
+      // and is called back into leaves the outer call's space in place.
+      this.#engine.callingSpace = outer;
+    }
+    // One null read on the operation path, which is what a saga costs a
+    // program that has none. A capture is open only inside `Saga.run`, and it
+    // takes only the operations whose DECLARED effect is a write or stronger:
+    // a receipt for a read would be an obligation to undo nothing.
+    if (capturing !== null && effectRank(op.effect) >= WRITES) {
+      capturing.push({ name, args: wires, result: answered });
     }
     const many = op.kind === "many" || op.kind === "raw_many";
     if (isPromise(answered)) {
@@ -452,44 +561,63 @@ export class Job {
     }
   }
 
-  /** A settled answer as the reply the bridge reads. */
+  /**
+   * A settled answer as the reply the bridge reads.
+   *
+   * A stream is given an ID, because more than one can be live at once: the
+   * engine opens an inner enumeration while an outer one is suspended, and
+   * both have to be resumable. The id rides every pull back.
+   */
   #shape(settled: unknown, many: boolean): readonly unknown[] {
     if (!many) return ["ok", this.#engine.encodeValue(settled)];
     const iterator = asIterator(settled);
     if (iterator === null) return ["many", [this.#engine.encodeValue(settled)]];
-    this.#pending = iterator;
-    return ["stream"];
+    const id = this.#nextStream;
+    this.#nextStream += 1;
+    this.#pending.set(id, iterator);
+    return ["stream", String(id)];
   }
 
   /** What to post back for one pull of a streaming host operation. */
-  #pullReply(): readonly unknown[] | Promise<readonly unknown[]> {
-    const iterator = this.#pending;
-    if (iterator === null) return ["done"];
+  #pullReply(event: readonly unknown[]): readonly unknown[] | Promise<readonly unknown[]> {
+    const id = Number(hostText(event[1]));
+    const iterator = this.#pending.get(id);
+    if (iterator === undefined) return ["done"];
     let step: IteratorResult<unknown> | Promise<IteratorResult<unknown>>;
     try {
       step = iterator.next() as IteratorResult<unknown> | Promise<IteratorResult<unknown>>;
     } catch (error) {
-      this.#pending = null;
+      this.#pending.delete(id);
       return ["error", messageOf(error)];
     }
     if (isPromise(step)) {
       return step.then(
-        (settled) => this.#step(settled),
+        (settled) => this.#step(id, settled),
         (error: unknown) => {
-          this.#pending = null;
+          this.#pending.delete(id);
           return ["error", messageOf(error)] as readonly unknown[];
         },
       );
     }
-    return this.#step(step);
+    return this.#step(id, step);
   }
 
-  #step(step: IteratorResult<unknown>): readonly unknown[] {
+  #step(id: number, step: IteratorResult<unknown>): readonly unknown[] {
     if (step.done === true) {
-      this.#pending = null;
+      this.#pending.delete(id);
       return ["done"];
     }
     return ["ok", this.#engine.encodeValue(step.value)];
+  }
+
+  /** Release one stream the engine abandoned, running the body's own cleanup. */
+  #close(iterator: AsyncIterator<unknown> | Iterator<unknown>): void {
+    try {
+      void iterator.return?.(undefined);
+    } catch {
+      // A body that throws on the way out has nothing left to tell anyone: the
+      // job is closing, and there is no caller to raise it to.
+    }
   }
 }
 
@@ -611,16 +739,39 @@ export class Engine {
       .query(`metta_node_do((${goal}), Outcome).`, input)
       .once();
     if (result?.error === true) {
-      throw new MettaError(`${String(result.message)} (running ${goal})`);
+      throw new TransportError(`${String(result.message)} (running ${goal})`);
     }
     if (result === undefined || result["success"] === false) {
-      throw new MettaError(`the engine could not run ${goal}`);
+      throw new TransportError(`the engine could not run ${goal}`);
     }
     const outcome = result["Outcome"] as readonly unknown[];
     const kind = hostText(outcome[0]);
-    if (kind === "error") throw new MettaError(`${hostText(outcome[1]).trimEnd()}\nrunning ${goal}`);
-    if (kind !== "ok") throw new MettaError(`the engine goal failed: ${goal}`);
+    if (kind === "error") throw engineError(`${hostText(outcome[1]).trimEnd()}\nrunning ${goal}`);
+    if (kind !== "ok") throw new EngineError(`the engine goal failed: ${goal}`);
     return result;
+  }
+
+  /**
+   * The engine's own runtime counters, in one crossing.
+   *
+   * `counters` beside it is this TRANSPORT's own tally, which no engine can
+   * report: crossings and replays are properties of the wire.
+   */
+  get engineCounters(): EngineCounters {
+    // Read outside a job: SWI's inference counter is per ENGINE, so a reading
+    // taken inside a job's own engine reports that engine's handful rather
+    // than the process's work.
+    const answer = this.once("metta_node_counters(Texts)");
+    const texts = (answer["Texts"] ?? []) as readonly unknown[];
+    const read = (at: number): number => Number(hostText(texts[at] ?? "0"));
+    return {
+      inferences: read(0),
+      cpuSeconds: read(1),
+      collections: read(2),
+      freedBytes: read(3),
+      collectionMs: read(4),
+      tableBytes: read(5),
+    };
   }
 
   /** Mount a host directory into the engine's virtual filesystem. */
@@ -671,7 +822,7 @@ export class Engine {
    * the tag follows the VALUE: `n`, `g`, `b`, or a live reference under `o`.
    */
   encodeValue(value: unknown): Transport {
-    return this.encodeWire(wireFromAtom(value instanceof Atom ? value : G(value)));
+    return this.encodeWire(wireFromAtom(lift(value)));
   }
 
   /** @internal Encode a wire atom as a transport term. */
@@ -708,7 +859,7 @@ export class Engine {
           text: hostText(event[3]),
         };
       default:
-        throw new MettaError(`the bridge produced an event this host does not read: ${tag}`);
+        throw new TransportError(`the bridge produced an event this host does not read: ${tag}`);
     }
   }
 
@@ -726,6 +877,28 @@ export class Engine {
     this.#ops.set(`${op.name}/${String(op.arity)}`, op);
   }
 
+  /**
+   * Register a host operation this side answers WITHOUT declaring a MeTTa
+   * function for it.
+   *
+   * The door for the transport's own callbacks: a space backed by TypeScript
+   * is called through the same trampoline a host operation uses, but it is a
+   * SPACE rather than an operation, so declaring `$provider-call` as a MeTTa
+   * function would put a name in the catalog that nothing may call.
+   */
+  provide(op: HostOp): void {
+    this.#ops.set(`${op.name}/${String(op.arity)}`, op);
+  }
+
+  /**
+   * The space a host operation is being called from, while one is running.
+   *
+   * Undefined outside any call. It is set from the CALL EVENT rather than read
+   * back through a new job, because a new job has its own module and would
+   * answer the default however the caller had switched it.
+   */
+  callingSpace: string | undefined = undefined;
+
   /** A watch id no other watch is using. */
   nextWatchId(): number {
     this.#watches += 1;
@@ -738,12 +911,20 @@ export class Engine {
     this.#ops.delete(`${name}/${String(arity)}`);
   }
 
+  /**
+   * Every host operation registered here.
+   *
+   * The reflection door an integration needs: it registers, then asks what it
+   * registered, so removal names exactly what installation added.
+   */
+  operations(): readonly HostOp[] {
+    return [...this.#ops.values()];
+  }
+
   /** @internal The operation behind a dispatch, or a refusal naming it. */
   operation(name: string): HostOp {
     for (const op of this.#ops.values()) if (op.name === name) return op;
-    throw new MettaError(`the engine called ${name}, which this host has not registered`, {
-      code: "ERR_METTA_NAME",
-    });
+    throw new NameError(`the engine called ${name}, which this host has not registered`);
   }
 
   // --- the codec doors, which need no engine --------------------------------
@@ -757,9 +938,14 @@ export class Engine {
   /** An atom's round trip through the engine: decode it, then encode it back. */
   roundTrip(wire: Wire): Wire {
     const transport = this.encodeWire(wire);
-    const answer = this.once("metta_node_decode(W, T), metta_node_encode(T, Out)", {
-      W: transport,
-    });
+    // The decode carries a NAME TABLE and the encode reads it back, so a
+    // variable's own spelling survives the trip. Without it the round trip
+    // renamed `$x` to the Prolog engine's internal `$_154110`, which is the
+    // same variable said in a way no source ever wrote.
+    const answer = this.once(
+      "metta_node_decode(W, [], Names, T), metta_node_encode_named(T, Names, Out)",
+      { W: transport },
+    );
     return fromRoundTrip(transport, answer["Out"]);
   }
 
@@ -818,6 +1004,9 @@ export async function boot(
 ): Promise<Engine> {
   const root = options.root ?? REPO_ROOT;
   const verbose = options.verbose ?? false;
+  // The startup settings are fixed from here on, and `config` says so rather
+  // than quietly accepting a change that will do nothing.
+  config.markStarted();
   const initSWIPL = require("swipl-wasm/dist/swipl-node") as (
     config: Record<string, unknown>,
   ) => Promise<Swipl>;
@@ -847,10 +1036,23 @@ export async function boot(
   swipl.FS.writeFile(`${VIRTUAL_ROOT}/bridge.pl`, readFileSync(join(PACKAGE_ROOT, "bridge.pl")));
 
   const flags = verbose ? "['extensions']" : "['extensions', silent]";
+  // Only when one was ASKED for. Unset means the build's own ceiling, and a
+  // value this 32-bit build cannot represent is a refusal by name rather than
+  // a line on stderr.
+  const ceiling = config.stackLimit;
+  if (ceiling !== undefined) {
+    const set = swipl.prolog.query(`set_prolog_flag(stack_limit, ${String(ceiling)}).`).once();
+    if (set?.error === true || stderr.length > 0) {
+      throw new CapabilityError(
+        `this build cannot take a stack limit of ${String(ceiling)} bytes: it is a ` +
+          `32-bit WebAssembly SWI, so the ceiling has to fit in its address space`,
+      );
+    }
+  }
   swipl.prolog.query(`set_prolog_flag(argv, ${flags}).`).once();
   const consulted = swipl.prolog.query(`consult('${VIRTUAL_ROOT}/engine/metta.pl').`).once();
   if (consulted?.error === true) {
-    throw new MettaError(`the engine did not load: ${String(consulted.message)}`);
+    throw new EngineError(`the engine did not load: ${String(consulted.message)}`);
   }
 
   refuseUnnamedErrors(stderr);
@@ -859,7 +1061,7 @@ export async function boot(
 
   const bridged = swipl.prolog.query(`consult('${VIRTUAL_ROOT}/bridge.pl').`).once();
   if (bridged?.error === true) {
-    throw new MettaError(`the Node bridge did not load: ${String(bridged.message)}`);
+    throw new EngineError(`the Node bridge did not load: ${String(bridged.message)}`);
   }
 
   return new Engine(swipl, output, stderr);

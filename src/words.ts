@@ -30,8 +30,9 @@
  *   Future Enhancements: None
  */
 
-import { type Atom, type Term, type Var, expr, exprOf, sym, toAtom, variable } from "./atom.ts";
-import { PettaError } from "./errors.ts";
+import { type Atom, G, type Term, type Var, expr, exprOf, sym, toAtom, variable } from "./atom.ts";
+import { MettaError, NameError } from "./errors.ts";
+import { type Bindings, unifyTerms } from "./matching.ts";
 
 function apply(head: string, ...args: readonly Term[]): Atom {
   return expr(sym(head), ...args.map(toAtom));
@@ -232,9 +233,7 @@ export function typed(x: Term, type: Term): Atom {
 /** `(-> a b ... r)`, an arrow type as a value. */
 export function arrow(...types: readonly Term[]): Atom {
   if (types.length < 2) {
-    throw new PettaError("an arrow type needs at least an argument and a result", {
-      code: "ERR_METTA_NAME",
-    });
+    throw new NameError("an arrow type needs at least an argument and a result");
   }
   return apply("->", ...types);
 }
@@ -279,30 +278,95 @@ export function Empty(): Atom {
   return expr(sym("empty"));
 }
 
+// ---------------------------------------------------------------------------
+// The constants a program writes rather than spells.
+
+/** The atom `True`. */
+export const TRUE: Atom = G(true);
+
+/** The atom `False`. */
+export const FALSE: Atom = G(false);
+
+/**
+ * The unit value, `()`.
+ *
+ * What an operation whose type says it answers nothing answers: `add-atom`
+ * and its siblings. It is the EMPTY EXPRESSION, not a symbol, which is why it
+ * is written here rather than reached through `S`.
+ */
+export const UNIT: Atom = expr();
+
+/** The type of a term the type system has no declaration for. */
+export const UNDEFINED: Atom = sym("%Undefined%");
+
+/** The type every term has, which is what an unchecked position declares. */
+export const ATOM_TYPE: Atom = sym("Atom");
+
+/** `(in member container)`: membership, as a term. */
+export function In(member: Term, container: Term): Atom {
+  return apply("in", member, container);
+}
+
+// ---------------------------------------------------------------------------
+// The pre-add verdicts: what a space's admission judge answers.
+
+/**
+ * `(accept)` or `(accept atom)`: keep the offered atom, or this one instead.
+ *
+ * The verdict an admission judge answers to let a write through. With an atom,
+ * that atom is stored in place of the one offered, which is how a judge
+ * normalises on the way in.
+ */
+export function Accept(atom?: Term): Atom {
+  return atom === undefined ? expr(sym("accept")) : apply("accept", atom);
+}
+
+/** `(refuse words)`: reject a write, with the judge's own reason. */
+export function Refuse(words: Term): Atom {
+  return apply("refuse", words);
+}
+
+/** `(drop)`: skip a write silently, neither storing it nor refusing it. */
+export function Drop(): Atom {
+  return expr(sym("drop"));
+}
+
 /** `(match space pattern template)`, the space query as a term. */
 export function Match(space: Term, pattern: Term, template: Term): Atom {
   return apply("match", space, pattern, template);
 }
 
 /**
- * Whether two atoms unify, and the engine's own conditional form.
+ * Unify two terms, or build the engine's own conditional form.
  *
- * `unify(a, b)` asks the question and answers `True` or `False`;
- * `unify(a, b, then, otherwise)` is the four-argument form the engine has, in
- * expression position, which the Python side records as a residue it wanted
- * closed and which exists here from day one.
+ * The arity says which. `unify(a, b)` answers the SUBSTITUTION, or undefined,
+ * and starts no engine at all: it is the host-side matcher, so a program that
+ * only needs to know whether two terms fit never pays a crossing.
+ * `unify(a, b, then, otherwise)` is the four-argument engine form, in
+ * expression position, and answers the atom that reduces to one arm or the
+ * other.
  *
- * The two-argument form is the four-argument one with the two answers filled
- * in, rather than a second engine head: `unify/2` is not a MeTTa builtin, and
- * a door that named one would name nothing [measured 2026-08-27: `(unify (f 1)
- * (f $x))` does not reduce].
+ * ```ts
+ * unify(S.f(1), S.f(V.x));                       // { x: G(1) }
+ * unify(S.f(1), S.g(1));                         // undefined
+ * await m.eval(unify(S.f(1), S.f(V.x), V.x, S.no)).one();   // 1
+ * ```
+ *
+ * `unify/2` is not a MeTTa builtin, so there is no engine head to reach at
+ * arity two [measured 2026-08-27: `(unify (f 1) (f $x))` does not reduce].
+ * That is why the short form is the host's, and it is the Python surface's own
+ * contract said in TypeScript.
  */
-export function unify(a: Term, b: Term): Atom;
+export function unify(a: Term, b: Term): Bindings | undefined;
 export function unify(a: Term, b: Term, then: Term, otherwise: Term): Atom;
-export function unify(a: Term, b: Term, then?: Term, otherwise?: Term): Atom {
-  return then === undefined
-    ? apply("unify", a, b, sym("True"), sym("False"))
-    : apply("unify", a, b, then, otherwise);
+export function unify(
+  a: Term,
+  b: Term,
+  then?: Term,
+  otherwise?: Term,
+): Atom | Bindings | undefined {
+  if (then === undefined || otherwise === undefined) return unifyTerms(a, b);
+  return apply("unify", a, b, then, otherwise);
 }
 
 // ---------------------------------------------------------------------------

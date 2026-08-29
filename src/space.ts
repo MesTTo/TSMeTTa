@@ -27,6 +27,8 @@
 
 import {
   Atom,
+  G,
+  Grounded,
   type Term,
   Expression,
   type SpaceHandle,
@@ -34,18 +36,68 @@ import {
   type Var,
   expr,
   exprOf,
+  lift,
   space as spaceAtom,
   substitute,
   sym,
   termVars,
   toAtom,
+  variable,
 } from "./atom.ts";
 import { Answers, type AskOptions, type Row } from "./answers.ts";
+import { type Derivation, derivationOf } from "./derivation.ts";
 import { type Engine, type Job, type JobEvent } from "./engine.ts";
-import { PettaError } from "./errors.ts";
+import {
+  CapabilityError,
+  CastError,
+  EngineError,
+  MettaError,
+  ResultError,
+  TransportError,
+  WireError,
+} from "./errors.ts";
+import {
+  AgendaPolicy,
+  AnswerPolicy,
+  Atomicity,
+  Determinism,
+  EffectClass,
+  Fidelity,
+  type SpaceCapability,
+} from "./vocabularies.ts";
+import { showsAs } from "./present.ts";
 import { atomFromWire, wireFromAtom } from "./wire.ts";
 
+/** The engine's own space, where a declaration ABOUT a space goes. */
+const CATALOG = "&metta";
+
+/** Refuse a word outside a closed vocabulary, naming the ones there are. */
+function requireWord<T extends string>(
+  what: string,
+  given: T,
+  vocabulary: Readonly<Record<string, T>>,
+): void {
+  const words = Object.values(vocabulary);
+  if (!words.includes(given)) {
+    throw new MettaError(`${what} is one of ${words.join(", ")}, not ${String(given)}`);
+  }
+}
+
 const QUOTE = sym("quote");
+
+/** Targets the engine compiles no check for; a cast mirrors that. */
+const UNCHECKED = new Set(["Atom", "%Undefined%", "_"]);
+
+/** What a derivation walk accepts beside the target. */
+export interface DerivationOptions extends AskOptions {
+  /**
+   * How deep to walk before answering `truncated` nodes.
+   *
+   * Unbounded by default. The engine's own limits scope is what bounds an
+   * unbounded walk, which is where a budget belongs.
+   */
+  readonly depth?: number;
+}
 
 /** What a space is created with. */
 export interface SpaceOptions {
@@ -59,16 +111,12 @@ export interface SpaceOptions {
   /**
    * The capabilities a restricted space grants.
    *
-   * A string-literal union rather than an enum, which the erasable-syntax law
-   * already requires; a refusal names the capability that was missing. A
-   * browser deployment physically lacks `file`, so the vocabulary doubles as
-   * the deployment surface.
+   * The engine's own `space-capability` vocabulary; a refusal names the
+   * capability that was missing. A browser deployment physically lacks `file`,
+   * so the vocabulary doubles as the deployment surface.
    */
-  readonly grants?: readonly Grant[];
+  readonly grants?: readonly SpaceCapability[];
 }
-
-/** The capabilities a restricted space may be granted. */
-export type Grant = "file" | "network" | "process";
 
 /** One admission a watch saw. */
 export interface Admission {
@@ -96,7 +144,7 @@ export interface WatchOptions extends AskOptions {
 
 function valueOf(event: JobEvent | null, what: string): Atom {
   if (event === null || event.kind !== "value") {
-    throw new PettaError(`the engine answered nothing for ${what}`);
+    throw new EngineError(`the engine answered nothing for ${what}`);
   }
   return atomFromWire(event.wire);
 }
@@ -109,6 +157,7 @@ function valueOf(event: JobEvent | null, what: string): Atom {
  * into a term wherever a space operand belongs.
  */
 export class Space {
+  #claimed = false;
   #engine: Engine;
 
   /** The space's own atom, which is what a term holds. */
@@ -119,6 +168,18 @@ export class Space {
     this.#engine = engine;
     this.handle = handle;
     engine.knownSpaces.add(handle.name);
+  }
+
+  /**
+   * The reflection space of the engine this space belongs to.
+   *
+   * A space's identity is its NAME and its engine, so this is the same `&metta`
+   * `m.catalog` names; it is here so a door that needs both a space and the
+   * catalog — declaring an algebra, reading a context's capabilities — takes
+   * one argument rather than two.
+   */
+  get catalog(): Space {
+    return new Space(this.#engine, spaceAtom("&metta"));
   }
 
   /** The ampersand-prefixed engine name. */
@@ -175,6 +236,286 @@ export class Space {
   delete(atom: Term): boolean {
     const verdict = valueOf(this.#command(["remove", this.name, this.#wire(atom)]).sync(), "delete");
     return isTrue(verdict);
+  }
+
+  /**
+   * A sha256 of everything this space holds, content and nothing else.
+   *
+   * Each atom is canonicalized by the engine -- copied fresh with numbered
+   * variables, so alpha-equivalent equations print identically in every
+   * process -- the lines are multiset-sorted, so insertion order cannot
+   * matter, and the whole is hashed as one UTF-8 document. Two spaces agree
+   * on this exactly when they hold the same atoms up to alpha.
+   *
+   * A space holding a live host object is REFUSED rather than hashed: a
+   * reference prints by address, so its hash would mean nothing in another
+   * process, which is the one thing a digest is for.
+   */
+  digest(): string {
+    return String(hostValue(valueOf(this.#command(["digest", this.name]).sync(), "digest")));
+  }
+
+  /**
+   * Declare how faithfully this space answers queries of one shape.
+   *
+   * ```ts
+   * kb.handles(S.user(V.id, V.name), "Exact");
+   * kb.handles(S.scan(V.anything), "Refuse");
+   * ```
+   *
+   * Queries route by the most specific declared shape that matches. `Exact`
+   * licenses pushing the caller's bound to the provider; `Partial` and `Sound`
+   * stay candidates the engine re-unifies; `Refuse` makes the query a loud
+   * error rather than a silent partial answer. Write `(in $x)` at a position
+   * to match only queries arriving with it bound, so a scan-only source is
+   * three words.
+   */
+  handles(pattern: Term, fidelity: Fidelity, options: { readonly det?: Determinism } = {}): Atom {
+    requireWord("fidelity", fidelity, Fidelity);
+    if (options.det !== undefined) requireWord("det", options.det, Determinism);
+    const parts = [sym("handles"), sym(this.name), toAtom(pattern), sym(fidelity)];
+    if (options.det !== undefined) parts.push(sym(options.det));
+    // A `handles` row is keyed by SHAPE as well as by space, so declaring one
+    // for a second shape adds rather than replaces: queries route by the most
+    // specific declared shape that matches, and there has to be more than one
+    // for that to mean anything. The subject-keyed rows below replace.
+    const atom = expr(...parts);
+    this.#command(["add", CATALOG, [this.#wire(atom)]]).sync();
+    return atom;
+  }
+
+  /**
+   * Declare the strongest effect a world reified from this space can handle.
+   *
+   * World evaluation always admits `pureStructural`. A stronger joined plan
+   * runs only when this declaration is at least as strong, so a world that
+   * writes has to say so before it may.
+   */
+  covers(effect: EffectClass): Atom {
+    requireWord("effect", effect, EffectClass);
+    return this.#declare(expr(sym("covers"), sym(this.name), sym(effect)), 2);
+  }
+
+  /**
+   * Declare what this space's writes promise inside a transaction.
+   *
+   * `transactional` is committed or rolled back WITH the engine's transaction
+   * and requires a provider implementing `begin`, `commit` and `rollback`;
+   * `best-effort` is the author's declared acceptance of a write that survives
+   * a rollback; `atomic-single` refuses transactional writes. An undeclared
+   * space refuses them loudly too, because a foreign write silently surviving
+   * a rolled-back transaction is the wrong answer this declaration replaces.
+   */
+  writes(atomicity: Atomicity): Atom {
+    requireWord("atomicity", atomicity, Atomicity);
+    return this.#declare(expr(sym("writes"), sym(this.name), sym(atomicity)), 2);
+  }
+
+  /**
+   * Declare the order this space emits its own answers in.
+   *
+   * `best-first` is the promise `(top k ...)` needs before its bound may reach
+   * the provider: the first k of a best-first emission ARE the k best.
+   * Distinct from the `(merge <pattern> <policy>)` strategy, which is how the
+   * ENGINE merges answers across several contexts.
+   */
+  emits(policy: AnswerPolicy): Atom {
+    requireWord("policy", policy, AnswerPolicy);
+    return this.#declare(expr(sym("emits"), sym(this.name), sym(policy)), 2);
+  }
+
+  /**
+   * One subject-keyed catalog row, replacing whatever was there.
+   *
+   * A declaration about a space is a FACT rather than a multiset member: two
+   * rows saying different things about one space is not a stronger claim, it
+   * is an unanswerable one.
+   *
+   * `keys` is how many leading items identify the row -- the head and the
+   * subject -- and `tails` are the widths the rest can have, because a MeTTa
+   * pattern has a fixed arity and cannot say "and anything after". `agenda`
+   * has two shapes, with and without the scoring function, so both are swept.
+   * Getting this wrong is not a small mistake: a pattern one item too short
+   * matches every OTHER space's row as well, and declaring here would silently
+   * undeclare there.
+   */
+  #declare(atom: Atom, keys: number, tails: readonly number[] = [1]): Atom {
+    const head = (atom as Expression).items.slice(0, keys);
+    for (const width of tails) {
+      const previous = expr(
+        ...head,
+        ...Array.from({ length: width }, (_, at) => variable(`previous${String(at)}`)),
+      );
+      // Every previous row of this shape, not just one: a repeated declaration
+      // must not leave an earlier answer to be found later.
+      while (
+        isTrue(valueOf(this.#command(["remove", CATALOG, this.#wire(previous)]).sync(), "declare"))
+      ) {
+        // The removal answers whether anything went, which is the loop's test.
+      }
+    }
+    this.#command(["add", CATALOG, [this.#wire(atom)]]).sync();
+    return atom;
+  }
+
+  /**
+   * Bound this space: an add beyond `limit` atoms is refused loudly.
+   *
+   * ```ts
+   * pool.capacity(2);
+   * pool.add(S.a, S.b);
+   * pool.add(S.c);        // refused: [pool-at-capacity, 2]
+   * ```
+   *
+   * The bound is the engine's own admission gate rather than a check here, so
+   * it holds for every write path into this space, including one a reaction or
+   * another host made. Redeclaring replaces the previous bound.
+   */
+  capacity(limit: number): Atom {
+    if (!Number.isInteger(limit) || limit < 1) {
+      throw new MettaError(`capacity is a positive whole number, not ${String(limit)}`);
+    }
+    const declared = this.#declare(expr(sym("capacity"), sym(this.name), G(limit)), 2);
+    // The row is DATA; claiming the gate is what makes it act, and this is
+    // sugar for the claim rather than a consequence of the row. That
+    // separation is the engine's and it is load-bearing: the pre-add hook
+    // takes ONE claimant, and a program that writes its own admission judge --
+    // examples/ch15-.../04-admission_pools.metta does exactly that -- must be
+    // able to claim the slot itself. A capacity row that claimed the shipped
+    // judge on its own would lock that program out.
+    //
+    // Both halves are published builtins, so this is the same claim the other
+    // seats make, written in MeTTa rather than reaching into the engine.
+    if (!this.#claimed) {
+      const guard = `space-admission-guard-${this.name}`;
+      this.#command([
+        "run",
+        `(= (${guard} $x) (space-admission-verdict ${this.name} $x))\n` +
+          `!(declare-pre-add! ${this.name} ${guard})`,
+      ]).sync();
+      this.#claimed = true;
+    }
+    return declared;
+  }
+
+  /**
+   * Declare a REACTION: when an atom matching a pattern lands here, run an
+   * operation under the match's own bindings.
+   *
+   * ```ts
+   * alarms.reacts(S.alert(V.what), S.insert(S["&log"], S.all(V.what)));
+   * alarms.add(S.alert(S.fire));            // (all fire) lands in &log
+   * ```
+   *
+   * The managed heads are `(insert <ctx> <atom>)`, `(retract <ctx> <atom>)` and
+   * `(revise <ctx> <old> <new>)`, and they route through the same write paths a
+   * direct write does, so a provider's capabilities and declared atomicity
+   * govern a bridged write exactly as a direct one. A cascade is bounded at
+   * depth 32 and throws naming the chain, because an unbounded insert loop is
+   * a bug rather than a fixpoint.
+   *
+   * `subscribe` is the NEIGHBOUR of this, not a special case: a reaction's
+   * operation runs ENGINE-side, so it reaches registered spaces, while a
+   * subscription delivers host-side to anything with `add` and `remove`. Same
+   * idea, two delivery tiers.
+   *
+   * Reactions accumulate, one row per declaration; `agenda` says which fires
+   * first when several match one write.
+   */
+  reacts(pattern: Term, operation: Term, options: { readonly priority?: number } = {}): Atom {
+    const parts: Atom[] = [sym("on"), sym(this.name), toAtom(pattern), toAtom(operation)];
+    if (options.priority !== undefined) {
+      if (!Number.isInteger(options.priority)) {
+        throw new MettaError(`priority is a whole number, not ${String(options.priority)}`);
+      }
+      parts.push(G(options.priority));
+    }
+    const atom = expr(...parts);
+    this.#command(["add", CATALOG, [this.#wire(atom)]]).sync();
+    return atom;
+  }
+
+  /**
+   * Declare which reaction fires first when several match one write.
+   *
+   * ```ts
+   * alarms.reacts(S.alert(V.w), S.insert(S["&log"], S.all(V.w)));
+   * alarms.reacts(S.alert(S.fire), S.insert(S["&log"], S.urgent()), { priority: 9 });
+   * alarms.agenda("priority");
+   * ```
+   *
+   * `declaration` is the default and the order they were declared; `recency`
+   * is the most recently declared first; `specificity` is the most tests in
+   * the pattern first; `priority` reads each reaction's own number, highest
+   * first; and `user` names a MeTTa function that SCORES a reaction, highest
+   * first. Every policy breaks ties on declaration order.
+   *
+   * These five are a production system's conflict-resolution strategies under
+   * their usual names: OPS5 and CLIPS resolve a conflict set the same way, and
+   * `specificity` means there what it means here.
+   */
+  agenda(policy: AgendaPolicy, options: { readonly by?: string } = {}): Atom {
+    requireWord("policy", policy, AgendaPolicy);
+    if ((policy === "user") !== (options.by !== undefined)) {
+      throw new MettaError(
+        "the user policy names the MeTTa function that scores a reaction, and no other " +
+          "policy takes one",
+      );
+    }
+    const atom =
+      options.by === undefined
+        ? expr(sym("agenda"), sym(this.name), sym(policy))
+        : expr(sym("agenda"), sym(this.name), sym(policy), sym(options.by));
+    // Two shapes, with and without the scoring function, so both are swept.
+    return this.#declare(atom, 2, [1, 2]);
+  }
+
+  /**
+   * Run one term inside a closed engine transaction.
+   *
+   * ```ts
+   * kb.transaction(S.progn(write, verify));
+   * ```
+   *
+   * Every engine write it makes -- stored atoms, equations and their compiled
+   * clauses -- commits or rolls back together. It answers the term's engine
+   * answers, and rolls back when that answer set is EMPTY, which is the
+   * engine's own law for `(transaction ...)`.
+   *
+   * A host CALLABLE cannot be the body here, and the reason is architectural
+   * rather than missing work. This seat reaches JavaScript by suspending the
+   * engine, and the engine says exactly why that cannot happen inside one:
+   * "a host operation was reached where the engine cannot suspend: it is
+   * running outside a job, or inside a transaction or speculate scope, and
+   * engine_yield/1 cannot unwind through either". The Python seat can pass a
+   * callable because its crossing is a direct call rather than a suspension.
+   * Build the work as a TERM and this door runs it atomically; that is the
+   * substitute, and it is the whole of one.
+   */
+  transaction(target: Term): Atom[] {
+    // A NAME is callable too -- `S.progn` is a function carrying its own atom
+    // -- so the test is whether lifting it gives back the function itself,
+    // which is what `project` asks in the same situation.
+    const lifted = typeof target === "function" ? lift(target) : undefined;
+    if (lifted instanceof Grounded && lifted.value === target) {
+      throw new CapabilityError(
+        "a transaction body here is a TERM rather than a callable: this seat reaches " +
+          "JavaScript by suspending the engine, and engine_yield/1 cannot unwind through " +
+          "a transaction. Build the work as a term and this door runs it atomically",
+      );
+    }
+    const held = this.#command([
+      "eval",
+      this.#wire(expr(sym("transaction"), toAtom(target))),
+      this.name,
+    ]);
+    const answers: Atom[] = [];
+    for (;;) {
+      const event = held.sync();
+      if (event === null) break;
+      if (event.kind === "answer") answers.push(atomFromWire(event.wire));
+    }
+    return answers;
   }
 
   /** Whether an atom unifying with this pattern is stored. */
@@ -351,6 +692,114 @@ export class Space {
     );
   }
 
+  /**
+   * This space's structured `get-doc` answer for one subject.
+   *
+   * The `(@doc ...)` atom the engine holds, whether the subject was documented
+   * in MeTTa source or built from a host body's own doc comment. A subject
+   * with no documentation answers nothing, so `.one()` refuses by name exactly
+   * as `get-type` does for a subject it cannot type.
+   */
+  doc(subject: Term, options: AskOptions = {}): Answers<Atom> {
+    return this.eval(expr(sym("get-doc"), this.handle, toAtom(subject)), options);
+  }
+
+  /**
+   * Solve a relation BACKWARDS, and answer rows keyed by its variables.
+   *
+   * ```ts
+   * await kb.solve(4, sub(V.x, 1)).one();   // { x: G(5) }
+   * ```
+   *
+   * The known value goes on the pattern side and the relation solves the
+   * other way, which is what the engine's `let` does when its subject is an
+   * arithmetic relation. The answer template is derived from the pattern's
+   * variables followed by any the subject introduces, so the third hand-written
+   * `let` argument disappears.
+   */
+  solve(pattern: Term, subject: Term, options: AskOptions = {}): Answers<Row> {
+    const left = toAtom(pattern);
+    const right = toAtom(subject);
+    const columns = [...termVars(left), ...termVars(right).filter((v) => !termVars(left).includes(v))];
+    if (columns.length === 0) {
+      throw new MettaError("solve needs at least one variable in its pattern or its subject");
+    }
+    const query = expr(sym("let"), left, right, expr(QUOTE, exprOf(columns)));
+    const answers = this.#eval(`solve(${left.text}, ${right.text})`, query, options);
+    return answers.map((answer) => rowOf(answer, columns)) as unknown as Answers<Row>;
+  }
+
+  /**
+   * Whether this space's type discipline admits a value as a type, narrowed.
+   *
+   * ```ts
+   * kb.run?.("(: Ann Person)");
+   * kb.cast(S.Ann, S.Person);     // the atom
+   * kb.cast(3, S.Number);         // 3
+   * kb.cast(S.Ann, S.Dog);        // throws CastError naming Ann's real types
+   * ```
+   *
+   * `get-metatype` answers for a value the type system has no declaration for,
+   * which is what makes a cast to `Number` succeed on `3` without anybody
+   * having declared it.
+   */
+  cast(value: Term, type: Term): unknown {
+    const atom = toAtom(value);
+    const target = toAtom(type);
+    if (UNCHECKED.has(target.text)) return hostValue(atom);
+    const verdict = valueOf(
+      this.#command(["cast", this.name, this.#wire(atom), this.#wire(target)]).sync(),
+      "cast",
+    );
+    if (isTrue(verdict)) return hostValue(atom);
+    const held = verdict instanceof Expression ? verdict.items.map((item) => item.text) : [];
+    throw new CastError(
+      `${atom.text} does not admit type ${target.text} in ${this.name}: ` +
+        `its types are ${held.length === 0 ? "none" : held.join(", ")}`,
+    );
+  }
+
+  /**
+   * Reduce a term to its ONE answer, without awaiting.
+   *
+   * The door for a reduction whose answer the caller's next line needs and
+   * whose body cannot reach an asynchronous host operation: an arithmetic
+   * step, a state read, a settled question. A reduction that DOES reach one
+   * refuses here by name, because the remedy is the awaiting form and saying
+   * so is more use than a hang.
+   */
+  runOne(term: Term): Atom {
+    const built = toAtom(term);
+    const event = this.#command(["eval", this.#wire(built), this.name]).sync();
+    if (event === null || event.kind !== "answer") {
+      throw new ResultError(
+        `${built.text} answered nothing, where one answer was required`,
+      );
+    }
+    return atomFromWire(event.wire);
+  }
+
+  /**
+   * Every proof of one answer, as a tree.
+   *
+   * Meta-interpreted, so slower than evaluation: a diagnostic rather than an
+   * evaluation path. The default walks each proof without a depth cutoff; a
+   * positive depth answers a partial tree with `truncated` nodes when its
+   * budget ends, so an empty answer set means NO proof and never a budget.
+   */
+  derivation(target: Term, options: DerivationOptions = {}): Answers<Derivation> {
+    const engine = this.#engine;
+    const built = toAtom(target);
+    const wire = this.#wire(built);
+    const name = this.name;
+    const depth = options.depth ?? -1;
+    return new Answers<Atom>(
+      `derivation(${built.text})`,
+      () => answerIterator(engine.start(["derivation", name, wire, depth])),
+      options.signal,
+    ).map(derivationOf);
+  }
+
   // --- the coordination verbs -----------------------------------------------
 
   /**
@@ -400,7 +849,7 @@ export class Space {
   // --- structure ------------------------------------------------------------
 
   /** Grant this space a restricted set of capabilities. */
-  restrict(grants: readonly Grant[]): this {
+  restrict(grants: readonly SpaceCapability[]): this {
     this.#command(["restrict", this.name, [...grants]]).sync();
     return this;
   }
@@ -440,6 +889,9 @@ export class Space {
   }
 }
 
+// A space prints as the name it is, not as a dump of the engine behind it.
+showsAs(Space.prototype, (space: Space) => `Space(${space.name})`);
+
 /**
  * Whether a second argument is a TEMPLATE or the options bag.
  *
@@ -466,7 +918,9 @@ export function answerIterator(job: Job): AsyncIterator<Atom> {
         const event = await job.next();
         if (event === null) return { done: true, value: undefined as never };
         if (event.kind !== "answer") {
-          throw new PettaError(`this ask produced a ${event.kind} where an answer was expected`);
+          throw new TransportError(
+          `this ask produced a ${event.kind} where an answer was expected`,
+        );
         }
         return { done: false, value: atomFromWire(event.wire) };
       } catch (error) {
@@ -488,17 +942,17 @@ export function answerIterator(job: Job): AsyncIterator<Atom> {
 /** Strip the `quote` carrier and zip the tuple against the pattern's variables. */
 export function rowOf(answer: Atom, vars: readonly Var[]): Row {
   if (!(answer instanceof Expression) || answer.items.length !== 2) {
-    throw new PettaError(`a binding row came back as ${answer.text}, which is not a quoted tuple`);
+    throw new WireError(`a binding row came back as ${answer.text}, which is not a quoted tuple`);
   }
   const carried = answer.items[1];
   if (!(carried instanceof Expression)) {
-    throw new PettaError(`a binding row came back as ${answer.text}, which is not a quoted tuple`);
+    throw new WireError(`a binding row came back as ${answer.text}, which is not a quoted tuple`);
   }
   const row: Row = {};
   vars.forEach((variable, index) => {
     const bound = carried.items[index];
     if (bound === undefined) {
-      throw new PettaError(
+      throw new WireError(
         `a binding row came back with ${String(carried.items.length)} columns where ` +
           `the pattern has ${String(vars.length)}`,
       );

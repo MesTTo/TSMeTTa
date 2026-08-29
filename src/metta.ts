@@ -29,7 +29,10 @@ import {
   termVars,
   toAtom,
 } from "./atom.ts";
+import { existsSync, statSync } from "node:fs";
+
 import { Answers, type AskOptions, type Row } from "./answers.ts";
+import { type Derivation } from "./derivation.ts";
 import {
   type Capability,
   type Counters,
@@ -40,13 +43,26 @@ import {
   type Scope,
   boot as bootEngine,
 } from "./engine.ts";
-import { MettaError } from "./errors.ts";
+import { MettaError, NameError, ResultError, SourceNotFoundError, StrictError } from "./errors.ts";
+import { race as raceAsks } from "./parallel.ts";
+import { showsAs } from "./present.ts";
 import { type Library, useLibrary } from "./library.ts";
 import { mettaName } from "./naming.ts";
 import { Schema, type SchemaDeclarations } from "./schema.ts";
 import { ScopeHandle, Stats, World, nextWorldName } from "./scopes.ts";
 import type { Limits } from "./scopes.ts";
-import { type Admission, Space, type SpaceOptions, type WatchOptions, answerIterator, hostValue, rowOf } from "./space.ts";
+import {
+  type Admission,
+  type DerivationOptions,
+  Space,
+  type SpaceOptions,
+  type WatchOptions,
+  answerIterator,
+  hostValue,
+  rowOf,
+} from "./space.ts";
+import { type SpaceProvider, registerProvider, unregisterProvider } from "./provider.ts";
+import { view } from "./spaces.ts";
 import { type Defined, type DefineOptions, type OpOptions, define as defineDoor, isTracing, op as opDoor } from "./define/define.ts";
 import { State, type StateOptions, type Widen } from "./state.ts";
 import { type TheoryClass, methodsOf } from "./theory.ts";
@@ -70,6 +86,47 @@ export interface BootOptions {
   readonly verbose?: boolean;
 }
 
+/** What the engine did with one directive. */
+export type DirectiveStatus = "value" | "not-reducible" | "empty";
+
+/** One directive's answer, with what the engine did to produce it. */
+export interface StatusRow {
+  readonly status: DirectiveStatus;
+  readonly answer: Atom;
+  readonly text: string;
+}
+
+/** One directive's answers, each with its status. */
+export type StatusGroup = readonly StatusRow[];
+
+/** One top-level form of some source, as the engine's own reader saw it. */
+export interface Form {
+  /** The kind the reader gave it: `function`, `runnable`, and the rest. */
+  readonly kind: string;
+  /** Its source text, exactly as written. */
+  readonly text: string;
+  /** The atom it reads as. */
+  readonly atom: Atom;
+}
+
+/** What `trace` accepts beside the source. */
+export interface TraceOptions {
+  /** The space to run in. The engine's own, by default. */
+  readonly space?: Space;
+  /** How many events to record before stopping. Ten thousand, by default. */
+  readonly maxEvents?: number;
+}
+
+/** One event of a reduction trace. */
+export type TraceEvent =
+  | { readonly depth: number; readonly kind: "call"; readonly term: Atom }
+  | {
+      readonly depth: number;
+      readonly kind: "exit";
+      readonly term: Atom;
+      readonly answer: Atom;
+    };
+
 /** What `reconcile` was asked to make true. */
 export interface ReconcileReport {
   readonly added: readonly Atom[];
@@ -90,6 +147,7 @@ export class MeTTa implements Disposable {
   #spaces = new Map<string, Space>();
   #known = new Set<string>();
   #scopes: Scope[] = [];
+  #strict = 0;
 
   /** The engine's own default space. */
   readonly self: Space;
@@ -222,7 +280,78 @@ export class MeTTa implements Disposable {
    * together. `eval` is the door for a term already in hand.
    */
   run(source: string): AnswerGroup[] {
-    return groupsOf(this.#engine.start(["run", source]).sync());
+    if (this.#strict === 0) return groupsOf(this.#engine.start(["run", source]).sync());
+    return this.#strictly(source, this.self);
+  }
+
+  /**
+   * Refuse any directive the engine answers UNREDUCED, for the block.
+   *
+   * ```ts
+   * using _ = m.strict();
+   * m.run("!(typoo 1)");   // throws StrictError naming the directive
+   * ```
+   *
+   * A bare data constructor is refused for the same reason a typo is: neither
+   * reduces. An EMPTY answer is allowed, being the pruned branch `(empty)` and
+   * an unmatched `match` both produce.
+   *
+   * The source runs ONCE. The engine reports each directive's status beside
+   * its answers, so nothing is executed to judge it and executed again to keep
+   * it, which is what a strict scope that ran the source twice would do to
+   * every write in it.
+   */
+  strict(): ScopeHandle {
+    this.#strict += 1;
+    return new ScopeHandle(() => {
+      this.#strict -= 1;
+    });
+  }
+
+  /** Whether a strict scope is open right now. */
+  get isStrict(): boolean {
+    return this.#strict > 0;
+  }
+
+  /**
+   * Run source and report, per directive, whether the engine reduced it.
+   *
+   * The diagnostic underneath `strict()`, and useful on its own: `value` for a
+   * directive that reduced, `not-reducible` for one that answered itself, and
+   * `empty` for a pruned branch.
+   */
+  runStatus(source: string, space: Space = this.self): StatusGroup[] {
+    const event = this.#engine.start(["runstatus", source, space.name]).sync();
+    if (event === null || event.kind !== "value") return [];
+    const groups = atomFromWire(event.wire);
+    if (!(groups instanceof Expression)) return [];
+    return groups.items.map((group) =>
+      (group as Expression).items.map((row) => {
+        const parts = (row as Expression).items;
+        return {
+          status: String(parts[0]) as DirectiveStatus,
+          answer: parts[1] as Atom,
+          text: String(hostValue(parts[2] as Atom)),
+        };
+      }),
+    );
+  }
+
+  #strictly(source: string, space: Space): AnswerGroup[] {
+    const groups = this.runStatus(source, space);
+    for (const group of groups) {
+      for (const row of group) {
+        if (row.status !== "not-reducible") continue;
+        throw new StrictError(
+          `${row.answer.text} did not reduce, and this is a strict scope; ` +
+            `either define the head or leave the scope`,
+        );
+      }
+    }
+    return groups.map((group) => ({
+      answers: group.filter((row) => row.status !== "empty").map((row) => row.answer),
+      texts: group.filter((row) => row.status !== "empty").map((row) => row.text),
+    }));
   }
 
   /**
@@ -278,18 +407,30 @@ export class MeTTa implements Disposable {
    * word with the cancellation wired.
    */
   async race<T>(asks: readonly Answers<T>[]): Promise<T> {
-    const controller = new AbortController();
-    try {
-      return await Promise.any(
-        asks.map(async (ask) => {
-          const first = await ask.until(controller.signal).find();
-          if (first === undefined) throw new MettaError("this branch answered nothing");
-          return first;
-        }),
-      );
-    } finally {
-      controller.abort(new MettaError("another branch answered first"));
+    return raceAsks(asks);
+  }
+
+  /**
+   * Register a directory of MeTTa sources under an alias `import!` can name.
+   *
+   * ```ts
+   * m.libraryPath("./vendor/nars", "nars");
+   * m.run("!(import! &self nars)");
+   * ```
+   *
+   * The directory is MOUNTED before it is registered, because the engine runs
+   * in a WebAssembly filesystem of its own and cannot see this process's:
+   * registering a host path the engine cannot reach would refuse at the first
+   * import that needed it, which is exactly where a path problem is hardest to
+   * read. Only `.metta` and `.pl` files cross, and the alias is idempotent.
+   */
+  libraryPath(directory: string, alias: string): void {
+    const full = resolvePath(directory);
+    if (!existsSync(full) || !statSync(full).isDirectory()) {
+      throw new SourceNotFoundError(`a library path is a directory that exists, and ${full} is not`);
     }
+    this.#engine.mount(full, full, (name) => name.endsWith(".metta") || name.endsWith(".pl"));
+    this.run(`!(register_metta_library_path ${alias} "${full}")`);
   }
 
   loadFile(path: string): AnswerGroup[] {
@@ -381,15 +522,7 @@ export class MeTTa implements Disposable {
    * DOES reach one refuses here by name.
    */
   runOne(term: Term, space: Space = this.self): Atom {
-    const built = toAtom(term);
-    const wire = this.#engine.encodeWire(wireFromAtom(built));
-    const event = this.#engine.start(["eval", wire, space.name]).sync();
-    if (event === null || event.kind !== "answer") {
-      throw new MettaError(`${built.text} answered nothing, where one answer was required`, {
-        code: "ERR_METTA_ABSENT",
-      });
-    }
-    return atomFromWire(event.wire);
+    return space.runOne(term);
   }
 
   /**
@@ -416,6 +549,7 @@ export class MeTTa implements Disposable {
   limits(limits: Limits): ScopeHandle {
     const pushed: Scope[] = [];
     if (limits.stack !== undefined) pushed.push(["stack", limits.stack]);
+    if (limits.inferences !== undefined) pushed.push(["inferences", limits.inferences]);
     this.#scopes.push(...pushed);
     return new ScopeHandle(() => {
       for (const scope of pushed) {
@@ -468,7 +602,148 @@ export class MeTTa implements Disposable {
     );
   }
 
+  /**
+   * Back a named space with TypeScript.
+   *
+   * The backing decides the implementation. A {@link SpaceProvider} is used as
+   * it is; a `Map`, `Set`, array or plain object is wrapped in a live
+   * {@link view} of itself, so the shortest useful spelling is one line:
+   *
+   * ```ts
+   * const scores = new Map([["ada", 3]]);
+   * const live = m.attach("&scores", scores);
+   * scores.set("bob", 5);                    // no publication step
+   * await live.match(S.kv(V.who, V.n));      // both rows
+   * ```
+   */
+  attach(name: Term, backing: SpaceProvider | object): Space {
+    const engineName = spaceNameOf(name);
+    registerProvider(this.#engine, engineName, asProvider(backing));
+    return this.space(engineName);
+  }
+
+  /** Stop backing a space with TypeScript; the name is free again afterwards. */
+  detach(name: Term): void {
+    unregisterProvider(this.#engine, spaceNameOf(name));
+  }
+
+  /** The engine's structured documentation for one subject. */
+  doc(subject: Term, options: AskOptions = {}): Answers<Atom> {
+    return this.self.doc(subject, options);
+  }
+
+  /** Solve a relation backwards in the engine's own space. */
+  solve(pattern: Term, subject: Term, options: AskOptions = {}): Answers<Row> {
+    return this.self.solve(pattern, subject, options);
+  }
+
+  /** Whether the type discipline admits a value as a type, narrowed. */
+  cast(value: Term, type: Term): unknown {
+    return this.self.cast(value, type);
+  }
+
+  /** Every proof of one answer, as a tree. */
+  derivation(target: Term, options: DerivationOptions = {}): Answers<Derivation> {
+    return this.self.derivation(target, options);
+  }
+
+  /**
+   * Why one answer holds: its FIRST proof, or nothing when there is none.
+   *
+   * ```ts
+   * const proof = await m.why(S.quad(3));
+   * console.log(String(proof));
+   * ```
+   *
+   * `derivation` is the door for every proof; this is the door for the one a
+   * reader almost always wants, and it stops walking as soon as it has it.
+   */
+  async why(target: Term, options: DerivationOptions = {}): Promise<Derivation | undefined> {
+    return this.self.derivation(target, options).find();
+  }
+
+  /**
+   * Every top-level form of some source, read but NOT evaluated.
+   *
+   * The door for a tool: a formatter, a linter, an editor. Each form carries
+   * the kind the engine's own reader gave it, its source text, and the atom it
+   * read as, so nothing needs a second parse.
+   */
+  forms(source: string): Form[] {
+    const event = this.#engine.start(["forms", source]).sync();
+    if (event === null || event.kind !== "value") return [];
+    const rows = atomFromWire(event.wire);
+    if (!(rows instanceof Expression)) return [];
+    return rows.items.map((row) => {
+      const parts = (row as Expression).items;
+      return {
+        kind: String(parts[0]),
+        text: String(hostValue(parts[1] as Atom)),
+        atom: parts[2] as Atom,
+      };
+    });
+  }
+
+  /**
+   * The engine's own reduction trace for some source.
+   *
+   * One event per call and per exit, with the depth the engine was at. The
+   * bound is on EVENTS rather than on time, so a runaway reduction still
+   * answers what it did before the bound.
+   */
+  trace(source: string, options: TraceOptions = {}): TraceEvent[] {
+    const space = options.space ?? this.self;
+    const max = options.maxEvents ?? 10_000;
+    const event = this.#engine.start(["trace", source, space.name, max]).sync();
+    if (event === null || event.kind !== "value") return [];
+    const rows = atomFromWire(event.wire);
+    if (!(rows instanceof Expression)) return [];
+    return rows.items.map((row) => {
+      const parts = (row as Expression).items;
+      const kind = String(parts[1]) === "exit" ? "exit" : "call";
+      const term = parts[2] as Atom;
+      return kind === "exit"
+        ? { depth: Number(hostValue(parts[0] as Atom)), kind, term, answer: parts[3] as Atom }
+        : { depth: Number(hostValue(parts[0] as Atom)), kind, term };
+    });
+  }
+
+  /**
+   * The Prolog clauses one MeTTa name compiled to.
+   *
+   * The bottom rung of the power ladder: TypeScript, then MeTTa text, then the
+   * engine's own instructions. The listing IS the demand, so a function the
+   * engine has deferred is compiled by asking for it.
+   */
+  disassemble(name: string | Sym | Defined, space: Space = this.self): string {
+    const head = headOf(name);
+    const event = this.#engine.start(["disassemble", space.name, head]).sync();
+    if (event === null || event.kind !== "value") {
+      throw new NameError(`${head} has no compiled clauses in ${space.name}`);
+    }
+    return String(hostValue(atomFromWire(event.wire)));
+  }
+
   // --- reflection -----------------------------------------------------------
+
+  /**
+   * The space the ENGINE is evaluating in right now.
+   *
+   * Asked from inside a host operation it answers the space of the program
+   * that called it, because the operation runs inside that program's own
+   * module — so an operation can behave per-space without the space being one
+   * of its arguments. Asked from outside any evaluation it answers this
+   * surface's own default.
+   */
+  currentSpace(): Space {
+    // Inside a host operation the answer came WITH the call; outside one it is
+    // asked of the engine, which answers the module it is evaluating in.
+    const calling = this.#engine.callingSpace;
+    if (calling !== undefined) return this.space(calling);
+    const event = this.#engine.start(["currentspace"]).sync();
+    if (event === null || event.kind !== "value") return this.self;
+    return this.space(atomFromWire(event.wire));
+  }
 
   /** One atom of MeTTa source, through the engine's own reader. */
   parse(source: string): Atom {
@@ -582,6 +857,8 @@ export class MeTTa implements Disposable {
   }
 }
 
+showsAs(MeTTa.prototype, (surface: MeTTa) => `MeTTa(${surface.self.name})`);
+
 /** Boot an engine and answer the surface over it. */
 export async function metta(options: BootOptions = {}): Promise<MeTTa> {
   return MeTTa.boot(options);
@@ -596,6 +873,35 @@ function spaceNameOf(name: Term): string {
   // A parametric space is named by a whole ATOM, so two instances of one shape
   // are two spaces and each reads its own parameters back from its name.
   return `&${atom.text.replace(/\s+/g, "-").replace(/[()]/g, "")}`;
+}
+
+/** The engine head behind a name, a symbol or a defined callable. */
+function headOf(name: string | Sym | Defined): string {
+  if (typeof name === "string") return mettaName(name);
+  return name instanceof Sym ? name.name : name.head;
+}
+
+/**
+ * The provider behind a backing value.
+ *
+ * A provider is used as it is; anything else is a live VIEW of itself, which
+ * is what makes `m.attach("&scores", new Map())` the shortest useful spelling.
+ */
+function asProvider(backing: SpaceProvider | object): SpaceProvider {
+  // The host collections are checked FIRST, because `Set` and `Map` carry
+  // `add`, `delete` and `clear` of their own: duck-typing on those alone read
+  // a `Set` as a provider that could write and not enumerate, and the engine
+  // then refused every query against it.
+  if (backing instanceof Map || backing instanceof Set || Array.isArray(backing)) {
+    return view(backing);
+  }
+  const shape = backing as SpaceProvider;
+  const answers =
+    typeof shape.match === "function" ||
+    typeof shape.atoms === "function" ||
+    typeof shape.add === "function" ||
+    typeof shape.remove === "function";
+  return answers ? shape : view(backing);
 }
 
 function groupsOf(event: JobEvent | null): AnswerGroup[] {

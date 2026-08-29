@@ -23,6 +23,7 @@
 
 import { type Atom, type Term, expr, sym, toAtom } from "./atom.ts";
 import { type Space, hostValue } from "./space.ts";
+import { showsAs } from "./present.ts";
 
 /**
  * A literal widened to the type it is a literal OF.
@@ -121,3 +122,5 @@ export class State<T extends Term = Term> {
     return `State(${this.handle.text})`;
   }
 }
+
+showsAs(State.prototype, (cell: State) => `State(${cell.handle.text})`);

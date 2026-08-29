@@ -22,7 +22,7 @@
  *   Future Enhancements: None
  */
 
-import { PettaError } from "./errors.ts";
+import { NameError, UnsupportedError } from "./errors.ts";
 
 /** How a marked method is installed. */
 export type Door = "define" | "op" | "cache";
@@ -78,9 +78,7 @@ function decorator(door: Door, name?: string) {
     context: MethodContext,
   ): (...args: never[]) => unknown {
     if (context.kind !== "method") {
-      throw new PettaError(`only a method can be an ${door}, not a ${context.kind}`, {
-        code: "ERR_METTA_UNSUPPORTED",
-      });
+      throw new UnsupportedError(`only a method can be an ${door}, not a ${context.kind}`);
     }
     context.addInitializer?.(function initialize(this: object) {
       const prototype = Object.getPrototypeOf(this) as object;
@@ -132,9 +130,8 @@ export function methodsOf(theory: TheoryClass): TheoryMethod[] {
   const own = Object.getOwnPropertyNames(prototype).filter((name) => name !== "constructor");
   const chosen = marked === undefined ? own : own.filter((name) => marked.has(name));
   if (chosen.length === 0) {
-    throw new PettaError(
+    throw new NameError(
       `${theory.name} declares no methods to install; a theory is its equations`,
-      { code: "ERR_METTA_NAME" },
     );
   }
   return chosen.map((method) => {

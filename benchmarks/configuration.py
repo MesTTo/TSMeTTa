@@ -60,12 +60,29 @@ ROOT = SEAT.parents[1]
 #: behind the last of it, 0.027 percent. The pure host-side workload lands at
 #: 0.0006 percent under the same set.
 #:
+#: `--expose-gc` is the fourth, and it fixes a different axis: the three above
+#: make a run reproducible against ITSELF, and this one makes it reproducible
+#: against a CHANGED PROGRAM. `--predictable-gc-schedule` is deterministic
+#: given the same allocation sequence, and the startup heap is part of that
+#: sequence, so growing any module the benchmark loads shifted where a
+#: collection landed inside the measured window. Measured 2026-08-28: adding
+#: four kilobytes of INERT COMMENTS to extensions/node/src/theory.ts, which
+#: retire no instructions at all, moved host-op from 900018262 to 933434511, a
+#: 3.7 percent phantom regression from text nothing executes. Forcing the heap
+#: to a settled state at the end of setup, outside the window, removes the
+#: sensitivity, which is what every serious JavaScript harness does before a
+#: measured window for exactly this reason. It is the layout-bias class
+#: Mytkowicz et al. name, and a deterministic starting heap is the cheap half
+#: of Stabilizer's answer to it [source: Mytkowicz, Diwan, Hauswirth and
+#: Sweeney, "Producing Wrong Data Without Doing Anything Obviously Wrong!",
+#: ASPLOS 2009; Curtsinger and Berger, "Stabilizer", ASPLOS 2013].
+#:
 #: The cost is stated rather than hidden: these rows measure Liftoff-compiled
 #: WebAssembly and single-threaded V8, which is not the tier a user's process
 #: settles into. A gate reads the CHANGE, so that is the right trade, and it is
 #: V8's own answer to the same question [source:
 #: https://v8.dev/docs/  --predictable is V8's documented predictable mode].
-V8_FLAGS = ("--predictable", "--predictable-gc-schedule", "--liftoff-only")
+V8_FLAGS = ("--predictable", "--predictable-gc-schedule", "--liftoff-only", "--expose-gc")
 
 
 def _swipl_wasm_version() -> str | None:

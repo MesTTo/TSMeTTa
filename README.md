@@ -341,6 +341,29 @@ single-threaded.
 signals; `Promise.any` is the platform's word for it, with the cancellation
 wired.
 
+The rest of the family is the platform's own concurrency, because the engine's
+is absent from this build:
+
+```ts
+import { Channel, every, merge, parMap, spawn } from "metta-node";
+
+await parMap(ids, (id) => m.eval(S.fetch(id)).one(), { concurrency: 8 });
+const both = merge(m.match(a), m.match(b));       // interleaved as they arrive
+const jobs = new Channel<Atom>({ max: 100 });     // a mailbox with backpressure
+const task = spawn(m.eval(expensive));            // started now; await or cancel
+for await (const rows of every(1_000, () => m.match(p).toArray(), { signal })) {}
+```
+
+`parMap` bounds how many run at once and preserves INPUT order, which is what
+makes it a map rather than a gather; an unbounded `Promise.all` over ten
+thousand items opens ten thousand host operations at once. A `Channel` bounded
+by `max` makes a sender WAIT rather than dropping, which is `queue.Queue`'s
+policy and not a ring buffer's. Every one of them takes an `AbortSignal`.
+
+Concurrency here is real wherever the work AWAITS — every host operation that
+touches a network, a file or a timer — and is interleaving rather than
+parallelism for pure reduction, which is what one engine can honestly offer.
+
 ## Live queries
 
 ```ts
@@ -351,6 +374,571 @@ Admissions are the engine's own atom events, queued and drained. There is no
 engine-side blocking wait, because a WebAssembly SWI has no `library(thread)`,
 so this polls the queue; `{ pollMs }` sets the interval and an `AbortSignal`
 ends it.
+
+## Standing queries
+
+```ts
+using watch = subscribe(kb, S.alarm(V.what), {
+  onEvent: ({ edge, atom }) => console.log(edge, String(atom)),
+});
+```
+
+A subscription is a resource: leaving its block ends it, and so does
+`unsubscribe()`. Without a handler the events queue and `drain()` empties the
+queue; a queue nobody drains REFUSES past `queueMax` rather than discarding the
+oldest, because a dropped event is a wrong answer nobody is told about.
+
+`LiveView` is the same machinery kept as a count:
+
+```ts
+await using alarms = await LiveView.open(kb, S.alarm(V.what));
+alarms.size;                    // seeded once, then kept current
+alarms.count(S.alarm(S.fire));  // multiplicity, because a space is a multiset
+```
+
+## Spaces implemented in TypeScript
+
+A space's atoms can live wherever you keep them — a `Map`, an array, a SQL
+table, an HTTP service — and the engine queries it like any other space.
+
+```ts
+const rows = new Map([["ada", 3]]);
+const scores = m.attach("&scores", rows);          // a live view, one line
+rows.set("bob", 5);                                // no publication step
+await scores.match(S.kv(V.who, V.n));              // both rows
+```
+
+For anything with a shape of its own, implement only what the backend has:
+
+```ts
+const table: SpaceProvider = {
+  *match(pattern) { /* yield CANDIDATES; the engine unifies */ },
+  add(atom) { ... },
+};
+m.attach("&table", table);
+```
+
+Capabilities are DERIVED from the methods present, so a provider that cannot
+remove is refused a removal by name rather than failing silently, and its own
+`refusal(capability)` sentence reaches the caller. Subscribability is the one
+thing not derived: a provider says what its change events promise through
+`delivers()`, because whether a store can emit them is a fact about the store
+and not about its method list.
+
+Yielding every atom is always correct; yielding fewer than match is never
+allowed to be. Pushing the bound parts of a pattern into the backend is the
+performance lever, never a correctness requirement.
+
+`metta-node/testing` carries the conformance suite for one:
+
+```ts
+const results = await checkSpaceProvider(space, provider, [S.kv(S.ada, 3)]);
+```
+
+## The space algebra
+
+Every combinator is an ordinary provider, so each composes with the last and
+attaches like any other.
+
+```ts
+import { diff, mapped, objectView, overlay, readOnly, union, view } from "metta-node/spaces";
+
+m.attach("&all", union(kb, rules));            // read as one; writes refused
+m.attach("&safe", readOnly(kb));               // reads only
+m.attach("&draft", overlay(front, kb));        // ChainMap's rule: writes hit front
+m.attach("&edges", mapped(kb, bridge));        // one declaration, both directions
+await diff(a, b);                              // how they differ, as multisets
+```
+
+`union` and `readOnly` implement no write method at all, so the refusal a write
+meets is the ENGINE's own capability error rather than a check written in
+TypeScript.
+
+## Proofs
+
+```ts
+const proof = await m.why(S.quad(3));
+console.log(String(proof));
+//  (quad 3) = 12
+//    (quad 3) = 12
+//      by (= (quad $a) (dbl (dbl $a)))
+//      (dbl 3) = 6
+//        by (= (dbl $a) (* 2 $a))
+//        builtin *(2,3,6)
+```
+
+`m.derivation(target)` answers every proof and `m.why(target)` the first. Each
+node is a discriminated union on `kind` — `step`, `fact`, `builtin`,
+`truncated` — so a `switch` over one is exhaustive and TypeScript proves it.
+`proof.rules` and `proof.facts` are what a reader usually wants first, and
+`complete` is false exactly when a depth budget cut the walk short, so an empty
+answer set and a truncated proof never read alike.
+
+## Asking the engine about itself
+
+```ts
+m.doc(S.area);                   // the (@doc ...) atom it holds
+m.solve(4, sub(V.x, 1));         // { x: 5 }: the relation, backwards
+m.cast(S.Ann, S.Person);         // narrowed, or CastError naming its real types
+m.forms(source);                 // every top-level form, read and not run
+m.trace("!(quad 3)");            // the engine's own call and exit events
+m.disassemble("dbl");            // the Prolog clauses the name compiled to
+m.runStatus(source);             // per directive: value, not-reducible, empty
+m.engine.engineCounters;         // inferences, CPU, GC, table bytes
+```
+
+`m.strict()` is the scope that refuses a directive the engine answers
+unreduced. It runs its source ONCE and judges it from what it did, rather than
+running it to judge it and running it again to keep it — which is what a strict
+scope built on two passes would do to every write inside it.
+
+`m.limits({ inferences })` bounds what a reduction may spend. There is no
+`timeout` beside it and the surface says so rather than pretending: a
+WebAssembly SWI has no `library(time)`, so a deadline is the host's
+`AbortSignal` and is checkpoint-granular.
+
+## The module tier
+
+For a program that wants no setup line at all:
+
+```ts
+import { add, evaluate, match, q } from "metta-node/ambient";
+
+await add(S.parent(S.tom, S.bob));
+for await (const { x } of match(S.parent(V.x, S.bob))) { ... }
+```
+
+One engine, created by the first verb that needs it. Importing boots nothing,
+and an ask from here is as lazy as the method it stands for: the boot happens
+on the first pull. `reset()` disposes it and forgets it.
+
+The reduction door is `evaluate` here and `m.eval` on the surface: `eval`
+cannot be a module-level binding at all, because ECMAScript refuses it as a
+declaration name in strict mode and every module is one.
+
+## The satellites
+
+The root exports what a program reaches for; everything else is a subpath, so
+an unimported one costs nothing at all. This is the TypeScript image of the
+Python package's lazily loaded satellites.
+
+| subpath | what it carries |
+|---|---|
+| `metta-node/algebra` | value algebras, tagged derivations, `evaluate`, `why`, `under` |
+| `metta-node/ambient` | the module tier: one lazily booted engine |
+| `metta-node/arrays` | typed arrays as atoms, `Tensor`, `EmbeddingStore` |
+| `metta-node/config` | the settings a process runs under |
+| `metta-node/convert` | the two-way projection, the four images, `registerType` |
+| `metta-node/derivation` | the proof tree |
+| `metta-node/events` | the fold over a space's writes |
+| `metta-node/integrate` | the library interface, discovery, wrapping, reflection |
+| `metta-node/lint` | five rules over MeTTa source, with suppression |
+| `metta-node/manifest` | a whole setup as one declarative record |
+| `metta-node/matching` | unification, one-way matching, alpha keys, renaming |
+| `metta-node/parallel` | the coordination verbs |
+| `metta-node/paths` | lazy structural paths into a live host value |
+| `metta-node/provider` | the space-provider seam, and host-owned matching |
+| `metta-node/random` | the seeded source everything that draws draws from |
+| `metta-node/remote` | a space over HTTP, both ends |
+| `metta-node/spaces` | `view`, `union`, `readOnly`, `overlay`, `mapped`, `diff`, `objectView` |
+| `metta-node/strategies` | the rewriting strategies, as reified atoms |
+| `metta-node/structures` | `AlphaSet`, `PatternMap`, `MatchIndex`, `ClosureView`, `TabledMap` |
+| `metta-node/subscribe` | standing queries and the live view |
+| `metta-node/tables` | a space over rows, and the bridge back |
+| `metta-node/saga` | the compensating-transaction journal |
+| `metta-node/tokens` | reader classes of the host's own |
+| `metta-node/testing` | atom generators, a property runner, the conformance checks |
+| `metta-node/version` | the version this build declares |
+| `metta-node/vocabularies` | all 32 of the engine's closed value sets, as unions |
+| `metta-node/wire` | the codec, for a conformance kit |
+
+## How a host type crosses
+
+A value crosses by REFERENCE unless something says how it should cross by
+SHAPE. `G(person)` is the reference; `registerType` is the other door.
+
+```ts
+import { IMAGES, project, registerType } from "metta-node/convert";
+
+registerType(Person, {
+  name: "Person",
+  toAtom: (person) => [person.name, person.age],
+  fromAtom: (name: string, age: number) => new Person(name, age),
+});
+project(new Person("Ada", 36));      // (Person "Ada" 36)
+```
+
+A registration picks one of four images, and the four are the engine's own:
+`registry-image` is one of the vocabularies generated from a booted engine, so
+`IMAGES` cannot drift from what the engine knows.
+
+| image | how the value crosses |
+|---|---|
+| `expression` | `(Name child...)`, the default and the shaped form |
+| `symbol` | the bare name its first child renders to, which is how an enum reads |
+| `handle` | by reference, though the registration still describes it |
+| `operations` | by reference, and its methods are meant to become operations |
+
+The `symbol` image runs backwards too. A bare symbol carries no constructor to
+look up, so every symbol registration is offered the name in turn and the first
+whose `fromAtom` answers something other than `undefined` claims it.
+
+`autoImage(value)` is the rung beneath a declared image: `"transparent"` or
+`"opaque"`, decided in constant time. A scalar and a small sized container
+cross transparent; an ITERATOR stays opaque however short it is, because
+measuring or converting one drains it, and draining is a side effect no image
+choice is allowed to have.
+
+## Integrating a library
+
+`integrate` is what a TypeScript library implements to work with MeTTa, and it
+installs atomically: a failure part way undoes what it did.
+
+```ts
+import { discover, integrate, wrapObject } from "metta-node/integrate";
+
+wrapObject(m, "db", connection, { execute: "db-query!", close: "db-close!" });
+await m.eval(S["db-query!"]("select 1")).one();
+```
+
+A package advertises itself in its own `package.json`, under one of three
+groups. Nothing is scanned and nothing is guessed.
+
+```json
+{
+  "metta": {
+    "integrations": "./dist/metta.js",
+    "requires": ["base-lib"],
+    "spaces": { "duck": "./dist/duck.js#createDuck" },
+    "libraries": { "nars": "./metta" }
+  }
+}
+```
+
+`entryPoints(group)` answers the advertised names UNLOADED, so discovery
+imports nothing and the app keeps deciding what loads; `loadEntryPoint(name)`
+loads exactly one. `discover()` returns integrations in INSTALL order, so a
+library built on another does not have to tell its users the right order by
+hand, and a cycle refuses rather than picking one.
+
+`installReflectionOps(m)` turns calling a host object into reasoning about one:
+
+```metta
+!(match (context-space) (config $c) (js-field $c $name))
+; (depth 3), (name "deep") -- one answer per field
+```
+
+`(js-field $object $name)` answers a `(name value)` pair in both modes. With
+the name bound it is a getter; unbound it enumerates. That second mode is what
+a function cannot offer and a relation can.
+
+## Vectors by key
+
+```ts
+import { EmbeddingStore } from "metta-node/arrays";
+
+using store = new EmbeddingStore(m, { name: "emb" });
+store.add(S.dog, new Float64Array([1, 0]));
+store.add(S.cat, new Float64Array([0.9, 0.1]));
+await m.eval(S["emb-knn"](G(new Float64Array([1, 0])), 1)).toArray();   // dog
+```
+
+`add` has MAP semantics: adding a key that is already there replaces its vector
+in its first-seen position. The vectors are copied into one contiguous
+row-major buffer, rebuilt lazily after a write, with each row's norm beside it,
+so a query is one pass of `n * width` multiply-adds with no per-vector
+indirection. A zero or non-finite vector is refused at the door, because cosine
+similarity has no answer for either and a silently empty ranking is worse.
+
+## What a space declares about itself
+
+A space's own facts live in the catalog, and the engine acts on them.
+
+```ts
+kb.handles(S.user(V.id, V.name), "Exact");   // routing: bounds may reach you
+kb.handles(S.scan(V.x), "Refuse");           // a scan-only source, in three words
+kb.covers("writesState");                    // what a world reified from here may do
+kb.writes("transactional");                  // what a write promises in a transaction
+kb.emits("best-first");                      // what (top k ...) needs before it bounds
+kb.capacity(1000);                           // an add beyond this is refused loudly
+```
+
+`handles` is keyed by SHAPE as well as by space, so a second declaration adds a
+row and queries route by the most specific one that matches. `Exact` licenses
+pushing the caller's bound to the provider; `Partial` and `Sound` stay
+candidates the engine re-unifies; `Refuse` makes the query a loud error instead
+of a silent partial answer. The other three are keyed by space alone, so
+redeclaring REPLACES: two rows saying different things about one space is not a
+stronger claim, it is an unanswerable one.
+
+`kb.digest()` is a sha256 of everything the space holds. The engine
+canonicalizes each atom, multiset-sorts the lines and hashes the whole, so two
+spaces agree exactly when they hold the same atoms up to alpha, in any
+insertion order and in any process. A space holding a live host reference is
+refused rather than hashed, because a reference prints by address.
+
+`kb.capacity(n)` bounds the space through the engine's own admission gate, so
+it holds for every write path in. The row is DATA and claiming the gate is
+separate sugar, which is deliberate: the pre-add hook takes ONE claimant, and a
+program that writes its own admission judge has to be able to claim it.
+
+`m.libraryPath(directory, alias)` registers a directory of MeTTa sources under
+a name `(import! &self (library <alias> <file>))` can reach. The directory is
+MOUNTED before it is registered, because the engine runs in a WebAssembly
+filesystem of its own and cannot see this process's.
+
+`kb.transaction(term)` runs one term atomically: every engine write commits or
+rolls back together, and an EMPTY answer set is the rollback. The body is a
+TERM rather than a callable, and the reason is architectural — this seat
+reaches JavaScript by suspending the engine, and the engine says exactly why
+that cannot happen inside a transaction: `engine_yield/1 cannot unwind through
+either`. Build the work as a term and this door runs it atomically.
+
+## Reactions, and which one fires first
+
+A reaction is a rule the ENGINE runs when a matching atom lands, under the
+match's own bindings.
+
+```ts
+alarms.reacts(S.alert(V.what), S.insert(S["&log"], S.all(V.what)));
+alarms.add(S.alert(S.fire));                 // (all fire) lands in &log
+```
+
+The managed heads are `(insert <ctx> <atom>)`, `(retract <ctx> <atom>)` and
+`(revise <ctx> <old> <new>)`, and they route through the same write paths a
+direct write does, so a provider's capabilities and declared atomicity govern a
+bridged write exactly as a direct one. A cascade is bounded at depth 32 and
+throws naming the chain.
+
+`subscribe` is the neighbour of this, not a special case: a reaction's
+operation runs ENGINE-side, so it reaches registered spaces, while a
+subscription delivers host-side to anything with `add` and `remove`.
+
+When several reactions match one write, `agenda` says which goes first.
+
+```ts
+alarms.reacts(S.alert(V.w), S.insert(S["&log"], S.low()), { priority: 1 });
+alarms.reacts(S.alert(V.w), S.insert(S["&log"], S.high()), { priority: 9 });
+alarms.agenda("priority");                   // (high) before (low)
+```
+
+`declaration` is the default and the order they were declared; `recency` is the
+most recently declared first; `specificity` is the most tests in the pattern
+first; `priority` reads each reaction's own number, highest first; and `user`
+names a MeTTa function that scores a reaction. Every policy breaks ties on
+declaration order. Those five are a production system's conflict-resolution
+strategies under their usual names, which is where the engine took them from:
+OPS5 and CLIPS resolve a conflict set the same way.
+
+## Undoing what cannot be rolled back
+
+A saga is the answer to work that has already committed: instead of a
+transaction that unwinds, each step declares what UNDOES it, and recovery runs
+those in reverse. That is the classical formulation, and it exists precisely
+because atomicity is not available across the boundary in question [source:
+Garcia-Molina and Salem, "Sagas", SIGMOD 1987].
+
+```ts
+import { compensates, saga } from "metta-node/saga";
+
+m.op(function charge(amount: number) { ... }, { effect: "writesState" });
+m.op(function refund(amount: number) { ... }, { effect: "writesState" });
+compensates(m, "charge", "refund");
+
+using book = saga(m, m.space("&receipts"));
+await book.run(S.charge(10));
+await book.run(S.charge(20));
+await book.rollback();                       // refund 20, then refund 10
+```
+
+A receipt is DATA: `(did charge (10) 10)` is an ordinary atom in an ordinary
+space, so a program queries its own journal with `match`. Only operations whose
+DECLARED effect is `writesState` or stronger earn one, because a read has
+nothing to undo.
+
+Three behaviours matter and only show when something goes wrong. A step that
+throws commits NO receipt, so the journal never records an obligation for work
+that did not happen. `rollback` PREFLIGHTS every receipt against a declared
+compensation before undoing anything, because discovering a missing one half
+way through leaves the world in neither state. And a compensation that throws
+keeps its receipt and every receipt before it, so a retry resumes rather than
+restarts — which is why a compensator must be idempotent.
+
+The step is not itself atomic here, and that is the one place this seat differs
+from the Python one. Python runs each step inside an engine transaction; this
+seat cannot, because it reaches JavaScript by SUSPENDING the engine and
+`engine_yield/1` cannot unwind through a transaction. What is left is the
+classical saga, which is the mechanism people reach for sagas to get.
+
+## A notation of your own
+
+The reader is extensible from the host: give it a full-token regex and the
+function that turns a matching lexeme into an atom.
+
+```ts
+import { registerToken } from "metta-node/tokens";
+
+registerToken(m.engine, /#[0-9a-f]{6}/, (lexeme) => G(parseInt(lexeme.slice(1), 16)));
+m.run("!(colour #ff8800)");        // (colour 16746496)
+```
+
+The constructor receives the COMPLETE matched lexeme, quotes included for a
+string token, and the callable never leaves this side: the engine keeps the
+pattern and a key, and hands the key back when the reader meets a match.
+Registering the same pattern again replaces the constructor, and only future
+parses read the new mapping, because an atom already returned is a value.
+
+This needs `library(pcre)`, which `m.engine.capabilities()` reports for the
+build you are on. It is present in the shipped one.
+
+## A provider that claims the whole conjunction
+
+Without this, every conjunction is split one pattern at a time and
+re-dispatched per outer row. That is a nested-loop plan, and a nested-loop plan
+cannot reach the AGM bound however fast the backend is: for the triangle
+`R(x,y), S(y,z), T(z,x)` with each relation of size N the bound is N^1.5, and no
+join plan achieves it. So this is not a tuning knob.
+
+```ts
+const provider: SpaceProvider = {
+  *atoms() { for (const [from, to] of edges) yield S.edge(from, to); },
+  plan(patterns) {
+    if (patterns.length < 2) return undefined;          // decline
+    return { claimed: [0, 1], rows: myOwnJoin(patterns) };
+  },
+};
+```
+
+`claimed` names the patterns BY POSITION, and the engine derives the rest, so a
+claim cannot drop a conjunct or name a pattern nobody offered and two
+occurrences of a repeated pattern stay apart. A partial claim is legal: take
+the two patterns you own and leave the third. Answering nothing declines, and
+the engine plans it exactly as it always did.
+
+The claim is EXACT, and this is the one place the seam differs from the rest of
+it. Elsewhere you may over-approximate because the engine re-unifies each
+candidate, which is cheap; there is no cheap re-check for a join, because the
+only way to verify a row is to run it. `checkSpaceProvider` holds a claim to
+the join it replaced:
+
+```ts
+await checkSpaceProvider(kb, provider, [], {
+  conjunctions: [[S.edge(V.x, V.y), S.edge(V.y, V.z)]],
+});
+```
+
+`plan` and `pushdown` are different capabilities: `pushdown` classifies how
+exactly you filter ONE pattern, which is what licenses a bound reaching you,
+and `plan` is this. `rules` is a third, declared rather than derived — it says
+this space's atoms include EQUATIONS, which in MeTTa is the difference between
+a data source and a place a program lives, and no method list can derive a
+promise about content.
+
+## A value that owns its matching
+
+A host value can decide for itself what it unifies with, which is Hyperon's
+`CustomMatch` in this runtime's vocabulary.
+
+```ts
+import { G, type Atom, type Term, hostValue } from "metta-node";
+import { CUSTOM_MATCH, registerCustomMatch } from "metta-node/provider";
+
+class Range {
+  readonly low: number;
+  readonly high: number;
+  constructor(low: number, high: number) {
+    this.low = low;
+    this.high = high;
+  }
+  *[CUSTOM_MATCH](other: Atom): Iterable<Term> {
+    const held = hostValue(other);
+    if (typeof held === "number" && held >= this.low && held <= this.high) yield other;
+  }
+}
+registerCustomMatch(m.engine, Range);
+await m.eval(S.unify(G(new Range(1, 10)), G(5), S.yes, S.no)).one();   // yes
+```
+
+Either operand order consults the same logic, and a variable still binds the
+value WHOLE without consulting it. Registration is per class and per engine,
+and it is what turns the seam on: until the first call the matcher carries no
+clause for host-owned matching at all, so a program that does not use this pays
+nothing for it. That is the difference from the Python seat, which can afford
+an always-present probe because its crossing is a function call; here it is a
+coroutine yield, and the matcher's ground-comparison path is the hottest there
+is.
+
+## What a definition says about itself
+
+```ts
+import { definitionFacts } from "metta-node";
+
+definitionFacts(m, function outer(n: number): number {
+  return helper(n) + addAtom(n);
+});
+// { freeVariables: ["addAtom", "helper"], effect: "writesState",
+//   unresolved: ["helper"], pure: false, span: {...}, doc: undefined }
+```
+
+Nothing is installed and nothing is written: the body is lowered to find out
+what it reaches and the term is thrown away. `lower` is the authority on which
+names a body could not bind itself, because it must decide that to compile at
+all, so this is the same answer the equations were built from.
+
+`effect` is the join over the heads whose effect the ENGINE declares, and
+`unresolved` is what keeps it honest: the engine declares an effect for a
+registered operation and a builtin, and none for a head defined by equations,
+whose effect is its own body's. `pure` is a claim rather than a measurement, so
+it is conservative — a body reaching an unresolved head is never called pure
+however pure the rest of it reads.
+
+## Collections over atoms, before there is an engine
+
+```ts
+import { AlphaSet, MatchIndex, PatternMap } from "metta-node/structures";
+
+new AlphaSet([S.f(V.x)]).has(S.f(V.y));            // true: one pattern, two spellings
+routes.matching(S.route(S.home));                  // which entries APPLY here
+inbox.matches(S.order(7, S.express));              // sublinear over many patterns
+```
+
+`MatchIndex` is an imperfect discrimination tree, the term-indexing structure
+automated theorem provers use at millions-of-terms scale: the tree answers
+candidates and a one-way match confirms, which is what keeps a nonlinear
+pattern such as `(f $x $x)` exact. `PatternMap` keeps the `Map` protocol EXACT
+— `get(k)` answers what was stored under that very key — and puts the dispatch
+question on its own door.
+
+`metta-node/matching` is what they are built on, and it is useful by itself:
+`unifyTerms`, `matchTerms`, `unifies`, `alphaKey`, `alphaEqual`, `isGround`,
+`renameVariables`. `unify(a, b)` at arity two on the root IS the host matcher,
+so asking whether two terms fit costs no crossing at all.
+
+## Property testing
+
+```ts
+import { atoms, forAll, fromPattern } from "metta-node/testing";
+
+const outcome = forAll(atoms(), (atom) => m.roundTrip(atom) === atom);
+assert.ok(outcome.ok, `seed ${outcome.seed}: ${String(outcome.counterexample)}`);
+```
+
+Seeded, so a failing run is reproducible; shrunk, so the counterexample is the
+smallest the shrinker could reach; and it answers a RESULT rather than calling
+an assertion, so it works under `node:test`, under a runner this package has
+never heard of, and inside an ordinary program.
+
+## The command line
+
+```sh
+npx metta-node run program.metta      # every ! answer group
+npx metta-node eval "(+ 1 2)"         # one term
+npx metta-node why "(quad 3)"         # the first proof
+npx metta-node repl                   # a read-eval-print loop
+```
+
+`--version` and `--help` boot nothing, and every command exits nonzero when it
+fails.
 
 ## Vocabulary
 
@@ -439,6 +1027,30 @@ try {
 }
 ```
 
+A refusal this binding raises is a `MettaError`, and each condition has its own
+subclass and its own stable `code`, so a caller narrows by class or switches on
+the code and the two agree:
+
+```ts
+catch (error) {
+  if (error instanceof ResultError) ...            // not exactly one answer
+  else if (error instanceof CapabilityError) ...   // this build, or this space, lacks it
+  else if (MettaError.is(error, "ERR_METTA_STRICT")) ...
+  else throw error;
+}
+```
+
+`EngineError`, `MettaSyntaxError`, `WireError`, `ResultError`, `NameError`,
+`CapabilityError`, `CompileError`, `ClosedError`, `UnsupportedError`,
+`StrictError`, `NotReducibleError`, `CastError`, `InferenceLimitError`,
+`TimeLimitError`, `ProviderError`, `SubscriberError`, `TransportError` — all
+under `MettaError`, all with `cause` and `toJSON`.
+
+A deadline is NOT one of them: `AbortSignal.timeout` aborts with the platform's
+own `TimeoutError`, which is what every other async API raises, and inventing a
+second one to catch instead would be the wrong kindness. `InferenceLimitError`
+is a different thing: the engine stopping ITSELF inside a reduction.
+
 ## Nothing reaches your console
 
 An embedded engine that prints is printing over whatever the host was saying,
@@ -493,6 +1105,20 @@ quietly:
 
 Everything else loads. Tabling is present, `library(sha)` is present, and the
 engine parses, translates and evaluates end to end.
+
+Beside the platform's absences, these parts of the Python package have no
+counterpart here yet, each for a stated reason rather than by oversight:
+
+| absent | why |
+|---|---|
+| `algebra` — the counting, tropical, probability, provenance and ranking carriers, and `under` | annotated matching is an engine capability this transport has not been wired to; the `semiring` vocabulary is here, so the words a program would use already are |
+| `arrays` — numeric-array interop | the Python side images numpy; TypeScript's counterpart is a typed array over a provider, which `m.attach` already supports without a module of its own |
+| `remote` — a space over a network | a `SpaceProvider` whose methods `fetch` IS this, and it needs no engine support; what is absent is a packaged client |
+| `lint` — static analysis of definitions | a linter is a program over `m.forms`, which is here; the analysis is not |
+| `manifest` / `boot` — assembling an app from a `(boot ...)` manifest | no counterpart |
+| `tables`, `convert`, `integrate` | no counterpart |
+| `TabledMap` | it reads the engine's table statistics, which this bridge does not expose |
+| a pattern-position lazy path | Python lifts the marker out of the pattern before matching; this surface evaluates `(match ...)` as an ordinary term, so `metta-node/paths` does the same job as an OPERATION the engine calls, which is a door TypeScript has and Python does not |
 
 ## What the binding calls
 
@@ -617,6 +1243,21 @@ sh bench.sh --update              # re-pin, after reviewing the workload
 | `src/schema.ts` | the vocabulary door and Standard Schema interop |
 | `src/library.ts` | the extension tier |
 | `src/state.ts` | a state cell |
+| `src/errors.ts` | the error family, one subclass per condition |
+| `src/matching.ts` | unification, one-way matching, alpha keys, renaming |
+| `src/structures.ts` | `AlphaSet`, `PatternMap`, the discrimination tree |
+| `src/provider.ts` | a space implemented in TypeScript |
+| `src/spaces.ts` | the space algebra, every combinator a provider |
+| `src/derivation.ts` | a proof, as a discriminated union |
+| `src/parallel.ts` | the coordination verbs on the platform's concurrency |
+| `src/subscribe.ts` | standing queries and the live view |
+| `src/testing.ts` | generators, the property runner, the conformance checks |
+| `src/vocabularies.ts` | the engine's closed value sets, checked against `&metta` |
+| `src/strategies.ts` | the rewriting strategies, as reified atoms |
+| `src/paths.ts` | lazy structural paths into a live host value |
+| `src/ambient.ts` | the module tier |
+| `src/cli.ts` | the command line |
+| `src/present.ts` | the presentation hook every handle prints through |
 | `src/types/sexpr.ts` | MeTTa text, read at the type level |
 | `bridge.pl` | the Prolog half: the codec, the job pump, the host-op trampoline |
 | `test/*.test.ts` | `node --test` |

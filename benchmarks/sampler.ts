@@ -128,10 +128,30 @@ async function measure(one: Case, bench: Bench, around: Window): Promise<Sample>
   return { inferences: stats === null ? null : stats.inferences, crossings, seconds };
 }
 
+/**
+ * Settle the heap, so the window starts from the same state whatever was loaded.
+ *
+ * `--predictable-gc-schedule` makes collection deterministic given the same
+ * allocation sequence, and the startup heap is part of that sequence: growing
+ * any module the benchmark imports shifts where a collection lands INSIDE the
+ * window, and four kilobytes of comments moved a row 3.7 percent. Collecting
+ * to a fixed point here, outside the window, is what removes that.
+ *
+ * Twice, because the first pass can resurrect through finalizers and weak
+ * references, which this seat holds by the tableful.
+ */
+function settle(): void {
+  const collect = (globalThis as { gc?: () => void }).gc;
+  if (collect === undefined) return;
+  collect();
+  collect();
+}
+
 /** One sample, on state built and released around it. */
 export async function sample(one: Case, around: Window = directly): Promise<Sample> {
   const bench = await one.setup();
   try {
+    settle();
     return await measure(one, bench, around);
   } finally {
     bench.close();

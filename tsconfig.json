@@ -4,7 +4,8 @@
     "lib": [
       "ES2023",
       "ESNext.Disposable",
-      "ESNext.Collection"
+      "ESNext.Collection",
+      "ESNext.Array"
     ],
     "module": "nodenext",
     "moduleResolution": "nodenext",

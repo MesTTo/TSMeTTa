@@ -21,8 +21,8 @@
  */
 
 import { type Term, expr, sym, toAtom } from "./atom.ts";
-import { MettaError } from "./errors.ts";
-import { type Grant } from "./space.ts";
+import { CapabilityError } from "./errors.ts";
+import type { SpaceCapability } from "./vocabularies.ts";
 
 /** A library: one npm package, two realms. */
 export interface Library {
@@ -35,7 +35,7 @@ export interface Library {
   /** `.metta` files the engine loads, by absolute path. */
   readonly files?: readonly string[];
   /** The capabilities its operations need. A restricted space checks these. */
-  readonly grants?: readonly Grant[];
+  readonly grants?: readonly SpaceCapability[];
   /** The vocabulary it declares, recorded so a program can read it back. */
   readonly vocabulary?: readonly string[];
   /**
@@ -69,10 +69,9 @@ export interface LibraryHost {
  */
 export function useLibrary(surface: LibraryHost, library: Library): void {
   if (library.present !== undefined && !library.present()) {
-    throw new MettaError(
+    throw new CapabilityError(
       `the library ${library.name} needs an artifact this deployment does not have; ` +
         `it refuses here rather than failing later somewhere else`,
-      { code: "ERR_METTA_CAPABILITY" },
     );
   }
   if (library.source !== undefined) surface.run(library.source);

@@ -133,7 +133,7 @@
   "files": [
     "dist",
     "bridge.pl",
-    "example",
+    "examples",
     "README.md"
   ],
   "engines": {

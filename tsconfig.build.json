@@ -10,7 +10,7 @@
     "src",
     "test",
     "kit",
-    "example",
+    "examples",
     "benchmarks"
   ]
 }

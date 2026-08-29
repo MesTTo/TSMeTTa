@@ -3,7 +3,7 @@
  *   README's examples are executable rather than asserted.
  * Assumes:
  *   - the gallery is compiled beside this test when the compiled lane runs it,
- *     and sits at `example/gallery.ts` when the source lane does
+ *     and sits at `examples/gallery.ts` when the source lane does
  * Guarantees:
  *   - a gallery line that stops being true fails here, which is what keeps
  *     documentation from drifting away from the surface it documents
@@ -25,13 +25,13 @@ import { packageRoot } from "../src/index.ts";
 /**
  * The gallery as it exists for whichever lane is running.
  *
- * The compiled lane runs `build/example/gallery.js` beside itself; the source
- * lane runs `example/gallery.ts`. Asking the filesystem is what keeps one test
+ * The compiled lane runs `build/examples/gallery.js` beside itself; the source
+ * lane runs `examples/gallery.ts`. Asking the filesystem is what keeps one test
  * honest in both.
  */
 function examplePath(name: string): string {
-  const beside = join(dirname(dirname(fileURLToPath(import.meta.url))), "example", `${name}.js`);
-  return existsSync(beside) ? beside : join(packageRoot, "example", `${name}.ts`);
+  const beside = join(dirname(dirname(fileURLToPath(import.meta.url))), "examples", `${name}.js`);
+  return existsSync(beside) ? beside : join(packageRoot, "examples", `${name}.ts`);
 }
 
 const galleryPath = (): string => examplePath("gallery");

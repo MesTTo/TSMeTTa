@@ -1262,7 +1262,7 @@ sh bench.sh --update              # re-pin, after reviewing the workload
 | `bridge.pl` | the Prolog half: the codec, the job pump, the host-op trampoline |
 | `test/*.test.ts` | `node --test` |
 | `kit/` | the conformance kit, both halves |
-| `example/` | the programs the README and the tests run |
+| `examples/` | the programs the README and the tests run |
 | `benchmarks/cases.ts` | the six workloads, and which counter decides each |
 | `benchmarks/sampler.ts` | one sample, with setup outside perf's window |
 | `benchmarks/run.ts` | the command line the Python driver and a reader use |

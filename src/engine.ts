@@ -93,7 +93,7 @@ function findPackageRoot(from: string): string {
 
 /**
  * This package's own root, wherever it was installed and however it is being
- * run. `bridge.pl` and `example/` sit inside it.
+ * run. `bridge.pl` and `examples/` sit inside it.
  */
 export const packageRoot: string = findPackageRoot(HERE);
 const PACKAGE_ROOT = packageRoot;

@@ -55,7 +55,7 @@
   },
   "counter_configuration": {
     "runtime": "build",
-    "seats": "cetta,mork,node,python",
+    "seats": "cmetta,mork,node,python",
     "swipl_wasm": "8.0.6",
     "v8": "12.4.254.21-node.35",
     "v8_flags": "--predictable --predictable-gc-schedule --liftoff-only --expose-gc"

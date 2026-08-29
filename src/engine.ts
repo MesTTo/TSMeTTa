@@ -97,8 +97,29 @@ function findPackageRoot(from: string): string {
  */
 export const packageRoot: string = findPackageRoot(HERE);
 const PACKAGE_ROOT = packageRoot;
-/** The MeTTa Kernel checkout this package's engine tree is mounted from. */
-export const repoRoot: string = resolve(PACKAGE_ROOT, "..", "..");
+/**
+ * Where the engine tree is mounted FROM, which is not the same place in a
+ * checkout and in an install.
+ *
+ * In the checkout this package sits at `extensions/node/`, so the engine is two
+ * levels up. Installed, it sits at `node_modules/metta-node/`, where two levels
+ * up is the CONSUMER'S OWN project: measured 2026-08-29 on a fresh
+ * `npm install` outside any checkout, that resolved to
+ * `C:\Users\ahmad\nodetest\engine` and the boot died on `scandir`. So a
+ * published tarball carries its own copy at `_runtime/`, written by the
+ * `prepack` script and preferred here whenever it is present, the way the
+ * Python seat carries `metta/_runtime/`.
+ */
+function findEngineRoot(packageRoot: string): string {
+  const bundled = join(packageRoot, "_runtime");
+  return existsSync(join(bundled, "engine")) ? bundled : resolve(packageRoot, "..", "..");
+}
+
+/**
+ * The engine tree this package boots from: its own bundled `_runtime/` when
+ * the package was published, and the surrounding checkout when it was not.
+ */
+export const repoRoot: string = findEngineRoot(PACKAGE_ROOT);
 const REPO_ROOT = repoRoot;
 const VIRTUAL_ROOT = "/metta";
 

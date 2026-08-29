@@ -132,6 +132,7 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "_runtime",
     "bridge.pl",
     "examples",
     "README.md"
@@ -142,12 +143,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "build:dist": "tsc -p tsconfig.dist.json",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "cli": "npm run build:dist --silent && node dist/cli.js",
+    "kit": "npm run build --silent && node build/kit/run.js",
+    "postpack": "node tools/bundle-runtime.mjs --clean",
+    "prepack": "node tools/bundle-runtime.mjs",
+    "prepare": "npm run build:dist --silent",
+    "prepublishOnly": "node tools/refuse-early-publish.mjs",
     "test": "npm run build --silent && node --test \"build/test/*.test.js\"",
     "test:source": "node --test \"test/*.test.ts\"",
-    "kit": "npm run build --silent && node build/kit/run.js",
-    "prepare": "npm run build:dist --silent",
-    "cli": "npm run build:dist --silent && node dist/cli.js"
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json"
   },
   "dependencies": {
     "acorn": "^8.18.0",

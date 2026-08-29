@@ -16,6 +16,32 @@ npm ci        # fetches swipl-wasm and builds the TypeScript
 npm test
 ```
 
+The package carries `"private": true`, and a `prepublishOnly` hook that reads
+it and exits nonzero. That is a pre-release guard and not a decision about the
+registry: this repository is private until it is made public, and everything
+goes public together on that day, at which point the line comes out and
+`npm install metta-node` is the whole install.
+
+The hook exists because npm's own guard cannot be demonstrated. npm is
+documented to refuse a private package, but measured 2026-08-29,
+`npm publish --dry-run` on one prints `Publishing to
+https://registry.npmjs.org/` and lists the tarball, because the dry run
+simulates the pack and skips the preflight. `node tools/refuse-early-publish.mjs`
+is the same refusal in a form that can be run on demand, and it keys off the
+same flag, so removing that one line lifts both.
+
+Until then the package installs from a tarball, which is a supported path and
+the one this seat's tutorial documents:
+
+```sh
+cd extensions/node && npm pack      # writes metta-node-<version>.tgz
+npm install /path/to/metta-node-<version>.tgz
+```
+
+`npm pack` runs `tools/bundle-runtime.mjs` first, which copies the engine into
+the tarball, and removes it again afterwards. Without that a published package
+would carry the bridge and not the engine it drives.
+
 ```ts
 import { metta, S, V } from "./extensions/node/src/index.ts";
 
@@ -36,8 +62,15 @@ reimplemented:
 
 ```ts
 S.parent(S.tom, S.bob) === S.parent(S.tom, S.bob);   // true
-new Set([S.a, S.a]).size;                            // 1
+new Set([S.a.atom, S.a.atom]).size;                  // 1
 ```
+
+A BARE name is the exception, and it is worth knowing once. `S.a` answers a
+fresh callable proxy on every access, because the same name has to work both
+as a symbol and as the head of an expression, so `S.a === S.a` is `false`. The
+atom under it is interned like any other, which is what `.atom` reaches and
+why the line above says `S.a.atom`. Anywhere an atom is what you mean, ask for
+it.
 
 `S` mints symbols, `V` variables, `G` lifts a host value, `_` is the anonymous
 variable, and `fn` is the operation vocabulary. Applying a name builds an

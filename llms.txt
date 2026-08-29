@@ -16,21 +16,28 @@ That fetches swipl-wasm and builds the TypeScript through the package's own
 ## First call
 
 ```ts
-import { metta, S, V } from "./extensions/node/src/index.ts";
+import { metta, S, V, fn } from "./extensions/node/src/index.ts";
 
 const m = await metta();
-await m.eval(S.add(1, 2)).one();      // 3
+await m.eval(fn.add(1, 2)).one();     // 3
 ```
 
 ## Building terms
 
-`S` makes symbols and expressions, `V` makes variables. A call on `S` is an
-expression with that head:
+`S` makes symbols and expressions, `V` makes variables, `fn` names the
+engine's own operations. A call on `S` is an expression with that head, and
+the head is exactly the symbol you wrote:
 
 ```ts
 S.parent(S.alice, S.bob)      // (parent alice bob)
 V.x                           // $x
+fn.add(1, 2)                  // (+ 1 2), which reduces to 3
+S.add(1, 2)                   // (add 1 2), a term with no meaning attached
 ```
+
+That last pair is the one to get right. `fn` maps a readable name onto the
+operation the engine actually has, so `fn.add` is `+`; `S.add` builds a term
+headed by the symbol `add`, which nothing defines, so it comes back unreduced.
 
 ## Asking, lazily
 

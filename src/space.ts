@@ -3,10 +3,11 @@
  *   already has a word for and the query doors MeTTa already has a meaning
  *   for.
  * Assumes:
- *   - a binding row is carried by `quote`, whose contract is that its argument
- *     does not reduce. A bare tuple template is EVALUATED: with `(uses twice 3)`
- *     stored and `twice` defined, `(match &kb (uses $f $n) ($f $n))` answers 6
- *     rather than the row [measured 2026-08-27]
+ *   - a binding row is protected by `quote`, whose contract is that its
+ *     argument does not reduce and whose answer is that operand itself. A bare
+ *     tuple template is EVALUATED: with `(uses twice 3)` stored and `twice`
+ *     defined, `(match &kb (uses $f $n) ($f $n))` answers 6 rather than the row
+ *     [measured 2026-08-27; quote operand return rechecked 2026-08-30]
  * Guarantees:
  *   - `add`, `delete`, `has`, `size` and `clear` mean what `Set` means by them,
  *     so a space reads as the collection it is
@@ -229,9 +230,10 @@ export class Space {
    * Remove one atom. Answers whether anything went, which is what
    * `Set.prototype.delete` answers.
    *
-   * MeTTa's own `remove-atom` answers the unit value, because its type says
-   * absence is not reported there. Nothing in MeTTa's contract governs what a
-   * HOST API answers, and a verdict is the useful one.
+   * MeTTa's language-level `remove-atom` drains every unifying occurrence and
+   * answers `true` whether one existed or not. This host collection door uses
+   * `metta_host_remove_reported/3`, the engine's one-occurrence seam with an
+   * honest presence verdict, so the two grains stay explicit.
    */
   delete(atom: Term): boolean {
     const verdict = valueOf(this.#command(["remove", this.name, this.#wire(atom)]).sync(), "delete");
@@ -346,12 +348,13 @@ export class Space {
         ...head,
         ...Array.from({ length: width }, (_, at) => variable(`previous${String(at)}`)),
       );
-      // Every previous row of this shape, not just one: a repeated declaration
-      // must not leave an earlier answer to be found later.
+      // Every previous row of this shape, not just one: the host removal seam
+      // removes one occurrence and reports false on absence, so a repeated
+      // declaration cannot leave an earlier answer to be found later.
       while (
         isTrue(valueOf(this.#command(["remove", CATALOG, this.#wire(previous)]).sync(), "declare"))
       ) {
-        // The removal answers whether anything went, which is the loop's test.
+        // The removal verdict is the loop's termination test.
       }
     }
     this.#command(["add", CATALOG, [this.#wire(atom)]]).sync();
@@ -939,25 +942,20 @@ export function answerIterator(job: Job): AsyncIterator<Atom> {
   };
 }
 
-/** Strip the `quote` carrier and zip the tuple against the pattern's variables. */
+/** Zip the tuple returned through `quote` against the pattern's variables. */
 export function rowOf(answer: Atom, vars: readonly Var[]): Row {
-  if (!(answer instanceof Expression) || answer.items.length !== 2) {
-    throw new WireError(`a binding row came back as ${answer.text}, which is not a quoted tuple`);
+  if (!(answer instanceof Expression)) {
+    throw new WireError(`a binding row came back as ${answer.text}, which is not a tuple`);
   }
-  const carried = answer.items[1];
-  if (!(carried instanceof Expression)) {
-    throw new WireError(`a binding row came back as ${answer.text}, which is not a quoted tuple`);
+  if (answer.items.length !== vars.length) {
+    throw new WireError(
+      `a binding row came back with ${String(answer.items.length)} columns where ` +
+        `the pattern has ${String(vars.length)}`,
+    );
   }
   const row: Row = {};
   vars.forEach((variable, index) => {
-    const bound = carried.items[index];
-    if (bound === undefined) {
-      throw new WireError(
-        `a binding row came back with ${String(carried.items.length)} columns where ` +
-          `the pattern has ${String(vars.length)}`,
-      );
-    }
-    row[variable.name] = bound;
+    row[variable.name] = answer.items[index]!;
   });
   return row;
 }
@@ -971,7 +969,8 @@ export function hostValue(atom: Atom): unknown {
 function isTrue(atom: Atom): boolean {
   const value = hostValue(atom);
   if (typeof value === "boolean") return value;
-  return atom instanceof Sym && atom.name === "True";
+  // Either spelling reads to the one constant, so both are accepted here.
+  return atom instanceof Sym && (atom.name === "true" || atom.name === "True");
 }
 
 /** The engine name behind whatever names a space. */

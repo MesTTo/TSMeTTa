@@ -155,6 +155,12 @@ kb.size;
 for await (const atom of kb) { ... } // its stored atoms, unevaluated
 ```
 
+The language-level `remove-atom` drains every unifying occurrence and answers
+`true` even when none existed. `delete` is deliberately the host collection
+door instead: it removes one occurrence and reports whether one was present,
+which keeps its `Set.prototype.delete` contract distinct from MeTTa's coarser
+operation.
+
 `kb.match(pattern)` answers ROWS keyed by the pattern's own variable names, in
 first-seen order; `kb.match(pattern, template)` answers the template's
 instances, evaluated, which is MeTTa's own reading of the third argument of
@@ -211,7 +217,7 @@ const isPrime = m.define(function isPrime(n: number): boolean {
   return n === findDivisor(n, 2);
 }, { name: "prime?" });
 
-await isPrime(53537257).one();       // True
+await isPrime(53537257).one();       // true
 ```
 
 `===` becomes the engine's `==`, `%` becomes `%`, and the recursion becomes a
@@ -1018,12 +1024,15 @@ JavaScript number `42`. `G(1.5)` and `float(1.5)` are the SAME atom, because a
 number with a fraction is already a float. A `bigint` is always an integer,
 however large, and an integer past the exactly-representable range stays one.
 
-`(== 2 2.0)` answers **True**: numeric equality is by VALUE across the
-integer/float constructors, following LeaTTa's `Ground.equiv`. What tells them
-apart is IDENTITY, which is what a codec has to preserve:
+`==` and `!=` are pure term equality. The integer `2` and float `2.0` have
+different constructors, so `(== 2 2.0)` answers `false`. A written error is an
+ordinary operand here too: `(== (Error bad none) 0)` answers `false` rather
+than executing or raising the error term. The codec preserves the constructor
+distinction that both equality and identity observe:
 
 ```
-!(=alpha 2 2.0)                      False
+!(== 2 2.0)                          false
+!(=alpha 2 2.0)                      false
 !(case 2 ((2.0 float) ($_ other)))   other
 !(subtraction-atom (2 2.0) (2))      (2.0)
 ```

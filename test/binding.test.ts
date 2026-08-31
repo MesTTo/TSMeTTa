@@ -81,7 +81,7 @@ describe("running a program", () => {
     // while testing that the pragma did nothing.
     m.run("!(import! &self (library lib_memo))");
     const groups = m.run("!(memoize thrice)\n(= (thrice $x) (* $x 3))\n!(thrice 7)");
-    assert.deepEqual(groups.map((group) => group.texts), [["True"], ["21"]]);
+    assert.deepEqual(groups.map((group) => group.texts), [["true"], ["21"]]);
   });
 
   it("answers a call to a definition below it unreduced, as the engine does", () => {
@@ -169,12 +169,18 @@ describe("the codec, through the engine", () => {
     assert.deepEqual(wireFromAtom(float), ["n", 2]);
     assert.equal(m.run("!(+ 1 1)")[0]!.texts[0], "2");
     assert.equal(m.run("!(+ 1.0 1.0)")[0]!.texts[0], "2.0");
-    // The engine's `==` PROMOTES: numeric equality is by value across the
-    // integer/float constructors, following LeaTTa's Ground.equiv
-    // [source: engine/metta/operators.pl, '=='/3]. What tells the two apart is
-    // IDENTITY, and identity is what a codec has to preserve.
-    assert.equal(m.run("!(== 2 2.0)")[0]!.texts[0], "True", "equality promotes");
-    assert.equal(m.run("!(=alpha 2 2.0)")[0]!.texts[0], "False", "identity does not");
+    // The engine's `==` is pure TERM equality. Integer and float constructors
+    // therefore remain distinct [source:
+    // PeTTa@ae66fa8e41dcd5539d614706bd4e5cfb34f9608d src/metta.pl,
+    // eval_20/6 clauses for '==' and '!='].
+    assert.equal(m.run("!(== 2 2.0)")[0]!.texts[0], "false", "term equality distinguishes");
+    assert.equal(m.run("!(!= 2 2.0)")[0]!.texts[0], "true", "term inequality distinguishes");
+    assert.equal(m.run("!(=alpha 2 2.0)")[0]!.texts[0], "false", "identity does not");
+    assert.equal(
+      m.run("!(== (Error bad none) 0)")[0]!.texts[0],
+      "false",
+      "a written Error is compared as a term",
+    );
     assert.equal(
       m.run("!(case 2 ((2.0 float) ($_ other)))")[0]!.texts[0],
       "other",
@@ -184,6 +190,37 @@ describe("the codec, through the engine", () => {
       m.run("!(subtraction-atom (2 2.0) (2))")[0]!.texts[0],
       "(2.0)",
       "a multiset difference tells them apart",
+    );
+  });
+
+  it("tracks the engine's aligned effects, misses and arity errors", () => {
+    assert.deepEqual(
+      m.run(
+        "!(add-atom &node-alignment-effects (dup 1))\n" +
+          "!(add-atom &node-alignment-effects (dup 1))\n" +
+          "!(remove-atom &node-alignment-effects (dup $x))\n" +
+          "!(collapse (match &node-alignment-effects (dup $x) $x))\n" +
+          "!(remove-atom &node-alignment-effects missing)",
+      ).map((group) => group.texts),
+      [["true"], ["true"], ["true"], ["()"], ["true"]],
+      "effects answer true and removal drains every unifying occurrence",
+    );
+
+    assert.deepEqual(
+      m.run(
+        "(= (node-alignment-only a) yes)\n" +
+          "!(node-alignment-only b)\n" +
+          "!(test (node-alignment-only b) ())",
+      ).map((group) => group.texts),
+      [[], ["true"]],
+      "NoMatchFail answers nothing and test compares that miss as ()",
+    );
+    assert.deepEqual(m.drainOutput(), ["is (), should (). ✅ "]);
+
+    assert.equal(
+      m.run("!(repr (catch (+ 1 2 3)))")[0]!.texts[0],
+      '"(Error (domain_error (function_input_arities + (2)) 3) none)"',
+      "overapplication reports the function, known arities and asked arity",
     );
   });
 

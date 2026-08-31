@@ -138,8 +138,8 @@ describe("rendering a host type", () => {
 
 describe("the constant atoms", () => {
   it("are the atoms a program would otherwise spell by hand", () => {
-    assert.equal(TRUE.text, "True");
-    assert.equal(FALSE.text, "False");
+    assert.equal(TRUE.text, "true");
+    assert.equal(FALSE.text, "false");
     assert.equal(UNIT.text, "()");
     assert.equal(UNDEFINED.text, "%Undefined%");
     assert.equal(ATOM_TYPE.text, "Atom");

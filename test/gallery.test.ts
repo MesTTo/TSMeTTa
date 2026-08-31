@@ -60,7 +60,7 @@ describe("the gallery", () => {
         "(if (== (% $n $d) 0) $d (find-divisor $n (+ $d 1)))))",
     );
     assert.equal(lines.get("the same body, run in TypeScript"), "7");
-    assert.equal(lines.get("four primes"), "True True True True");
+    assert.equal(lines.get("four primes"), "true true true true");
     assert.equal(lines.get("a generator op is nondeterminism"), "(1 2 3 4)");
     assert.equal(lines.get("a plain op"), "HELLO");
     assert.equal(lines.get("an async op, awaited mid-reduction"), "40");

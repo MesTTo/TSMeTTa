@@ -281,10 +281,10 @@ export function Empty(): Atom {
 // ---------------------------------------------------------------------------
 // The constants a program writes rather than spells.
 
-/** The atom `True`. */
+/** The atom written as `true`. */
 export const TRUE: Atom = G(true);
 
-/** The atom `False`. */
+/** The atom written as `false`. */
 export const FALSE: Atom = G(false);
 
 /**

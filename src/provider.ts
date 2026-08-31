@@ -427,7 +427,7 @@ function missing(capability: ProviderCapability, provider: SpaceProvider): never
 /**
  * One planning crossing, as the atom the bridge reads back.
  *
- * `(plan (<index>...) (<row atom>...)...)`, or `False` for a decline. The
+ * `(plan (<index>...) (<row atom>...)...)`, or `false` for a decline. The
  * indices are checked HERE, where the provider that produced them can be
  * named: a duplicate or out-of-range position would otherwise reach the
  * partition as a silently wrong claim.

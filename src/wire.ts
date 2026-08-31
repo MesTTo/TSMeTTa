@@ -6,8 +6,9 @@
  *     b boolean, e expression, p portable space handle, o live host value
  *   - a number's payload is canonical Prolog TEXT, because the WebAssembly
  *     value conversion renders the float 2.0 and the integer 2 as the same
- *     JavaScript number and MeTTa answers False to `(== 2 2.0)`
- *     [measured 2026-08-20, restated 2026-08-27]
+ *     JavaScript number and MeTTa answers `false` to `(== 2 2.0)`
+ *     [measured 2026-08-30 against
+ *     PeTTa@ae66fa8e41dcd5539d614706bd4e5cfb34f9608d]
  * Guarantees:
  *   - every Prolog integer arrives as a `bigint` and every Prolog float as a
  *     `number`, which is the only pair of JavaScript types that tells 2 from

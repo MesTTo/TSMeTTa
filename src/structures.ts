@@ -634,7 +634,8 @@ function tablingReady(surface: ViewHost): void {
 
 function accepted(surface: ViewHost, source: string, what: string): void {
   const answered = surface.run(`!(${source})`);
-  if (answered[0]?.texts[0] !== "True") {
+  const verdict = answered[0]?.texts[0];
+  if (verdict !== "true" && verdict !== "True") {
     throw new MettaError(`${what} was not accepted: ${JSON.stringify(answered[0]?.texts ?? [])}`);
   }
 }

@@ -22,13 +22,13 @@
 %   - the transport carries a number as its canonical Prolog text, because
 %     the WebAssembly value conversion renders the float 2.0 as the
 %     JavaScript number 2, which is also what the integer 2 renders as, and
-%     the two are DIFFERENT ATOMS [measured 2026-08-27: (=alpha 2 2.0) is
-%     False, (case 2 ((2.0 float) ($_ other))) answers other, and
-%     (subtraction-atom (2 2.0) (2)) answers (2.0)]. The header here used to
-%     cite (== 2 2.0) answering False; it answers True, and engine/metta/
-%     operators.pl says why: numeric equality is by VALUE across the
-%     integer/float constructors, following LeaTTa's Ground.equiv. Equality
-%     promotes, identity does not, and a codec has to preserve identity.
+%     the two are DIFFERENT ATOMS [measured 2026-08-30: (== 2 2.0) and
+%     (=alpha 2 2.0) answer false, (case 2 ((2.0 float) ($_ other))) answers
+%     other, and (subtraction-atom (2 2.0) (2)) answers (2.0)]. Equality is
+%     pure term equality, so a codec has to preserve the constructor identity
+%     it observes [source:
+%     PeTTa@ae66fa8e41dcd5539d614706bd4e5cfb34f9608d src/metta.pl,
+%     eval_20/6 clauses for '==' and '!='].
 % Guarantees:
 %   - metta_node_step/2 computes at most one event per call, so a host that
 %     stops pulling leaves the rest of an infinite stream uncomputed

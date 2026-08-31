@@ -77,12 +77,12 @@ const answer = async (term: Term): Promise<string> => String(await m.eval(term).
 
 describe("comparison words", () => {
   it("reduce to what they claim", async () => {
-    assert.equal(await answer(eq(1, 1)), "True");
-    assert.equal(await answer(ne(1, 2)), "True");
-    assert.equal(await answer(lt(1, 2)), "True");
-    assert.equal(await answer(lte(2, 2)), "True");
-    assert.equal(await answer(gt(2, 1)), "True");
-    assert.equal(await answer(gte(2, 2)), "True");
+    assert.equal(await answer(eq(1, 1)), "true");
+    assert.equal(await answer(ne(1, 2)), "true");
+    assert.equal(await answer(lt(1, 2)), "true");
+    assert.equal(await answer(lte(2, 2)), "true");
+    assert.equal(await answer(gt(2, 1)), "true");
+    assert.equal(await answer(gte(2, 2)), "true");
   });
 
   it("are the ecosystem's own roster, not the Python operator module's", () => {
@@ -100,7 +100,10 @@ describe("arithmetic words", () => {
     assert.equal(await answer(mul(3, 4)), "12");
     assert.equal(await answer(div(6, 3)), "2");
     assert.equal(await answer(mod(7, 3)), "1");
-    assert.equal(await answer(pow(2, 8)), "256.0");
+    // An integer base raised to an integer power keeps its kind, which is
+    // upstream's answer too [measured 2026-08-30 against PeTTa@ae66fa8:
+    // `!(pow-math 2 8)` is `256` on both engines].
+    assert.equal(await answer(pow(2, 8)), "256");
     assert.equal(await answer(abs(-3)), "3");
     assert.equal(await answer(sqrt(9.0)), "3.0");
     assert.equal(await answer(floor(3.7)), "3");
@@ -120,10 +123,10 @@ describe("arithmetic words", () => {
 
 describe("logic words", () => {
   it("reduce to what they claim", async () => {
-    assert.equal(await answer(and(true, false)), "False");
-    assert.equal(await answer(or(true, false)), "True");
-    assert.equal(await answer(not(true)), "False");
-    assert.equal(await answer(xor(true, false)), "True");
+    assert.equal(await answer(and(true, false)), "false");
+    assert.equal(await answer(or(true, false)), "true");
+    assert.equal(await answer(not(true)), "false");
+    assert.equal(await answer(xor(true, false)), "true");
   });
 });
 
@@ -151,7 +154,10 @@ describe("control forms", () => {
     assert.equal(await answer(Let(V.x, 1, add(V.x, 1))), "2");
     assert.equal(await answer(LetStar([[V.x, 1], [V.y, 2]], add(V.x, V.y))), "3");
     assert.equal(await answer(Collapse(Superpose([1, 2]))), "(1 2)");
-    assert.equal(await answer(Quote(S.f(1))), "(quote (f 1))");
+    // quote ANSWERS its operand rather than a wrapper, which is upstream's
+    // own lowering, `Out = Expr`
+    // [source: PeTTa@ae66fa8 src/translator.pl:320-322].
+    assert.equal(await answer(Quote(S.f(1))), "(f 1)");
     assert.deepEqual(await m.eval(Empty()), []);
   });
 

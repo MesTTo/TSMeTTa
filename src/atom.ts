@@ -192,7 +192,7 @@ export class Grounded<T = unknown> extends Atom {
  * A number that is a MeTTa FLOAT even though its value is a whole number.
  *
  * JavaScript has one number type and MeTTa has two, and the engine tells them
- * apart: `(== 2 2.0)` answers False. The crossing therefore has to choose for
+ * apart: `(== 2 2.0)` answers `false`. The crossing therefore has to choose for
  * a whole number, and it chooses the INTEGER, because that is what a reader
  * who wrote `42` meant. This is the other side: `float(42)` is the atom `42.0`,
  * and it is what an engine float decodes back into, so a round trip changes
@@ -483,7 +483,10 @@ function groundedText(value: unknown): string {
     case "string":
       return JSON.stringify(value);
     case "boolean":
-      return value ? "True" : "False";
+      // The engine's own spelling. The reader accepts True and False too and
+      // maps both to the same constant, so this is the form they come back as
+      // [source: PeTTa@ae66fa8 src/parser.pl:76-78].
+      return value ? "true" : "false";
     case "bigint":
       return value.toString();
     case "number":

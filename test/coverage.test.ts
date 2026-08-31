@@ -718,7 +718,7 @@ describe("a notation of the host's own", () => {
 describe("a transaction", () => {
   it("commits every write together, and rolls them back on an empty answer", async () => {
     const kb = m.space("&txtest");
-    assert.deepEqual(kb.transaction(S["add-atom"](kb.handle, S.kept(1))).map(String), ["()"]);
+    assert.deepEqual(kb.transaction(S["add-atom"](kb.handle, S.kept(1))).map(String), ["true"]);
     assert.deepEqual((await kb.atoms()).map(String), ["(kept 1)"]);
     // An EMPTY answer set is the engine's own rollback law for the form.
     // `(superpose ())` is the empty answer set, which is the rollback signal.
@@ -733,7 +733,7 @@ describe("a transaction", () => {
       /a TERM rather than a callable/,
     );
     // A NAME is callable too and is not refused, because it carries an atom.
-    assert.deepEqual(kb.transaction(S["add-atom"](kb.handle, S.viaName(1))).map(String), ["()"]);
+    assert.deepEqual(kb.transaction(S["add-atom"](kb.handle, S.viaName(1))).map(String), ["true"]);
   });
 });
 

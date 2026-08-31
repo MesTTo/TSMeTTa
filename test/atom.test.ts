@@ -107,8 +107,8 @@ describe("printing", () => {
     assert.equal(String(expr(sym("parent"), sym("tom"), sym("bob"))), "(parent tom bob)");
     assert.equal(String(variable("x")), "$x");
     assert.equal(String(G("hi")), '"hi"');
-    assert.equal(String(G(true)), "True");
-    assert.equal(String(G(false)), "False");
+    assert.equal(String(G(true)), "true");
+    assert.equal(String(G(false)), "false");
     assert.equal(String(expr()), "()");
   });
 

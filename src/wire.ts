@@ -1,6 +1,7 @@
 /**
  * Purpose: the codec between MeTTa atoms and the tagged wire terms the engine
- *   reads and writes, in both directions and at both strictnesses.
+ *   reads and writes, in both directions, at both strictnesses, and in both of
+ *   the two serialisations of the one tag grammar.
  * Assumes:
  *   - the tags are `CODEC.md`'s: s symbol, v variable, n number, g string,
  *     b boolean, e expression, p portable space handle, o live host value
@@ -23,6 +24,16 @@
  *   - a `p` name decodes to an interned {@link SpaceHandle}, so one name is one
  *     handle [tested: "decodes a portable space reference into an interned
  *     handle"]
+ *   - NOTHING here recurses per nesting level: every walk carries its depth on
+ *     an explicit worklist, so a term's depth costs heap and never the
+ *     JavaScript call stack
+ *     [tested: carries a term a hundred thousand deep through every codec leg;
+ *     commit=WORKTREE]
+ *   - the engine path builds NO intermediate tree: {@link decodeEngine} reads
+ *     the flat token list straight into atoms and {@link encodeEngine} writes
+ *     atoms straight into tokens
+ *     [tested: spells an expression as its tag, its child count and its children;
+ *     commit=WORKTREE]
  * Owns: the live-host-value table. An object that crossed into the engine is
  *   retained until the engine is disposed, because nothing on this side can
  *   observe that the engine has dropped the id.
@@ -44,7 +55,6 @@ import {
   SpaceHandle,
   Sym,
   Var,
-  expr,
   exprOf,
   float,
   space,
@@ -67,8 +77,35 @@ export type Wire =
   | readonly ["o", unknown]
   | readonly ["e", readonly Wire[]];
 
-/** A transport term as it crosses the WebAssembly boundary: payloads are text. */
+/**
+ * The PORTABLE serialisation: one tagged pair per atom, nested, payloads text.
+ *
+ * This is the written-down grammar, the one `tests/codec/corpus.json` records,
+ * the one the Python host writes, and the one `metta-node/remote` puts on the
+ * network. {@link WireTokens} is the same grammar serialised flat, and that is what
+ * crosses into this engine.
+ */
 export type Transport = readonly [string, unknown];
+
+/**
+ * The ENGINE serialisation: one flat preorder token list, arity-prefixed.
+ *
+ * A leaf is its tag followed by its payload, which is the portable spelling of
+ * a leaf unchanged; an expression is `e`, its child COUNT, and then its
+ * children's tokens in order. `(f 1)` crosses as `["e", 2, "s", "f", "n", "1"]`.
+ *
+ * The shape is prefix notation with explicit arity, which is what SWI's own
+ * `PL_record_external` (behind `library(fastrw)`) writes for a compound term
+ * [source: https://www.swi-prolog.org/pldoc/man?section=fast-term-io]. It is
+ * used here for one reason: swipl-wasm's `Prolog.toJSON` recurses once per
+ * NESTED element and its `toProlog` recurses once per nested array, so a
+ * nested term of depth N costs N JavaScript frames in each direction, while a
+ * flat list of atomic tokens goes through `toJSON`'s `PL_LIST_PAIR` while-loop
+ * and `toProlog`'s `toList` loop at constant depth. That is not a tidiness
+ * point: when the stack runs out INSIDE the WebAssembly call the engine is
+ * left unusable rather than raising [measured 2026-08-31, see C47].
+ */
+export type WireTokens = readonly unknown[];
 
 function wireError(message: string): MettaError {
   return new WireError(message);
@@ -190,7 +227,51 @@ export class HostValues {
 }
 
 // ---------------------------------------------------------------------------
-// Transport, both directions.
+// The walks.
+//
+// Every walk below shares one shape, said once here: a work stack holding
+// nodes still to visit, where a NUMBER on that stack means "the last N results
+// are the children of an expression, close it". A node is always an array or
+// an object, so a number can never be mistaken for one, and the depth of the
+// term is the length of an array rather than the depth of the call stack. It
+// is the explicit-stack rewrite RapidJSON offers as `kParseIterativeFlag` and
+// V8 took for `JSON.stringify`'s fast path, for the same reason: a recursive
+// codec's ceiling is the host's stack
+// [source: https://rapidjson.org/md_doc_features.html;
+// https://v8.dev/blog/json-stringify].
+
+/**
+ * The last `arity` results, as the children of the expression that closes.
+ *
+ * Popped into a pre-sized array rather than spliced off the tail: `splice`
+ * allocates its result AND moves what it left behind, and it was 60 percent of
+ * what a worklist costs over a recursive walk on a shallow term
+ * [measured 2026-08-31: the wire-roundtrip row fell from 3,905,175,528 to
+ * 3,562,550,943 retired instructions on this one change;
+ * command=sh extensions/node/bench.sh wire-roundtrip; commit=WORKTREE].
+ */
+function gather<T>(built: T[], arity: number): T[] {
+  const children = new Array<T>(arity);
+  for (let at = arity - 1; at >= 0; at -= 1) children[at] = built.pop() as T;
+  return children;
+}
+
+/**
+ * A child of an `e` payload, refused if it is a NUMBER.
+ *
+ * The work stacks below mark where an expression closes with the child count
+ * itself, which allocates nothing beyond the one stack. That is sound only
+ * while no NODE can be a number, and the two readers here take untrusted
+ * input, so a numeric child is refused at the one place it could be pushed
+ * rather than silently read as a close mark. It is a refusal the grammar owes
+ * anyway: a transport atom is a pair.
+ */
+function childOf(child: unknown): unknown {
+  if (typeof child === "number") {
+    throw wireError(`not a transport atom: ${JSON.stringify(child)}`);
+  }
+  return child;
+}
 
 function items(payload: unknown): readonly unknown[] {
   if (!Array.isArray(payload)) {
@@ -222,8 +303,46 @@ export interface DecodeContext {
   readonly hostValues?: HostValues;
 }
 
-function decodeTransport(term: unknown, context: DecodeContext): Wire {
-  const [tag, payload] = pairOf(term, "a transport atom");
+/** What an encode needs beyond the wire atom itself. */
+export interface EncodeContext {
+  /** The table an `o` payload is minted in. Absent means `o` is refused. */
+  readonly hostValues?: HostValues;
+}
+
+/**
+ * The live host value an `o` payload names, or the refusal that payload earns.
+ *
+ * Said once for both leaf readers, because the rule belongs to the TAG and not
+ * to either representation: only the session that handed the id out can honour
+ * it, and an id it never handed out is an error rather than a fresh value.
+ */
+function hostReference(payload: unknown, context: DecodeContext): unknown {
+  if (context.hostValues === undefined) {
+    throw wireError(
+      `the o tag carries a live host value by reference, which only this ` +
+        `host's own engine transport can name`,
+    );
+  }
+  const id = Number(hostText(payload));
+  if (!Number.isInteger(id)) {
+    throw wireError(`the o tag carries a host reference id, not ${JSON.stringify(payload)}`);
+  }
+  return context.hostValues.valueOf(id);
+}
+
+/**
+ * One non-expression tag and its payload, as the wire atom it names.
+ *
+ * The PORTABLE reader's leaf, which builds no atom: interning one costs a
+ * table lookup and a key per leaf, and `fromTransport` answers a `Wire` that
+ * a remote peer or the conformance kit compares as data. Expressing it as
+ * {@link atomOfToken} and back through {@link wireOfLeaf} cost this path 50
+ * percent, so the two readers stay two
+ * [measured 2026-08-31 with retired instructions over 20,000 terms of 4,681
+ * nodes; commit=WORKTREE]. They must agree, and
+ * "agrees with the atom reader on every tag" is what says so.
+ */
+function decodeLeaf(tag: unknown, payload: unknown, context: DecodeContext): Wire {
   switch (tag) {
     case "s": {
       const text = hostText(payload);
@@ -252,52 +371,63 @@ function decodeTransport(term: unknown, context: DecodeContext): Wire {
     }
     case "p":
       return ["p", space(hostText(payload))];
-    case "o": {
-      if (context.hostValues === undefined) {
-        throw wireError(
-          `the o tag carries a live host value by reference, which only this ` +
-            `host's own engine transport can name`,
-        );
-      }
-      const id = Number(hostText(payload));
-      if (!Number.isInteger(id)) {
-        throw wireError(`the o tag carries a host reference id, not ${JSON.stringify(payload)}`);
-      }
-      return ["o", context.hostValues.valueOf(id)];
-    }
-    case "e":
-      return ["e", items(payload).map((item) => decodeTransport(item, context))];
+    case "o":
+      return ["o", hostReference(payload, context)];
     default:
       throw wireError(`unknown wire tag ${JSON.stringify(tag)}`);
   }
 }
 
 /**
- * A transport term as the strict wire atom a conformance kit compares.
+ * One non-expression tag and its payload, as the ATOM it names.
  *
- * Strict: no space provenance is restored and `o` is refused, because both are
- * facts about THIS engine's session rather than about the written-down
- * grammar. {@link decodeEngine} is the same decoder with that session's
- * knowledge supplied.
+ * The ENGINE reader's leaf. It builds the atom directly because a term is
+ * mostly leaves and the wire pair {@link decodeLeaf} answers is an allocation
+ * nothing on this path reads: going through it cost 3.3 percent
+ * [measured 2026-08-31 with retired instructions over 20,000 terms of 4,681
+ * nodes at width 8 depth 4; commit=WORKTREE].
+ *
+ * It must agree with {@link decodeLeaf} on every tag, and the one that says so
+ * is "agrees with the wire reader on every tag" in test/wire.test.ts.
  */
-export function fromTransport(term: unknown): Wire {
-  return decodeTransport(term, {});
+function atomOfToken(tag: unknown, payload: unknown, context: DecodeContext): Atom {
+  switch (tag) {
+    case "s": {
+      const text = hostText(payload);
+      // The engine's generic encoder emits a named space other than &self and
+      // &metta as s, because a Prolog atom carries no record of the p tag it
+      // entered under. A name the engine introduced under p keeps that
+      // provenance here, while the strict decoder honours an explicit s tag.
+      if (context.knownSpaces?.has(text) === true) return space(text);
+      return sym(text);
+    }
+    case "v":
+      return variable(hostText(payload));
+    case "g":
+      return G(hostText(payload));
+    case "n":
+      return numberAtom(numberFromText(hostText(payload)));
+    case "b": {
+      // Exactly the two words. Reading anything else as false answers a
+      // question nobody asked, and a truthiness rule here would let ["b", 1]
+      // through as a boolean the engine never wrote.
+      const written = hostText(payload);
+      if (written !== "true" && written !== "false") {
+        throw wireError(`the b tag carries true or false, not ${JSON.stringify(payload)}`);
+      }
+      return G(written === "true");
+    }
+    case "p":
+      return space(hostText(payload));
+    case "o":
+      return G(hostReference(payload, context));
+    default:
+      throw wireError(`unknown wire tag ${JSON.stringify(tag)}`);
+  }
 }
 
-/** An engine result, decoded with this session's space names and host values. */
-export function decodeEngine(term: unknown, context: DecodeContext): Wire {
-  return decodeTransport(term, context);
-}
-
-/** What an encode needs beyond the wire atom itself. */
-export interface EncodeContext {
-  /** The table an `o` payload is minted in. Absent means `o` is refused. */
-  readonly hostValues?: HostValues;
-}
-
-/** A wire atom as the transport term the engine reads. */
-export function toTransport(wire: unknown, context: EncodeContext = {}): Transport {
-  const [tag, payload] = pairOf(wire, "a wire atom");
+/** One non-expression wire atom as the transport pair the engine reads. */
+function encodeLeaf(tag: unknown, payload: unknown, context: EncodeContext): Transport {
   switch (tag) {
     case "s":
     case "v":
@@ -330,11 +460,170 @@ export function toTransport(wire: unknown, context: EncodeContext = {}): Transpo
       }
       return ["o", String(context.hostValues.idFor(payload))];
     }
-    case "e":
-      return ["e", items(payload).map((item) => toTransport(item, context))];
     default:
       throw wireError(`unknown wire tag ${JSON.stringify(tag)}`);
   }
+}
+
+/**
+ * A transport term as the strict wire atom a conformance kit compares.
+ *
+ * Strict: no space provenance is restored and `o` is refused, because both are
+ * facts about THIS engine's session rather than about the written-down
+ * grammar. {@link decodeEngine} is this seat's own flat transport with that
+ * session's knowledge supplied.
+ */
+export function fromTransport(term: unknown): Wire {
+  const built: Wire[] = [];
+  const work: unknown[] = [term];
+  while (work.length > 0) {
+    const step = work.pop();
+    if (typeof step === "number") {
+      built.push(["e", gather(built, step)]);
+      continue;
+    }
+    const [tag, payload] = pairOf(step, "a transport atom");
+    if (tag === "e") {
+      const children = items(payload);
+      work.push(children.length);
+      for (let at = children.length - 1; at >= 0; at -= 1) work.push(childOf(children[at]));
+      continue;
+    }
+    built.push(decodeLeaf(tag, payload, {}));
+  }
+  return built[0] as Wire;
+}
+
+/** A wire atom as the portable transport term, nested one pair per atom. */
+export function toTransport(wire: unknown, context: EncodeContext = {}): Transport {
+  const built: Transport[] = [];
+  const work: unknown[] = [wire];
+  while (work.length > 0) {
+    const step = work.pop();
+    if (typeof step === "number") {
+      built.push(["e", gather(built, step)]);
+      continue;
+    }
+    const [tag, payload] = pairOf(step, "a wire atom");
+    if (tag === "e") {
+      const children = items(payload);
+      work.push(children.length);
+      for (let at = children.length - 1; at >= 0; at -= 1) work.push(childOf(children[at]));
+      continue;
+    }
+    built.push(encodeLeaf(tag, payload, context));
+  }
+  return built[0] as Transport;
+}
+
+// ---------------------------------------------------------------------------
+// The engine transport: atoms in one pass, with no tree in between.
+
+/** A child count as the token stream spells it, or a refusal naming what it got. */
+function countAt(tokens: WireTokens, at: number): number {
+  const written = tokens[at];
+  const count = typeof written === "number" ? written : Number(hostText(written));
+  if (!Number.isInteger(count) || count < 0) {
+    throw wireError(`the e tag carries a child count, not ${JSON.stringify(written)}`);
+  }
+  return count;
+}
+
+/**
+ * An engine answer, as the atom it names.
+ *
+ * ONE pass: the flat token list is read straight into interned atoms, so an
+ * answer of n nodes costs n leaf decodes and one array per expression rather
+ * than a whole intermediate tree walked a second time. `provenance` is the
+ * token list this host SENT, for a round trip: a Prolog atom carries no record
+ * of whether it entered under `s` or under `p`, the two lists have the same
+ * preorder, and the tag this host wrote at a position says which it was.
+ */
+export function decodeEngine(tokens: unknown, context: DecodeContext, provenance?: WireTokens): Atom {
+  if (!Array.isArray(tokens)) throw wireError(`not a transport term: ${JSON.stringify(tokens)}`);
+  const stream = tokens as WireTokens;
+  // A LEAF needs no worklist at all, and most of what crosses is one: a host
+  // operation's arguments and its answers are single atoms, so the stacks
+  // below would be three allocations for a term with no children.
+  if (stream.length === 2 && stream[0] !== "e") {
+    const only = atomOfToken(stream[0], stream[1], context);
+    return provenance?.[0] === "p" && only instanceof Sym ? space(only.name) : only;
+  }
+  const aligned = provenance !== undefined && provenance.length === stream.length;
+  const root: Atom[] = [];
+  // Two parallel stacks rather than one stack of frame objects: the children
+  // gathered so far, and how many each level is still waiting for. The bottom
+  // frame is the answer's own slot, so the walk ends when it closes.
+  const gathered: Atom[][] = [root];
+  const waiting: number[] = [1];
+  let at = 0;
+  while (gathered.length > 0) {
+    if (at >= stream.length) {
+      throw wireError(`the transport ended inside a term: ${JSON.stringify(stream.slice(-4))}`);
+    }
+    const tagAt = at;
+    const tag = stream[at];
+    at += 1;
+    let value: Atom;
+    if (tag === "e") {
+      const arity = countAt(stream, at);
+      at += 1;
+      if (arity > 0) {
+        gathered.push([]);
+        waiting.push(arity);
+        continue;
+      }
+      value = exprOf([]);
+    } else {
+      value = atomOfToken(tag, stream[at], context);
+      at += 1;
+      if (aligned && value instanceof Sym && provenance?.[tagAt] === "p") value = space(value.name);
+    }
+    for (;;) {
+      const top = gathered.length - 1;
+      (gathered[top] as Atom[]).push(value);
+      waiting[top] = (waiting[top] as number) - 1;
+      if ((waiting[top] as number) > 0) break;
+      const closed = gathered.pop() as Atom[];
+      waiting.pop();
+      if (gathered.length === 0) break;
+      value = exprOf(closed);
+    }
+  }
+  if (at !== stream.length) {
+    throw wireError(`the transport carried ${String(stream.length - at)} tokens past the term`);
+  }
+  return root[0] as Atom;
+}
+
+/**
+ * An atom as the flat token list this seat's own bridge reads.
+ *
+ * ONE pass, for the same reason {@link decodeEngine} is one: the tokens are
+ * appended to a single array as the term is walked, so nothing between the
+ * atom and the transport is ever built.
+ */
+export function encodeEngine(atom: Atom, context: EncodeContext = {}): unknown[] {
+  // The same leaf shortcut {@link decodeEngine} takes, for the same reason.
+  if (!(atom instanceof Expression)) {
+    const leaf = wireOfLeaf(atom);
+    const [tag, payload] = encodeLeaf(leaf[0], leaf[1], context);
+    return [tag, payload];
+  }
+  const out: unknown[] = [];
+  const work: Atom[] = [atom];
+  while (work.length > 0) {
+    const step = work.pop() as Atom;
+    if (step instanceof Expression) {
+      out.push("e", step.items.length);
+      for (let at = step.items.length - 1; at >= 0; at -= 1) work.push(step.items[at] as Atom);
+      continue;
+    }
+    const leaf = wireOfLeaf(step);
+    const [tag, payload] = encodeLeaf(leaf[0], leaf[1], context);
+    out.push(tag, payload);
+  }
+  return out;
 }
 
 /**
@@ -344,31 +633,8 @@ export function toTransport(wire: unknown, context: EncodeContext = {}): Transpo
  * happens to start with `&` and a portable space reference, because both are
  * one Prolog atom. Where the input said which it was, the output says the same.
  */
-export function fromRoundTrip(input: Transport, output: unknown): Wire {
-  if (Array.isArray(output) && (output as readonly unknown[]).length === 2) {
-    const [inputTag, inputPayload] = input;
-    const [outputTag, outputPayload] = pairOf(output, "a transport atom");
-    if ((inputTag === "s" || inputTag === "p") && (outputTag === "s" || outputTag === "p")) {
-      const inputText = hostText(inputPayload);
-      const outputText = hostText(outputPayload);
-      if (inputText === outputText) {
-        return inputTag === "p" ? ["p", space(outputText)] : ["s", outputText];
-      }
-    }
-    if (inputTag === "e" && outputTag === "e") {
-      const inputItems = items(input[1]);
-      const outputItems = items(outputPayload);
-      if (inputItems.length === outputItems.length) {
-        return [
-          "e",
-          inputItems.map((item, index) =>
-            fromRoundTrip(item as Transport, outputItems[index]),
-          ),
-        ];
-      }
-    }
-  }
-  return fromTransport(output);
+export function fromRoundTrip(input: WireTokens, output: unknown): Atom {
+  return decodeEngine(output, {}, input);
 }
 
 // ---------------------------------------------------------------------------
@@ -393,8 +659,8 @@ function numberAtom(value: number | bigint): Atom {
   return value >= -exact && value <= exact ? G(Number(value)) : G(value);
 }
 
-/** The surface atom a wire atom names. */
-export function atomFromWire(wire: Wire): Atom {
+/** The surface atom a leaf wire atom names. */
+function atomOfLeaf(wire: Wire): Atom {
   switch (wire[0]) {
     case "s":
       return sym(wire[1]);
@@ -410,27 +676,40 @@ export function atomFromWire(wire: Wire): Atom {
       return wire[1];
     case "o":
       return G(wire[1]);
-    case "e":
-      return exprOf(wire[1].map(atomFromWire));
     default:
       throw wireError(`unknown wire tag ${JSON.stringify(wire[0])}`);
   }
 }
 
-/**
- * The wire atom a surface atom names.
- *
- * The tag a grounded value takes follows the VALUE: a number is `n`, text is
- * `g`, a boolean is `b`, and anything else is a live host reference under `o`.
- * That is MeTTa's own reading, where a number is a grounded atom rather than a
- * host object, and it is what keeps a JavaScript number and a MeTTa Number one
- * thing.
- */
-export function wireFromAtom(atom: Atom): Wire {
+/** The surface atom a wire atom names. */
+export function atomFromWire(wire: Wire): Atom {
+  const built: Atom[] = [];
+  // A NUMBER on the work stack closes an expression of that many children.
+  // Safe without a second stack here because every node is a wire atom, which
+  // is an array: only this function's own marks are numbers.
+  const work: (Wire | number)[] = [wire];
+  while (work.length > 0) {
+    const step = work.pop() as Wire | number;
+    if (typeof step === "number") {
+      built.push(exprOf(gather(built, step)));
+      continue;
+    }
+    if (step[0] === "e") {
+      const children = step[1];
+      work.push(children.length);
+      for (let at = children.length - 1; at >= 0; at -= 1) work.push(children[at] as Wire);
+      continue;
+    }
+    built.push(atomOfLeaf(step));
+  }
+  return built[0] as Atom;
+}
+
+/** The wire atom a leaf surface atom names. */
+function wireOfLeaf(atom: Atom): Wire {
   if (atom instanceof Sym) return ["s", atom.name];
   if (atom instanceof Var) return ["v", atom.name];
   if (atom instanceof SpaceHandle) return ["p", atom];
-  if (atom instanceof Expression) return ["e", atom.items.map(wireFromAtom)];
   if (atom instanceof FloatAtom) return ["n", atom.value];
   if (atom instanceof Grounded) {
     const value: unknown = atom.value;
@@ -460,4 +739,33 @@ export function wireFromAtom(atom: Atom): Wire {
     }
   }
   throw wireError(`no wire tag for ${String(atom)}`);
+}
+
+/**
+ * The wire atom a surface atom names.
+ *
+ * The tag a grounded value takes follows the VALUE: a number is `n`, text is
+ * `g`, a boolean is `b`, and anything else is a live host reference under `o`.
+ * That is MeTTa's own reading, where a number is a grounded atom rather than a
+ * host object, and it is what keeps a JavaScript number and a MeTTa Number one
+ * thing.
+ */
+export function wireFromAtom(atom: Atom): Wire {
+  const built: Wire[] = [];
+  // A number closes; every node is an Atom, which is an object.
+  const work: (Atom | number)[] = [atom];
+  while (work.length > 0) {
+    const step = work.pop() as Atom | number;
+    if (typeof step === "number") {
+      built.push(["e", gather(built, step)]);
+      continue;
+    }
+    if (step instanceof Expression) {
+      work.push(step.items.length);
+      for (let at = step.items.length - 1; at >= 0; at -= 1) work.push(step.items[at] as Atom);
+      continue;
+    }
+    built.push(wireOfLeaf(step));
+  }
+  return built[0] as Wire;
 }

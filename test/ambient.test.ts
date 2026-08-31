@@ -14,7 +14,7 @@
 import { strict as assert } from "node:assert";
 import { after, describe, it } from "node:test";
 
-import { S, V } from "../src/index.ts";
+import { MettaError, S, V } from "../src/index.ts";
 import * as ambient from "../src/ambient.ts";
 
 after(async () => {
@@ -30,6 +30,36 @@ describe("the module tier", () => {
     // Configuring is allowed only while nothing has booted, which is the point
     // being made here: this call proves no engine exists.
     ambient.configure({});
+  });
+
+  it("forgets a boot that FAILED, so a program can start over", async () => {
+    // A rejected boot used to be cached: every later verb re-raised the first
+    // failure, `configure` refused as "already booted" when nothing had, and
+    // `reset` awaited the same rejection and re-raised it too, so there was no
+    // way back at all [measured 2026-08-31, C48].
+    ambient.configure({ root: "/no/such/tree" });
+    await assert.rejects(ambient.parse("(f 1)"), (error: unknown) => {
+      assert.ok(MettaError.is(error, "ERR_METTA_SOURCE"), String(error));
+      return true;
+    });
+    // The failure is forgotten, so the settings are open again.
+    ambient.configure({});
+    await ambient.reset();
+    assert.equal(String(await ambient.parse("(f 1)")), "(f 1)");
+    await ambient.reset();
+  });
+
+  it("refuses to reconfigure with one of its own errors, not a bare Error", async () => {
+    await ambient.engine();
+    assert.throws(
+      () => ambient.configure({ verbose: true }),
+      (error: unknown) => {
+        assert.ok(error instanceof MettaError, `${String(error)} is not a MettaError`);
+        assert.match(String(error), /already booted/);
+        return true;
+      },
+    );
+    await ambient.reset();
   });
 
   it("boots on the first verb, and every verb shares the one engine", async () => {

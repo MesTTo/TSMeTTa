@@ -56,6 +56,35 @@ describe("standing queries", () => {
     assert.ok(watch.active);
   });
 
+  it("settles on the engine's own queue rather than on a sleep", async () => {
+    // `settled()` used to wait a fixed 20 milliseconds. Both halves of this
+    // are DETERMINISTIC rather than load-sensitive, which is what a timing
+    // defect's regression has to be: a poll interval longer than that sleep,
+    // and a handler slower than it.
+    const kb = fresh();
+    const seen: string[] = [];
+    using slowPoll = subscribe(kb, S.alarm(V.what), {
+      pollMs: 200,
+      onEvent: ({ atom }) => {
+        seen.push(atom.text);
+      },
+    });
+    kb.add(S.alarm(S.fire));
+    await slowPoll.settled();
+    assert.deepEqual(seen, ["(alarm fire)"], "a poll slower than the old sleep");
+
+    const handled: string[] = [];
+    using slowHandler = subscribe(kb, S.siren(V.what), {
+      onEvent: async ({ atom }) => {
+        await new Promise((resume) => setTimeout(resume, 120));
+        handled.push(atom.text);
+      },
+    });
+    kb.add(S.siren(S.loud));
+    await slowHandler.settled();
+    assert.deepEqual(handled, ["(siren loud)"], "a handler slower than the old sleep");
+  });
+
   it("queues events when nothing handles them, and drains on demand", async () => {
     const kb = fresh();
     const watch = subscribe(kb, S.alarm(V.what));

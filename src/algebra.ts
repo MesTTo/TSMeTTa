@@ -1007,7 +1007,7 @@ function hasVariable(atom: Atom): boolean {
   while (stack.length > 0) {
     const node = stack.pop() as Atom;
     if (node instanceof Var) return true;
-    if (node instanceof Expression) stack.push(...node.items);
+    if (node instanceof Expression) for (const item of node.items) stack.push(item);
   }
   return false;
 }

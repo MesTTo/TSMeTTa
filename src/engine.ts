@@ -37,30 +37,30 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Atom, G, lift } from "./atom.ts";
+import { Atom, Expression, G, Grounded, lift } from "./atom.ts";
 import { config } from "./config.ts";
 import { type EffectClass, type OpKind as CatalogOpKind, effectRank } from "./vocabularies.ts";
 import {
   CapabilityError,
+  ClosedError,
   EngineError,
   MettaError,
   NameError,
   ResultError,
+  SourceNotFoundError,
   TransportError,
   UnsupportedError,
   engineError,
 } from "./errors.ts";
 import {
   HostValues,
-  type Transport,
-  type Wire,
-  atomFromWire,
+  type WireTokens,
   decodeEngine,
+  encodeEngine,
   fromRoundTrip,
   fromTransport,
   hostText,
   toTransport,
-  wireFromAtom,
 } from "./wire.ts";
 
 const require = createRequire(import.meta.url);
@@ -168,10 +168,10 @@ function refuseUnnamedErrors(lines: readonly string[]): void {
 // ---------------------------------------------------------------------------
 // The events bridge.pl produces.
 
-/** One answer of a job: its wire form and the engine's own rendering. */
+/** One answer of a job: the atom it is and the engine's own rendering. */
 export interface AnswerEvent {
   readonly kind: "answer";
-  readonly wire: Wire;
+  readonly atom: Atom;
   readonly text: string;
 }
 
@@ -184,14 +184,14 @@ export interface GroupsEvent {
 /** A command's single value: a count, a verdict, a name list. */
 export interface ValueEvent {
   readonly kind: "value";
-  readonly wire: Wire;
+  readonly atom: Atom;
 }
 
 /** One queued admission a watch matched. */
 export interface AdmissionEvent {
   readonly kind: "admission";
   readonly edge: "add" | "remove";
-  readonly wire: Wire;
+  readonly atom: Atom;
   readonly text: string;
 }
 
@@ -298,8 +298,18 @@ function mountInto(
   virtualDir: string,
   keep?: (name: string) => boolean,
 ): void {
+  // Read FIRST, so a directory that is not there is this package's own named
+  // refusal rather than Node's raw ENOENT `Error` reaching the caller.
+  let entries: string[];
+  try {
+    entries = readdirSync(hostDir);
+  } catch (error) {
+    throw new SourceNotFoundError(`${hostDir} is not a directory this host can read`, {
+      cause: error,
+    });
+  }
   fs.mkdirTree(virtualDir);
-  for (const name of readdirSync(hostDir)) {
+  for (const name of entries) {
     const hostPath = join(hostDir, name);
     const virtualPath = `${virtualDir}/${name}`;
     if (statSync(hostPath).isDirectory()) {
@@ -552,7 +562,7 @@ export class Job {
     const outer = this.#engine.callingSpace;
     if (where !== undefined) this.#engine.callingSpace = where;
     try {
-      const args = wires.map((wire) => atomFromWire(this.#engine.decodeWire(wire)));
+      const args = wires.map((tokens) => this.#engine.decodeAtom(tokens));
       answered = op.run(raw ? args : args.map((atom) => unwrap(atom)));
     } catch (error) {
       return ["error", messageOf(error)];
@@ -717,11 +727,13 @@ export class Engine {
    */
   capabilities(): readonly (Capability & { readonly present: boolean })[] {
     const event = this.start(["platform"]).sync();
-    if (event === null || event.kind !== "value" || event.wire[0] !== "e") return [];
+    if (event === null || event.kind !== "value" || !(event.atom instanceof Expression)) return [];
     const rows: (Capability & { present: boolean })[] = [];
-    for (const row of event.wire[1]) {
-      if (row[0] !== "e" || row[1].length !== 4) continue;
-      const cells = row[1].map((cell) => (cell[0] === "g" ? cell[1] : ""));
+    for (const row of event.atom.items) {
+      if (!(row instanceof Expression) || row.items.length !== 4) continue;
+      const cells = row.items.map((cell) =>
+        cell instanceof Grounded && typeof cell.value === "string" ? cell.value : "",
+      );
       rows.push({
         capability: cells[0] ?? "",
         present: cells[1] === "present",
@@ -755,6 +767,11 @@ export class Engine {
    * data and the raising happens here instead.
    */
   once(goal: string, input: Record<string, unknown> = {}): PrologAnswer {
+    if (this.#closed) {
+      throw new ClosedError(
+        `this engine was disposed; boot another with metta() rather than using a released one`,
+      );
+    }
     this.counters.crossings += 1;
     const result = this.#swipl.prolog
       .query(`metta_node_do((${goal}), Outcome).`, input)
@@ -827,12 +844,16 @@ export class Engine {
 
   /** @internal Release a job's engine. */
   rawStop(id: number): void {
+    // A job closing after its surface was disposed has nothing left to release
+    // and no engine to ask, so this is where the cleanup path stops rather
+    // than raising out of a `finally`.
+    if (this.#closed) return;
     this.once("metta_node_stop(Id)", { Id: id });
   }
 
-  /** @internal Decode a transport term with this session's knowledge. */
-  decodeWire(term: unknown): Wire {
-    return decodeEngine(term, { knownSpaces: this.knownSpaces, hostValues: this.hostValues });
+  /** @internal One engine answer as the atom it names, in one pass. */
+  decodeAtom(tokens: unknown): Atom {
+    return decodeEngine(tokens, { knownSpaces: this.knownSpaces, hostValues: this.hostValues });
   }
 
   /**
@@ -842,22 +863,22 @@ export class Engine {
    * TypeScript function may return a number, a string or its own object and
    * the tag follows the VALUE: `n`, `g`, `b`, or a live reference under `o`.
    */
-  encodeValue(value: unknown): Transport {
-    return this.encodeWire(wireFromAtom(lift(value)));
+  encodeValue(value: unknown): unknown[] {
+    return this.encodeAtom(lift(value));
   }
 
-  /** @internal Encode a wire atom as a transport term. */
-  encodeWire(wire: Wire): Transport {
-    return toTransport(wire, { hostValues: this.hostValues });
+  /** @internal One atom as the flat token list the bridge reads, in one pass. */
+  encodeAtom(atom: Atom): unknown[] {
+    return encodeEngine(atom, { hostValues: this.hostValues });
   }
 
   /** @internal Build the public event a raw one names. */
   decodeEvent(tag: string, event: readonly unknown[]): JobEvent {
     switch (tag) {
       case "answer":
-        return { kind: "answer", wire: this.decodeWire(event[1]), text: hostText(event[2]) };
+        return { kind: "answer", atom: this.decodeAtom(event[1]), text: hostText(event[2]) };
       case "value":
-        return { kind: "value", wire: this.decodeWire(event[1]) };
+        return { kind: "value", atom: this.decodeAtom(event[1]) };
       case "groups":
         return {
           kind: "groups",
@@ -866,7 +887,7 @@ export class Engine {
               const answer = pair as readonly unknown[];
               return {
                 kind: "answer" as const,
-                wire: this.decodeWire(answer[0]),
+                atom: this.decodeAtom(answer[0]),
                 text: hostText(answer[1]),
               };
             }),
@@ -876,7 +897,7 @@ export class Engine {
         return {
           kind: "admission",
           edge: hostText(event[1]) === "remove" ? "remove" : "add",
-          wire: this.decodeWire(event[2]),
+          atom: this.decodeAtom(event[2]),
           text: hostText(event[3]),
         };
       default:
@@ -951,20 +972,26 @@ export class Engine {
   // --- the codec doors, which need no engine --------------------------------
 
   /** One atom of MeTTa source, through the engine's own reader. */
-  read(text: string): Wire {
+  read(text: string): Atom {
     const answer = this.once("metta_node_read(Src, Wire)", { Src: text });
-    return this.decodeWire(answer["Wire"]);
+    return this.decodeAtom(answer["Wire"]);
   }
 
   /** An atom's round trip through the engine: decode it, then encode it back. */
-  roundTrip(wire: Wire): Wire {
-    const transport = this.encodeWire(wire);
+  roundTrip(atom: Atom): Atom {
+    const transport: WireTokens = this.encodeAtom(atom);
     // The decode carries a NAME TABLE and the encode reads it back, so a
     // variable's own spelling survives the trip. Without it the round trip
     // renamed `$x` to the Prolog engine's internal `$_154110`, which is the
     // same variable said in a way no source ever wrote.
+    // `_Names` and `_T` are underscore-prefixed on purpose: the WebAssembly
+    // library projects every NAMED variable of the goal into the answer, so a
+    // plain `T` would carry the decoded Prolog term back across the boundary
+    // as a nested structure and swipl-wasm's toJSON would recurse once per
+    // level over it. Only `Out` is wanted, and it is flat
+    // [tested: carries one into the engine and back unchanged; commit=WORKTREE].
     const answer = this.once(
-      "metta_node_decode(W, [], Names, T), metta_node_encode_named(T, Names, Out)",
+      "metta_node_decode(W, [], _Names, _T), metta_node_encode_named(_T, _Names, Out)",
       { W: transport },
     );
     return fromRoundTrip(transport, answer["Out"]);
@@ -978,9 +1005,11 @@ export class Engine {
    * Round-trip storage text stays with swrite/2's stricter contract on the
    * Prolog side.
    */
-  text(wire: Wire): string {
-    const answer = this.once("metta_node_decode(W, T), sdisplay(T, S)", {
-      W: this.encodeWire(wire),
+  text(atom: Atom): string {
+    // `_T` for the same reason the round trip hides its own: the decoded term
+    // is a nested Prolog structure and only the rendering is wanted.
+    const answer = this.once("metta_node_decode(W, _T), sdisplay(_T, S)", {
+      W: this.encodeAtom(atom),
     });
     return hostText(answer["S"]);
   }
@@ -1003,10 +1032,26 @@ export class Engine {
     return this.#stderr.splice(0, this.#stderr.length);
   }
 
-  /** Release the host values this engine was holding. */
+  /**
+   * Release what this engine holds, and refuse every door afterwards.
+   *
+   * Before this closed, every door kept working after `dispose()` while the
+   * host-value table behind them had been emptied, so a program that disposed
+   * and carried on got answers computed against a table that no longer held
+   * its objects. A released handle is a refusal here, which is what
+   * {@link ClosedError} has always been for.
+   */
   dispose(): void {
+    this.#closed = true;
     this.hostValues.clear();
   }
+
+  /** Whether this engine has been released. */
+  get closed(): boolean {
+    return this.#closed;
+  }
+
+  #closed = false;
 }
 
 /** The strict wire decoder, re-exported so a conformance kit reaches it. */
@@ -1025,6 +1070,15 @@ export async function boot(
 ): Promise<Engine> {
   const root = options.root ?? REPO_ROOT;
   const verbose = options.verbose ?? false;
+  // Checked before anything is instantiated, so a wrong root is one sentence
+  // naming what was wanted rather than a mount failure part way through a boot.
+  if (!existsSync(join(root, "engine", "metta.pl"))) {
+    throw new SourceNotFoundError(
+      `${root} is not a MeTTa Kernel checkout: ${join(root, "engine", "metta.pl")} is not ` +
+        `there. boot({ root }) wants the tree the engine lives in, and this package's own ` +
+        `is ${REPO_ROOT}.`,
+    );
+  }
   // The startup settings are fixed from here on, and `config` says so rather
   // than quietly accepting a change that will do nothing.
   config.markStarted();

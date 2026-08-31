@@ -14,15 +14,21 @@ import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
 import {
+  type Atom,
+  Expression,
   FloatAtom,
   G,
   Grounded,
   HostValues,
   SpaceHandle,
+  type Wire,
   atomFromWire,
   decodeEngine,
+  encodeEngine,
   expr,
+  exprOf,
   float,
+  fromRoundTrip,
   fromTransport,
   numberFromText,
   numberToText,
@@ -32,6 +38,25 @@ import {
   variable,
   wireFromAtom,
 } from "../src/index.ts";
+
+/** `(f (f ... x ...))` `depth` deep, built bottom up so building it is not the test. */
+function deepAtom(depth: number, leaf: Atom = sym("x")): Atom {
+  let node = leaf;
+  for (let at = 0; at < depth; at += 1) node = exprOf([sym("f"), node]);
+  return node;
+}
+
+/** The same shape as a portable transport term. */
+function deepTransport(depth: number): unknown {
+  let node: unknown = ["s", "x"];
+  for (let at = 0; at < depth; at += 1) node = ["e", [["s", "f"], node]];
+  return node;
+}
+
+// Deep enough that every walk here used to raise `Maximum call stack size
+// exceeded`: the shallowest of them gave out at 2,047 and the deepest at
+// 4,095 [measured 2026-08-31, see C47].
+const DEEP = 100_000;
 
 describe("numbers", () => {
   it("reads every spelling the engine's writer produces", () => {
@@ -107,9 +132,9 @@ describe("the engine transport's own tag", () => {
     const values = new HostValues();
     const held = { hello: "world" };
     const [, id] = toTransport(["o", held], { hostValues: values });
-    const [tag, back] = decodeEngine(["o", id], { hostValues: values });
-    assert.equal(tag, "o");
-    assert.equal(back, held);
+    const back = decodeEngine(["o", id], { hostValues: values });
+    assert.ok(back instanceof Grounded);
+    assert.equal(back.value, held);
   });
 
   it("mints one id per object, so one object is one handle", () => {
@@ -156,5 +181,111 @@ describe("atoms and wire atoms", () => {
     assert.ok(held instanceof Grounded);
     assert.equal(held.value, wide);
     assert.deepEqual(wireFromAtom(G(wide)), ["n", wide]);
+  });
+});
+
+describe("the engine transport, which is flat", () => {
+  it("spells an expression as its tag, its child count and its children", () => {
+    assert.deepEqual(encodeEngine(expr(sym("f"), G(1))), ["e", 2, "s", "f", "n", "1"]);
+    assert.deepEqual(encodeEngine(sym("f")), ["s", "f"]);
+    assert.deepEqual(encodeEngine(exprOf([])), ["e", 0]);
+    assert.equal(decodeEngine(["e", 2, "s", "f", "n", "1"], {}), expr(sym("f"), G(1)));
+    assert.equal(decodeEngine(["e", 0], {}), exprOf([]));
+  });
+
+  it("round trips every shape through the flat form", () => {
+    const atoms = [
+      sym("foo"),
+      variable("x"),
+      G("text"),
+      G(true),
+      G(42),
+      float(42),
+      G(1.5),
+      space("&kb"),
+      expr(sym("f"), G(1), expr()),
+      deepAtom(64),
+    ];
+    for (const atom of atoms) {
+      assert.equal(decodeEngine(encodeEngine(atom), {}), atom, `${String(atom)} did not round trip`);
+    }
+  });
+
+  it("agrees with the wire reader on every tag", () => {
+    // Two readers, one grammar: the portable one answers a `Wire` without
+    // interning and the engine one answers the atom directly. A leaf's flat
+    // spelling IS its portable pair, so the two are asked the very same input.
+    const values = new HostValues();
+    const held = { live: true };
+    const leaves: Wire[] = [
+      ["s", "foo"],
+      ["v", "x"],
+      ["g", "text"],
+      ["n", 42n],
+      ["n", 2],
+      ["n", 1.5],
+      ["b", true],
+      ["b", false],
+      ["p", space("&kb")],
+    ];
+    for (const leaf of leaves) {
+      const pair = toTransport(leaf);
+      assert.equal(
+        decodeEngine(pair, {}),
+        atomFromWire(fromTransport(pair)),
+        `the two readers disagree on ${JSON.stringify(pair)}`,
+      );
+    }
+    const reference = toTransport(["o", held], { hostValues: values });
+    assert.equal(decodeEngine(reference, { hostValues: values }), G(held));
+  });
+
+  it("refuses a token list that stops inside a term, or runs past it", () => {
+    assert.throws(() => decodeEngine(["e", 2, "s", "f"], {}), /ended inside a term/);
+    assert.throws(() => decodeEngine(["s", "f", "s", "g"], {}), /past the term/);
+    assert.throws(() => decodeEngine(["e", "two", "s", "f"], {}), /carries a child count/);
+    assert.throws(() => decodeEngine("s", {}), /not a transport term/);
+  });
+
+  it("restores which of s and p a name entered under, by position", () => {
+    const sent = encodeEngine(expr(sym("f"), space("&kb")));
+    // The engine has one atom for both, so it answers `s` where `p` went in.
+    const echoed = ["e", 2, "s", "f", "s", "&kb"];
+    assert.equal(fromRoundTrip(sent, echoed), expr(sym("f"), space("&kb")));
+    // Without the provenance the same answer is a symbol, which is what the
+    // strict grammar says it is.
+    assert.equal(decodeEngine(echoed, {}), expr(sym("f"), sym("&kb")));
+  });
+});
+
+describe("a term deeper than the JavaScript stack", () => {
+  it("carries a term a hundred thousand deep through every codec leg", () => {
+    const atom = deepAtom(DEEP);
+    const tokens = encodeEngine(atom);
+    assert.equal(tokens.length, DEEP * 4 + 2);
+    assert.equal(decodeEngine(tokens, {}), atom);
+    assert.equal(fromRoundTrip(tokens, tokens), atom);
+
+    const transport = deepTransport(DEEP);
+    assert.equal(atomFromWire(fromTransport(transport)), atom);
+    // Compared by INTERNED IDENTITY rather than by `deepEqual`, which is
+    // itself a recursive walk and gives out at this depth: the assertion would
+    // be the thing that could not read a term the codec now can.
+    assert.equal(atomFromWire(toTransport(wireFromAtom(atom)) as never), atom);
+  });
+
+  it("renders one, so a deep answer can be read", () => {
+    const text = deepAtom(DEEP).text;
+    assert.equal(text.length, DEEP * 4 + 1);
+    assert.ok(text.startsWith("(f (f (f "));
+  });
+
+  it("carries an expression with more children than a spread can take", () => {
+    // A variadic call is a ceiling and an array is not, which is C27's law:
+    // `exprOf` takes the array and `expr(...array)` is the sugar over it.
+    const wide = exprOf(Array.from({ length: 200_000 }, (_, at) => G(at)));
+    assert.ok(wide instanceof Expression);
+    assert.equal(decodeEngine(encodeEngine(wide), {}), wide);
+    assert.equal(atomFromWire(wireFromAtom(wide)), wide);
   });
 });

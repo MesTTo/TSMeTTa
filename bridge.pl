@@ -135,29 +135,126 @@ user:message_hook(_, _, Lines) :-
 % conversion unchanged; raw swipl-wasm changes from JavaScript Number to
 % BigInt at 2^53, while the language changes from Number to BigInt at signed
 % i64. Text keeps those independent and preserves the integer/float split.
-metta_node_encode(T, [v, Name]) :- var(T), !, term_to_atom(T, A), atom_string(A, Name).
-metta_node_encode(T, [o, Text]) :- metta_node_object_id(T, Id), !, number_string(Id, Text).
-metta_node_encode(T, [n, Text]) :- number(T), !, metta_node_number_text(T, Text).
-metta_node_encode(T, [g, T])    :- string(T), !.
-metta_node_encode(T, [b, T])    :- ( T == true ; T == false ), !.
-metta_node_encode(T, [p, S]) :- atom(T), metta_space_operand(T), !, atom_string(T, S).
-metta_node_encode(T, [s, S])    :- atom(T), !, atom_string(T, S).
-metta_node_encode(T, [e, Es])   :- is_list(T), !, maplist(metta_node_encode, T, Es).
-metta_node_encode(T, _) :-
+% The wire is FLAT: one preorder token list per atom, arity-prefixed. A leaf
+% is its tag followed by its payload; an expression is `e`, its child COUNT,
+% and then its children's tokens in order, so `(f 1)` crosses as
+% [e, 2, s, "f", n, "1"] and nothing in the list is itself a list.
+%
+% That is prefix notation with explicit arity, the shape PL_record_external
+% writes for a compound term, and it is used here for one reason. swipl-wasm's
+% toJSON recurses once per NESTED element and its toProlog once per nested
+% array, so a term N deep costs N JavaScript frames in each direction; a flat
+% list of atomic tokens goes through toJSON's PL_LIST_PAIR while-loop and
+% toProlog's toList loop at constant depth. It is not a tidiness point:
+% measured 2026-08-31, `(f (f ... 1 ...))` 2048 deep raised
+% `RangeError: Maximum call stack size exceeded` from INSIDE PL_get_chars, and
+% the module context this file's own predicates are called in was lost with
+% it -- every later unqualified goal answered `Unknown procedure:
+% system:metta_node_do/2` while `user:metta_node_do/2` still ran. A stack
+% exhausted inside the WebAssembly call is not recoverable from the host, so
+% the crossing must not be able to reach one. Flat, the same term encodes at
+% 1,000,000 deep in 655 ms and four million raises a catchable
+% resource_error(stack) with the session intact.
+%
+% The difference list is what keeps the whole encoding linear: appending each
+% child's tokens to a list built by maplist would be quadratic in the term.
+% A variable's wire name is MINTED and remembered, never read off the stack.
+%
+% SWI prints an unbound variable as its stack offset:
+%
+%   if (p > (Word) lBase) iref = ((Word)p - (Word)lBase)*2+1;
+%   else                  iref = ((Word)p - (Word)gBase)*2;
+%   Ssprintf(name, "_%%" PRIi64, (int64_t)iref);
+%
+% [source: SWI-Prolog src/pl-write.c, var_name_ptr()]. An offset moves when a
+% collection moves the cell and is handed to whatever lands there next, so
+% `term_to_atom` broke the contract in both directions. Measured 2026-08-31 in
+% this build: one cell held in the database crossed as `_165392`, then as
+% `_198` after a collection; and inside ONE encode, `[f, V, <3,000,000 cells>,
+% V]` gave `_20612914` for the first occurrence of V and `_70` for the second,
+% so one variable arrived on the host as two.
+%
+% The map is THREADED rather than pre-built, so a ground term pays only for
+% passing it and a name is minted the first time a cell is met. The counter is
+% gensym's, which this file already uses for cut barriers: within a crossing
+% one cell is one name, which is what the MAP gives, and across crossings two
+% cells are never one name, which is what the SESSION counter gives. Numbering
+% per term would satisfy the first and break the second, since a host atom
+% compares by spelling and two answers put in one expression would share a
+% variable that was never shared. This is the same fix, with the same
+% reasoning, that `extensions/python/metta/shim.pl` carries.
+metta_node_encode(T, Wire) :- metta_node_encode(T, [], _, Wire, []).
+
+metta_node_encode(T, N0, N, [v, Name|R], R) :- var(T), !,
+    metta_node_wire_name(T, N0, N, Name).
+metta_node_encode(T, N, N, [o, Text|R], R) :- metta_node_object_id(T, Id), !,
+    number_string(Id, Text).
+metta_node_encode(T, N, N, [n, Text|R], R) :- number(T), !, metta_node_number_text(T, Text).
+metta_node_encode(T, N, N, [g, T|R], R)    :- string(T), !.
+metta_node_encode(T, N, N, [b, T|R], R)    :- ( T == true ; T == false ), !.
+metta_node_encode(T, N, N, [p, S|R], R) :- atom(T), metta_space_operand(T), !, atom_string(T, S).
+metta_node_encode(T, N, N, [s, S|R], R)    :- atom(T), !, atom_string(T, S).
+metta_node_encode(T, N0, N, [e, Count|R0], R)   :- is_list(T), !,
+    metta_node_encode_items(T, N0, N, 0, Count, R0, R).
+metta_node_encode(T, _, _, _, _) :-
     throw(error(metta_node_untaggable(T),
                 context(metta_node_encode/2,
                         'the Node binding has no wire tag for this term'))).
 
-metta_node_encode_named(T, Pairs, [v, Name]) :- var(T), !,
-    ( metta_node_var_name(Pairs, T, Written) -> atom_string(Written, Name)
-    ; term_to_atom(T, A), atom_string(A, Name) ).
-metta_node_encode_named(T, Pairs, [e, Encoded]) :- is_list(T), !,
-    maplist(metta_node_encode_with_names(Pairs), T, Encoded).
-metta_node_encode_named(T, _, Encoded) :-
-    metta_node_encode(T, Encoded).
+% The count rides an accumulator rather than a length/2 call, and it can,
+% because the count's own cell is a HOLE in the difference list until the walk
+% that fills it is done. Arithmetic on an integer retires no inference in SWI
+% while length/2 retires one per expression [measured 2026-08-31].
+metta_node_encode_items([], N, N, C, C, R, R).
+metta_node_encode_items([X|Xs], N0, N, C0, C, R0, R) :-
+    C1 is C0 + 1,
+    metta_node_encode(X, N0, N1, R0, R1),
+    metta_node_encode_items(Xs, N1, N, C1, C, R1, R).
+
+% The name this cell already has, or a fresh one. Compared by ==, because the
+% identity of a Prolog variable is only answerable by comparison, which is why
+% this scan and engine/writer.c's are both linear in the count of DISTINCT
+% variables a term holds.
+metta_node_wire_name(Variable, Names0, Names, Name) :-
+    (   metta_node_var_name(Names0, Variable, Found)
+    ->  Names = Names0,
+        atom_string(Found, Name)
+    ;   metta_node_fresh_name(Names0, Fresh),
+        Names = [Fresh-Variable|Names0],
+        atom_string(Fresh, Name)
+    ).
+
+% Seeded names are stepped over: a caller may seed the map with the reader's
+% own spellings, and `$_3` is one a program is allowed to write.
+metta_node_fresh_name(Names, Name) :-
+    gensym('_', Candidate),
+    (   memberchk(Candidate-_, Names)
+    ->  metta_node_fresh_name(Names, Name)
+    ;   Name = Candidate
+    ).
+
+% Encode with an explicit Name-Var list, so parsed variables keep their names.
+% The list SEEDS the same map every encode threads, so a variable the seed does
+% not name is minted beside the named ones rather than through a second naming
+% rule that could disagree with them.
+metta_node_encode_named(T, Pairs, Wire) :- metta_node_encode(T, Pairs, _, Wire, []).
 
 metta_node_encode_with_names(Pairs, Term, Encoded) :-
     metta_node_encode_named(Term, Pairs, Encoded).
+
+% Every argument of ONE call under ONE map, and the map itself, because the
+% reply is decoded against it: a variable the host hands back is the caller's
+% variable, and a variable in two arguments is one variable.
+metta_node_encode_arguments([], N, N, []).
+metta_node_encode_arguments([A|As], N0, N, [W|Ws]) :-
+    metta_node_encode(A, N0, N1, W, []),
+    metta_node_encode_arguments(As, N1, N, Ws).
+
+% One expression wire from child wires that are already flat, for the rows
+% this file builds by hand rather than by encoding a term.
+metta_node_expr_wire(Children, [e, N|Flat]) :-
+    length(Children, N),
+    append(Children, Flat).
 
 metta_node_var_name([Name-Var|_], Term, Name) :- Var == Term, !.
 metta_node_var_name([_|Pairs], Term, Name) :-
@@ -184,31 +281,34 @@ metta_node_number_text(T, Text) :- format(atom(A), '~q', [T]), atom_string(A, Te
 % constrain nothing.
 metta_node_decode(W, T) :- metta_node_decode(W, [], _, T).
 
+% The whole token list must be consumed: tokens left over mean the host wrote
+% a term this reader did not finish, which is a refusal rather than a prefix.
 metta_node_decode(W, Names0, Names, T) :-
-    (   metta_node_decode_(W, Names0, Names, T)
+    (   metta_node_decode_(W, Rest, Names0, Names, T),
+        Rest == []
     ->  true
     ;   throw(error(metta_node_undecodable(W),
                     context(metta_node_decode/2,
                             'not a wire atom the Node binding writes')))
     ).
 
-metta_node_decode_([Tag, Payload], Names, Names, T) :- metta_node_tag(Tag, s), !,
+metta_node_decode_([Tag, Payload|R], R, Names, Names, T) :- metta_node_tag(Tag, s), !,
     metta_node_atom(Payload, T).
-metta_node_decode_([Tag, Payload], Names, Names, T) :- metta_node_tag(Tag, n), !,
+metta_node_decode_([Tag, Payload|R], R, Names, Names, T) :- metta_node_tag(Tag, n), !,
     metta_node_atom(Payload, A),
     metta_node_number(A, T).
-metta_node_decode_([Tag, Payload], Names, Names, T) :- metta_node_tag(Tag, g), !,
+metta_node_decode_([Tag, Payload|R], R, Names, Names, T) :- metta_node_tag(Tag, g), !,
     metta_node_atom(Payload, A), atom_string(A, T).
-metta_node_decode_([Tag, Payload], Names, Names, T) :- metta_node_tag(Tag, b), !,
+metta_node_decode_([Tag, Payload|R], R, Names, Names, T) :- metta_node_tag(Tag, b), !,
     metta_node_atom(Payload, T), ( T == true ; T == false ).
-metta_node_decode_([Tag, Payload], Names, Names, T) :- metta_node_tag(Tag, p), !,
+metta_node_decode_([Tag, Payload|R], R, Names, Names, T) :- metta_node_tag(Tag, p), !,
     metta_node_atom(Payload, T), sub_atom(T, 0, 1, _, '&').
-metta_node_decode_([Tag, Payload], Names, Names, T) :- metta_node_tag(Tag, o), !,
+metta_node_decode_([Tag, Payload|R], R, Names, Names, T) :- metta_node_tag(Tag, o), !,
     metta_node_atom(Payload, A),
     atom_number(A, Id),
     integer(Id),
     metta_node_object_atom(Id, T).
-metta_node_decode_([Tag, Payload], Names0, Names, T) :- metta_node_tag(Tag, v), !,
+metta_node_decode_([Tag, Payload|R], R, Names0, Names, T) :- metta_node_tag(Tag, v), !,
     metta_node_atom(Payload, Name),
     (   Name == '_'
     %The anonymous variable is NOT recorded. Two occurrences of `$_` are two
@@ -222,14 +322,25 @@ metta_node_decode_([Tag, Payload], Names0, Names, T) :- metta_node_tag(Tag, v), 
     ->  T = Known, Names = Names0
     ;   Names = [Name-T|Names0]
     ).
-metta_node_decode_([Tag, Payload], Names0, Names, T) :- metta_node_tag(Tag, e), !,
-    is_list(Payload),
-    metta_node_decode_items(Payload, Names0, Names, T).
+% A child count arrives as a Prolog integer, because that is what the
+% WebAssembly conversion makes of a JavaScript number; a host that spelled it
+% as text is read too rather than refused, since nothing else could mean it.
+% Read INLINE rather than through a helper, because the helper is a call per
+% expression on the path every command's arguments take.
+metta_node_decode_([Tag, Count|R0], R, Names0, Names, T) :- metta_node_tag(Tag, e), !,
+    (   integer(Count)
+    ->  N = Count
+    ;   metta_node_atom(Count, CA), atom_number(CA, N), integer(N)
+    ),
+    N >= 0,
+    metta_node_decode_items(N, R0, R, Names0, Names, T).
 
-metta_node_decode_items([], Names, Names, []).
-metta_node_decode_items([W|Ws], Names0, Names, [T|Ts]) :-
-    metta_node_decode(W, Names0, Names1, T),
-    metta_node_decode_items(Ws, Names1, Names, Ts).
+metta_node_decode_items(0, R, R, Names, Names, []) :- !.
+metta_node_decode_items(N, R0, R, Names0, Names, [T|Ts]) :-
+    N > 0,
+    M is N - 1,
+    metta_node_decode_(R0, R1, Names0, Names1, T),
+    metta_node_decode_items(M, R1, R, Names1, Names, Ts).
 
 % The reader takes back every spelling ~q writes, the non-finite floats
 % included: 1.0Inf, -1.0Inf and 1.5NaN all read back as numbers, where the
@@ -290,12 +401,16 @@ metta_node_text(In, Out) :- atom_string(In, Out).
 % is the same authority the command line's answers use, so host-only values
 % and non-finite floats render beside their wire forms instead of refusing
 % the whole answer. Round-trip storage keeps swrite/2's stricter contract.
+% The difference-list forms are called directly rather than through their own
+% one-clause entry points: this runs once per ANSWER, and a wrapper is an
+% inference per answer that the engine's own counter sees
+% [measured 2026-08-31: query-rows 240905 with the wrappers, 238905 without].
 metta_node_answer('$metta_answer'(Term, NameState), [Wire, Text]) :- !,
     metta_name_pairs(NameState, Names),
-    metta_node_encode_named(Term, Names, Wire),
+    metta_node_encode(Term, Names, _, Wire, []),
     sdisplay_with_names(Term, NameState, Text).
 metta_node_answer(Term, [Wire, Text]) :-
-    metta_node_encode(Term, Wire),
+    metta_node_encode(Term, [], _, Wire, []),
     sdisplay(Term, Text).
 
 metta_node_group(Terms, Encoded) :-
@@ -451,10 +566,12 @@ metta_node_verb(Verb) :- memberchk(Verb, [eval, source, run, load, add, remove,
                                           atoms, count, has, clear, spacenames,
                                           child, restrict, releasable, release,
                                           explain, effect, registerop, dropop,
-                                          watch, unwatch, drain, commit,
+                                          watch, unwatch, drain, watchpending,
+                                          commit,
                                           platform, trace, forms, cast,
                                           disassemble, derivation,
                                           provider, unprovider, runstatus,
+                                          reducible,
                                           currentspace, custommatch, digest,
                                           token, untoken]).
 
@@ -527,9 +644,10 @@ metta_node_command(clear, [Space0], [value, [s, "ok"]]) :-
     metta_node_atom(Space0, Space),
     metta_host_clear_space(Space).
 
-metta_node_command(spacenames, [], [value, [e, Wires]]) :-
+metta_node_command(spacenames, [], [value, Wire]) :-
     metta_space_names(Names),
-    maplist(metta_node_space_wire, Names, Wires).
+    maplist(metta_node_space_wire, Names, Wires),
+    metta_node_expr_wire(Wires, Wire).
 
 % The engine's own platform census, which this host READS rather than
 % recovering by regex over SWI's stderr. A WebAssembly build has no threads,
@@ -539,14 +657,16 @@ metta_node_command(spacenames, [], [value, [e, Wires]]) :-
 % an unnamed refusal and src/engine.ts refuses it, which is strictly stronger
 % than matching against a table this file used to keep in step by hand.
 % Every cell crosses as text so the host reads the row without decoding atoms.
-metta_node_command(platform, [], [value, [e, Rows]]) :-
-    findall([e, [[g, Name], [g, State], [g, Needs], [g, Costs]]],
+metta_node_command(platform, [], [value, Wire]) :-
+    findall(Row,
             ( metta_platform(Capability, Status, Requires, Cost),
               atom_string(Capability, Name),
               atom_string(Status, State),
               term_string(Requires, Needs),
-              text_to_string(Cost, Costs) ),
-            Rows).
+              text_to_string(Cost, Costs),
+              metta_node_expr_wire([[g, Name], [g, State], [g, Needs], [g, Costs]], Row) ),
+            Rows),
+    metta_node_expr_wire(Rows, Wire).
 
 metta_node_command(child, [Child0, Parent0], [value, [s, "ok"]]) :-
     metta_node_atom(Child0, Child),
@@ -603,6 +723,18 @@ metta_node_command(unwatch, [WatchId], [value, [s, "ok"]]) :-
     retractall(metta_node_watch(WatchId, _, _, _)),
     retractall(metta_node_event(WatchId, _, _)).
 
+% How many admissions this watch has queued and the host has not taken.
+%
+% The host needs it to say whether a write has been SEEN, which it cannot know
+% from its own side: the watch is polled, so an event exists here before any
+% poll fetches it. A subscription's `settled()` reads this and its own
+% taken-against-delivered counters, which together close the window a poll
+% leaves open [tested: settles on the engine's own queue rather than on a sleep].
+metta_node_command(watchpending, [WatchId0], [value, [n, Text]]) :-
+    metta_node_number_arg(WatchId0, WatchId),
+    aggregate_all(count, metta_node_event(WatchId, _, _), Pending),
+    metta_node_number_text(Pending, Text).
+
 % Drain the queue, one admission per pull, oldest first. retract/1 on
 % backtracking takes the next one, which is the standard queue walk.
 metta_node_command(drain, [WatchId], [admission, Edge, Wire, Text]) :-
@@ -636,32 +768,55 @@ metta_node_command(currentspace, [], [value, [p, Text]]) :-
 % The answers ride beside the statuses, so a strict scope runs the source ONCE
 % and refuses on what it sees, rather than running it to judge it and again to
 % keep it.
-metta_node_command(runstatus, [Src0, Space0], [value, [e, Groups]]) :-
+metta_node_command(runstatus, [Src0, Space0], [value, Wire]) :-
     metta_node_text(Src0, Src),
     metta_node_atom(Space0, Space),
     metta_host_run_source_status(Src, Space, Raw),
-    maplist(metta_node_status_group, Raw, Groups).
+    maplist(metta_node_status_group, Raw, Groups),
+    metta_node_expr_wire(Groups, Wire).
+
+% Whether the engine has anything to apply to a term's HEAD in this space.
+%
+% metta_reducible_head/2 is the translator's own test, published as a host
+% service in engine/ext_points.pl, and it is the very predicate
+% metta_host_run_source_status/3 asks of a directive to decide between value
+% and not-reducible. Asking the same one here is what keeps the TERM door and
+% the SOURCE door from disagreeing about the word; a host-side rule such as
+% "the answer equals the question" would also refuse a genuine fixpoint.
+metta_node_command(reducible, [Space0, Wire], [value, [b, Verdict]]) :-
+    metta_node_atom(Space0, Space),
+    metta_node_decode(Wire, Term),
+    (   space_module(Space, Module)
+    ->  true
+    ;   Module = user
+    ),
+    (   metta_reducible_head(Module, Term)
+    ->  Verdict = true
+    ;   Verdict = false
+    ).
 
 % The reduction trace: the engine's own call and exit events for one source
 % run, bounded by a maximum event count so a runaway reduction still answers.
 % Each row is (Depth Kind Term) or (Depth Kind Term Answer), built as MeTTa
 % terms and encoded once, because the codec already spells a term and a second
 % hand-written encoder is a second thing to keep right.
-metta_node_command(trace, [Src0, Space0, Max0], [value, [e, Rows]]) :-
+metta_node_command(trace, [Src0, Space0, Max0], [value, Wire]) :-
     metta_node_text(Src0, Src),
     metta_node_atom(Space0, Space),
     metta_node_number_arg(Max0, Max),
     metta_trace_source(Src, Space, Max, Events),
-    maplist(metta_node_trace_row, Events, Rows).
+    maplist(metta_node_trace_row, Events, Rows),
+    metta_node_expr_wire(Rows, Wire).
 
 % Every top-level form of some source, read but NOT evaluated, each with the
 % kind the engine's own reader gave it. The wire carries the parsed atom
 % beside its kind, so a caller that wants the terms does not pay a second
 % crossing per form to parse the text again.
-metta_node_command(forms, [Src0], [value, [e, Rows]]) :-
+metta_node_command(forms, [Src0], [value, Wire]) :-
     metta_node_text(Src0, Src),
     metta_host_read_forms(Src, Pairs),
-    maplist(metta_node_form_row, Pairs, Rows).
+    maplist(metta_node_form_row, Pairs, Rows),
+    metta_node_expr_wire(Rows, Wire).
 
 % Whether this space's type discipline admits a value as a type, and the types
 % it does hold when it does not. get-metatype answers for a value the type
@@ -677,7 +832,7 @@ metta_node_command(cast, [Space0, ValueW, TypeW], [value, Verdict]) :-
     ->  Verdict = [b, "true"]
     ;   with_metta_module(Module, findall(T, 'get-type'(Value, T), Types)),
         maplist(metta_node_encode, Types, TypeWires),
-        Verdict = [e, TypeWires]
+        metta_node_expr_wire(TypeWires, Verdict)
     ).
 
 % The Prolog clauses one MeTTa name compiled to, in this space's module: the
@@ -773,27 +928,30 @@ metta_node_command(derivation, [Space0, Wire, Depth0], [answer, Out, Text]) :-
 % metta_node_command/3 clause stays contiguous: SWI warns about a
 % discontiguous predicate on stderr, and this binding's own suite refuses
 % any engine output at all.
-metta_node_status_group(Rows, [e, Encoded]) :-
-    maplist(metta_node_status_row, Rows, Encoded).
+metta_node_status_group(Rows, Group) :-
+    maplist(metta_node_status_row, Rows, Encoded),
+    metta_node_expr_wire(Encoded, Group).
 
-metta_node_status_row([Status, Answer], [e, [[s, Word], Wire, [g, Text]]]) :-
+metta_node_status_row([Status, Answer], Row) :-
     metta_node_atom_text(Status, Word),
-    metta_node_answer(Answer, [Wire, Text]).
+    metta_node_answer(Answer, [Wire, Text]),
+    metta_node_expr_wire([[s, Word], Wire, [g, Text]], Row).
 
-metta_node_trace_row(event(Depth, call, Term, _, Names),
-                     [e, [[n, DepthText], [s, "call"], Encoded]]) :- !,
-    metta_node_number_text(Depth, DepthText),
-    metta_node_encode_with_names(Names, Term, Encoded).
-metta_node_trace_row(event(Depth, exit, Term, Answer, Names),
-                     [e, [[n, DepthText], [s, "exit"], Encoded, EncodedAnswer]]) :-
+metta_node_trace_row(event(Depth, call, Term, _, Names), Row) :- !,
     metta_node_number_text(Depth, DepthText),
     metta_node_encode_with_names(Names, Term, Encoded),
-    metta_node_encode_with_names(Names, Answer, EncodedAnswer).
+    metta_node_expr_wire([[n, DepthText], [s, "call"], Encoded], Row).
+metta_node_trace_row(event(Depth, exit, Term, Answer, Names), Row) :-
+    metta_node_number_text(Depth, DepthText),
+    metta_node_encode_with_names(Names, Term, Encoded),
+    metta_node_encode_with_names(Names, Answer, EncodedAnswer),
+    metta_node_expr_wire([[n, DepthText], [s, "exit"], Encoded, EncodedAnswer], Row).
 
-metta_node_form_row([Kind, Text], [e, [[s, KindText], [g, TextString], Wire]]) :-
+metta_node_form_row([Kind, Text], Row) :-
     metta_node_atom_text(Kind, KindText),
     metta_node_text(Text, TextString),
-    metta_node_read(TextString, Wire).
+    metta_node_read(TextString, Wire),
+    metta_node_expr_wire([[s, KindText], [g, TextString], Wire], Row).
 
 metta_node_atom_text(In, Out) :- atom(In), !, atom_string(In, Out).
 metta_node_atom_text(In, Out) :- metta_node_text(In, Out).
@@ -872,33 +1030,37 @@ seam:effect_operation_name(metta_node_dispatch_many(Name, Args, _), Name, Arity)
     length(Args, Arity).
 
 metta_node_dispatch_det(Name, Args, Result) :-
-    metta_node_ask(Name, Args, Reply),
-    metta_node_det_reply(Reply, Result).
+    metta_node_ask(Name, Args, Reply, Names),
+    metta_node_det_reply(Reply, Names, Result).
 
-metta_node_det_reply([ok, Wire], Result) :- !, metta_node_decode(Wire, Result).
-metta_node_det_reply([fail], _) :- !, fail.
-metta_node_det_reply([error, Text], _) :- !, metta_node_host_throw(Text).
-metta_node_det_reply(Reply, _) :-
+% The reply decodes against the map the CALL was encoded under, never against
+% one rebuilt afterwards: a variable the host answers is then the caller's own
+% variable, whatever the stack did in between.
+metta_node_det_reply([ok, Wire], Names, Result) :- !,
+    metta_node_decode(Wire, Names, _, Result).
+metta_node_det_reply([fail], _, _) :- !, fail.
+metta_node_det_reply([error, Text], _, _) :- !, metta_node_host_throw(Text).
+metta_node_det_reply(Reply, _, _) :-
     throw(error(metta_node_bad_reply(Reply),
                 context(metta_node_dispatch_det/3, 'the host answered nothing this side reads'))).
 
 metta_node_dispatch_many(Name, Args, Result) :-
-    metta_node_ask(Name, Args, Reply),
-    metta_node_many_reply(Reply, Result).
+    metta_node_ask(Name, Args, Reply, Names),
+    metta_node_many_reply(Reply, Names, Result).
 
 % A host operation that answers a whole set at once sends [many, Wires]; one
 % that answers lazily sends [stream] and then one answer per pull, which is
 % what an ordinary JavaScript generator or async generator gives without
 % being drained first. Backtracking into the disjunction is what asks for the
 % next one, so laziness on this side and laziness on that side are one thing.
-metta_node_many_reply([many, Wires], Result) :- !,
+metta_node_many_reply([many, Wires], Names, Result) :- !,
     member(Wire, Wires),
-    metta_node_decode(Wire, Result).
-metta_node_many_reply([stream, Id], Result) :- !,
-    metta_node_pull(Id, Result).
-metta_node_many_reply([fail], _) :- !, fail.
-metta_node_many_reply([error, Text], _) :- !, metta_node_host_throw(Text).
-metta_node_many_reply(Reply, _) :-
+    metta_node_decode(Wire, Names, _, Result).
+metta_node_many_reply([stream, Id], Names, Result) :- !,
+    metta_node_pull(Id, Names, Result).
+metta_node_many_reply([fail], _, _) :- !, fail.
+metta_node_many_reply([error, Text], _, _) :- !, metta_node_host_throw(Text).
+metta_node_many_reply(Reply, _, _) :-
     throw(error(metta_node_bad_reply(Reply),
                 context(metta_node_dispatch_many/3, 'the host answered nothing this side reads'))).
 
@@ -915,12 +1077,12 @@ metta_node_many_reply(Reply, _) :-
 % frame per answer and died inside swipl-wasm's own query at about eight
 % thousand of them [measured 2026-08-27]; this one is flat, and a host
 % operation may answer as long as it likes.
-metta_node_pull(Id, Result) :-
+metta_node_pull(Id, Names, Result) :-
     repeat,
     metta_node_yield([pull, Id]),
     engine_fetch(Reply),
     (   Reply = [ok, Wire]
-    ->  metta_node_decode(Wire, Result)
+    ->  metta_node_decode(Wire, Names, _, Result)
     ;   Reply = [done]
     ->  !, fail
     ;   Reply = [error, Text]
@@ -936,8 +1098,10 @@ metta_node_pull(Id, Result) :-
 % that wanted to behave per-space would have been told the default every time
 % [measured 2026-08-28]. Sending it with the call is the only place it is
 % knowable.
-metta_node_ask(Name, Args, Reply) :-
-    maplist(metta_node_encode, Args, Wires),
+metta_node_ask(Name, Args, Reply) :- metta_node_ask(Name, Args, Reply, _).
+
+metta_node_ask(Name, Args, Reply, Names) :-
+    metta_node_encode_arguments(Args, [], Names, Wires),
     metta_node_call_event(Name, Wires, Event),
     metta_node_yield(Event),
     engine_fetch(Reply).
@@ -1454,12 +1618,12 @@ seam:foreign_clear(Space) :-
 % once and `$provider-stream` answers as often as the host has answers, which
 % is exactly the det and many shapes a registered operation already has.
 metta_node_provider_call(Space, Verb, Args, Result) :-
-    metta_node_ask('$provider-call', [Space, Verb | Args], Reply),
-    metta_node_det_reply(Reply, Result).
+    metta_node_ask('$provider-call', [Space, Verb | Args], Reply, Names),
+    metta_node_det_reply(Reply, Names, Result).
 
 metta_node_provider_stream(Space, Verb, Args, Result) :-
-    metta_node_ask('$provider-stream', [Space, Verb | Args], Reply),
-    metta_node_many_reply(Reply, Result).
+    metta_node_ask('$provider-stream', [Space, Verb | Args], Reply, Names),
+    metta_node_many_reply(Reply, Names, Result).
 
 % A provider's event promise, written as the ordinary (events ...) declaration
 % so a MeTTa program reads what the engine acts on. It rides registration
@@ -1540,8 +1704,8 @@ metta_node_token_enable :-
 % The lexeme crosses whole, quotes included for a string token, and the host
 % answers the term the reader returns.
 metta_node_token_construct(Key, Text, Term) :-
-    metta_node_ask('$token-construct', [Key, Text], Reply),
-    metta_node_det_reply(Reply, Term).
+    metta_node_ask('$token-construct', [Key, Text], Reply, Names),
+    metta_node_det_reply(Reply, Names, Term).
 
 %%%%%%%%%% Custom matching for host values %%%%%%%%%%
 %
@@ -1598,8 +1762,8 @@ metta_node_matchable_object(Term) :-
     metta_node_object_id(Term, Id),
     (   metta_node_matchable(Id, Known)
     ->  Known == true
-    ;   metta_node_ask('$matchable', [Term], Reply),
-        metta_node_det_reply(Reply, Answer),
+    ;   metta_node_ask('$matchable', [Term], Reply, Names),
+        metta_node_det_reply(Reply, Names, Answer),
         (   Answer == false
         ->  assertz(metta_node_matchable(Id, false)),
             fail
@@ -1611,8 +1775,8 @@ metta_node_matchable_object(Term) :-
 % matching runs there and only the answers come back, each held to the operand
 % it met exactly as a provider's candidates are.
 metta_node_custom_match(Term, Other) :-
-    metta_node_ask('$custom-match', [Term, Other], Reply),
-    metta_node_many_reply(Reply, Candidate),
+    metta_node_ask('$custom-match', [Term, Other], Reply, Names),
+    metta_node_many_reply(Reply, Names, Candidate),
     Other = Candidate.
 
 %%%%%%%%%% The engine's own counters %%%%%%%%%%

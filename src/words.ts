@@ -383,15 +383,18 @@ interface Arm {
 
 function boundOf(pattern: Atom): Bound {
   const bound: Record<string, Var> = {};
-  const walk = (atom: Atom): void => {
+  // An explicit worklist, reversed so the walk stays left to right: a pattern
+  // may be an answer the engine gave back and so as deep as the engine allows.
+  const work: Atom[] = [pattern];
+  while (work.length > 0) {
+    const atom = work.pop() as Atom;
     const shape = atom as { kind: string; name?: string; items?: readonly Atom[] };
     if (shape.kind === "variable" && shape.name !== undefined && shape.name !== "_") {
       bound[shape.name] = variable(shape.name);
     } else if (shape.items !== undefined) {
-      for (const item of shape.items) walk(item);
+      for (let at = shape.items.length - 1; at >= 0; at -= 1) work.push(shape.items[at] as Atom);
     }
-  };
-  walk(pattern);
+  }
   return bound;
 }
 

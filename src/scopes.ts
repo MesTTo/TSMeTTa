@@ -33,7 +33,6 @@ import { type Counters, type Engine, type Scope } from "./engine.ts";
 import { ClosedError, MettaError } from "./errors.ts";
 import { showsAs } from "./present.ts";
 import { Space } from "./space.ts";
-import { wireFromAtom } from "./wire.ts";
 
 /** What a limits scope bounds. */
 export interface Limits {
@@ -255,7 +254,7 @@ export class World implements Disposable {
     this.#open();
     this.#settled = "committed";
     const removals = this.#removals.map((atom) =>
-      this.#engine.encodeWire(wireFromAtom(atom)),
+      this.#engine.encodeAtom(atom),
     );
     this.#engine
       .start(["commit", this.#draft.name, this.#parent.name, removals], [["transaction"]] as Scope[])

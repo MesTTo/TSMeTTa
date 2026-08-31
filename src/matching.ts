@@ -30,7 +30,7 @@
  *   Future Enhancements: None
  */
 
-import { Atom, Expression, type Term, Var, exprOf, toAtom, variable } from "./atom.ts";
+import { Atom, Expression, type Term, Var, exprOf, mapTerm, toAtom, variable } from "./atom.ts";
 
 /** One substitution: each bound variable's name mapped to the atom it took. */
 export type Bindings = Readonly<Record<string, Atom>>;
@@ -232,22 +232,19 @@ function resolveInto(
  * not use `$x`. `fresh()` is the door when only ONE variable is wanted.
  */
 export function renameVariables(atom: Term, rename: (name: string) => string): Atom {
-  const built = toAtom(atom);
   const seen = new Map<string, Var>();
-  const walkTerm = (node: Atom): Atom => {
-    if (node instanceof Var) {
-      if (node.name === ANONYMOUS) return node;
-      let renamed = seen.get(node.name);
-      if (renamed === undefined) {
-        renamed = variable(rename(node.name));
-        seen.set(node.name, renamed);
-      }
-      return renamed;
+  // `mapTerm` walks the leaves left to right on an explicit worklist, which is
+  // both what keeps first-appearance order right for {@link alphaCanonical}
+  // and what keeps a deep term off the JavaScript stack.
+  return mapTerm(toAtom(atom), (leaf: Atom): Atom => {
+    if (!(leaf instanceof Var) || leaf.name === ANONYMOUS) return leaf;
+    let renamed = seen.get(leaf.name);
+    if (renamed === undefined) {
+      renamed = variable(rename(leaf.name));
+      seen.set(leaf.name, renamed);
     }
-    if (node instanceof Expression) return exprOf(node.items.map(walkTerm));
-    return node;
-  };
-  return walkTerm(built);
+    return renamed;
+  });
 }
 
 /**
@@ -281,16 +278,11 @@ export function alphaCanonical(atom: Term): Atom {
  */
 export function nameAnonymous(atom: Term): Atom {
   let next = 0;
-  const walk = (node: Atom): Atom => {
-    if (node instanceof Var) {
-      if (node.name !== ANONYMOUS) return node;
-      next += 1;
-      return variable(`_anon${String(next)}`);
-    }
-    if (node instanceof Expression) return exprOf(node.items.map(walk));
-    return node;
-  };
-  return walk(toAtom(atom));
+  return mapTerm(toAtom(atom), (leaf: Atom): Atom => {
+    if (!(leaf instanceof Var) || leaf.name !== ANONYMOUS) return leaf;
+    next += 1;
+    return variable(`_anon${String(next)}`);
+  });
 }
 
 /** A key equal for two terms that differ only in variable spelling. */
@@ -314,7 +306,12 @@ export function isGround(atom: Term): boolean {
   while (work.length > 0) {
     const node = work.pop() as Atom;
     if (node instanceof Var) return false;
-    if (node instanceof Expression) work.push(...node.items);
+    // Pushed one at a time rather than spread: a spread becomes one ARGUMENT
+    // per child and V8 raises past about 130,000 of them, which a collapse
+    // over a long generator reaches [measured 2026-08-31; C27 is the same law].
+    if (node instanceof Expression) {
+      for (const item of node.items) work.push(item);
+    }
   }
   return true;
 }

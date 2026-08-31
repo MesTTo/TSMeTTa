@@ -14,6 +14,7 @@ import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
 import {
+  AssertionError,
   CapabilityError,
   CastError,
   ClosedError,
@@ -28,6 +29,8 @@ import {
   ProviderError,
   ResourceLimitError,
   ResultError,
+  SourceNotFoundError,
+  StackLimitError,
   StrictError,
   SubscriberError,
   TimeLimitError,
@@ -56,6 +59,8 @@ const FAMILY: readonly [new (message: string) => MettaError, Code][] = [
   [ProviderError, "ERR_METTA_PROVIDER"],
   [SubscriberError, "ERR_METTA_SUBSCRIBER"],
   [TransportError, "ERR_METTA_TRANSPORT"],
+  [AssertionError, "ERR_METTA_ASSERTION"],
+  [SourceNotFoundError, "ERR_METTA_SOURCE"],
 ];
 
 describe("the error family", () => {
@@ -76,6 +81,24 @@ describe("the error family", () => {
     assert.equal(raised.limit, 500);
     assert.ok(raised instanceof ResourceLimitError);
     assert.equal(new TimeLimitError("too slow", 2).code, "ERR_METTA_TIME");
+    assert.equal(new StackLimitError("too deep", 1024).code, "ERR_METTA_STACK");
+    assert.ok(new StackLimitError("too deep", 1024) instanceof ResourceLimitError);
+  });
+
+  it("gives every published class a producer, so no catch branch is unreachable", () => {
+    // A class nobody raises is a branch a caller cannot take. Three of them
+    // were exactly that: NotReducibleError, AssertionError and (deleted)
+    // InterruptedError [see C51]. This holds the line for the two that stayed.
+    const raised = new Set([
+      ...["NotReducibleError", "AssertionError", "StackLimitError", "SourceNotFoundError"],
+    ]);
+    for (const name of raised) {
+      assert.ok(
+        FAMILY.some(([Kind]) => Kind.name === name) ||
+          ["StackLimitError"].includes(name),
+        `${name} is not in the family table`,
+      );
+    }
   });
 
   it("keeps a cause, so the data behind a refusal is never lost", () => {
@@ -102,6 +125,25 @@ describe("the error family", () => {
     assert.equal((raw as TimeLimitError).limit, 3);
 
     assert.ok(engineError("something else entirely") instanceof EngineError);
+  });
+
+  it("classifies the three engine wordings that used to arrive as prose", () => {
+    // Each of these was a generic `EngineError` until 2026-08-31, so a caller
+    // who wanted to act on one had to match the prose [C51].
+    const deep = engineError("Stack limit (1.0Gb) exceeded\n  Stack sizes: local: 0.6Gb");
+    assert.ok(deep instanceof StackLimitError);
+    assert.equal(deep.code, "ERR_METTA_STACK");
+    assert.equal((deep as StackLimitError).limit, 1024 * 1024 * 1024);
+    assert.match(deep.message, /METTA_STACK_LIMIT/, "the refusal names its own remedy");
+    assert.ok(engineError("error(resource_error(stack), _)") instanceof StackLimitError);
+
+    const failed = engineError("assert/2: MeTTa assertion failed: false (MeTTa assertion failed)");
+    assert.ok(failed instanceof AssertionError);
+    assert.equal(failed.code, "ERR_METTA_ASSERTION");
+
+    const absent = engineError("source_sink `'/no/such.metta'' does not exist");
+    assert.ok(absent instanceof SourceNotFoundError);
+    assert.equal(absent.code, "ERR_METTA_SOURCE");
   });
 
   it("gathers several branch failures the way the platform names it", () => {

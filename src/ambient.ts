@@ -24,6 +24,7 @@
  */
 
 import type { Atom, Term } from "./atom.ts";
+import { MettaError } from "./errors.ts";
 import { Answers, type AskOptions, type Row } from "./answers.ts";
 import type { Defined, DefineOptions, OpOptions } from "./define/define.ts";
 import type { AnswerGroup, BootOptions, MeTTa } from "./metta.ts";
@@ -44,8 +45,17 @@ let options: BootOptions = {};
  * the two is talking to one engine.
  */
 export function engine(): Promise<MeTTa> {
-  held ??= metta(options);
-  return held;
+  if (held !== undefined) return held;
+  // A boot that FAILS is forgotten. Remembering the rejected promise made
+  // every later verb re-raise the first failure with no way back, because
+  // `configure` then refused as "already booted" and `reset` awaited the same
+  // rejection [measured 2026-08-31, see C48].
+  const booting: Promise<MeTTa> = metta(options).catch((error: unknown) => {
+    if (held === booting) held = undefined;
+    throw error;
+  });
+  held = booting;
+  return booting;
 }
 
 /**
@@ -56,7 +66,7 @@ export function engine(): Promise<MeTTa> {
  */
 export function configure(boot: BootOptions): void {
   if (held !== undefined) {
-    throw new Error("the default engine has already booted; call reset() first");
+    throw new MettaError("the default engine has already booted; call reset() first");
   }
   options = boot;
 }
@@ -65,7 +75,11 @@ export function configure(boot: BootOptions): void {
 export async function reset(): Promise<void> {
   const engineHeld = held;
   held = undefined;
-  if (engineHeld !== undefined) (await engineHeld).dispose();
+  if (engineHeld === undefined) return;
+  // A boot that failed has nothing to dispose, and re-raising its failure here
+  // would leave a program that wanted to start over with no way to.
+  const surface = await engineHeld.catch(() => undefined);
+  surface?.dispose();
 }
 
 /**

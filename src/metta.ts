@@ -43,7 +43,14 @@ import {
   type Scope,
   boot as bootEngine,
 } from "./engine.ts";
-import { MettaError, NameError, ResultError, SourceNotFoundError, StrictError } from "./errors.ts";
+import {
+  MettaError,
+  NameError,
+  NotReducibleError,
+  ResultError,
+  SourceNotFoundError,
+  StrictError,
+} from "./errors.ts";
 import { race as raceAsks } from "./parallel.ts";
 import { showsAs } from "./present.ts";
 import { type Library, useLibrary } from "./library.ts";
@@ -212,7 +219,7 @@ export class MeTTa implements Disposable {
   spaces(): SpaceHandle[] {
     const event = this.#engine.start(["spacenames"]).sync();
     if (event === null || event.kind !== "value") return [];
-    const listed = atomFromWire(event.wire);
+    const listed = event.atom;
     if (!(listed instanceof Expression)) return [];
     return listed.items.filter((item): item is SpaceHandle => item instanceof SpaceHandle);
   }
@@ -263,7 +270,19 @@ export class MeTTa implements Disposable {
   /** @internal The ask every callable and every door goes through. */
   ask(term: Atom, space: Space, options: AskOptions = {}): Answers<Atom> {
     const engine = this.#engine;
-    const wire = engine.encodeWire(wireFromAtom(term));
+    // A strict scope is a synchronous BLOCK and an ask is lazy, so the term
+    // door has to decide here, where the block is still open. The question is
+    // asked of the engine and does not reduce anything. `strict()` promises to
+    // refuse a term the engine will not reduce, and `run` alone kept that
+    // promise until now
+    // [tested: refuses an unreduced term inside a strict scope; commit=WORKTREE].
+    if (this.#strict > 0 && !this.reducible(term, space)) {
+      throw new NotReducibleError(
+        `${term.text} is not reducible: no equation, builtin or special form applies ` +
+          `to it, and this is a strict scope`,
+      );
+    }
+    const wire = engine.encodeAtom(term);
     const name = space.name;
     return new Answers<Atom>(
       term.text,
@@ -323,7 +342,7 @@ export class MeTTa implements Disposable {
   runStatus(source: string, space: Space = this.self): StatusGroup[] {
     const event = this.#engine.start(["runstatus", source, space.name]).sync();
     if (event === null || event.kind !== "value") return [];
-    const groups = atomFromWire(event.wire);
+    const groups = event.atom;
     if (!(groups instanceof Expression)) return [];
     return groups.items.map((group) =>
       (group as Expression).items.map((row) => {
@@ -335,6 +354,49 @@ export class MeTTa implements Disposable {
         };
       }),
     );
+  }
+
+  /**
+   * Whether the engine has anything to apply to a term's head.
+   *
+   * The engine's own test, `metta_reducible_head/2`, which is the one
+   * `runStatus` asks of a directive. It reduces nothing.
+   */
+  reducible(term: Term, space: Space = this.self): boolean {
+    const event = this.#engine
+      .start(["reducible", space.name, this.#engine.encodeAtom(toAtom(term))])
+      .sync();
+    return event !== null && event.kind === "value" && hostValue(event.atom) === true;
+  }
+
+  /**
+   * Reduce a term and pair each answer with how it arose.
+   *
+   * ```ts
+   * m.evalStatus(S.double(4));    // [{ status: "value", answer: 8 }]
+   * m.evalStatus(S.Point(1, 2));  // [{ status: "not-reducible", answer: (Point 1 2) }]
+   * ```
+   *
+   * `value` means an equation, builtin or special form applied.
+   * `not-reducible` means none did, so the answer is the term itself, which is
+   * what MeTTa does with any head it cannot call. `empty` means the goal
+   * answered nothing at all and its atom is the symbol `none`. Reading the
+   * last two as the same thing is the mistake this exists to prevent, and it
+   * is the diagnostic underneath a strict `eval` the way `runStatus` is the
+   * one underneath a strict `run`.
+   */
+  evalStatus(term: Term, space: Space = this.self): StatusGroup {
+    const atom = toAtom(term);
+    const status: DirectiveStatus = this.reducible(atom, space) ? "value" : "not-reducible";
+    const job = this.#engine.start(["eval", this.#engine.encodeAtom(atom), space.name]);
+    const rows: StatusRow[] = [];
+    for (;;) {
+      const event = job.sync();
+      if (event === null) break;
+      if (event.kind === "answer") rows.push({ status, answer: event.atom, text: event.text });
+    }
+    if (rows.length === 0) return [{ status: "empty", answer: sym("none"), text: "none" }];
+    return rows;
   }
 
   #strictly(source: string, space: Space): AnswerGroup[] {
@@ -593,7 +655,7 @@ export class MeTTa implements Disposable {
   speculate(term: Term, options: AskOptions = {}): Answers<Atom> {
     const engine = this.#engine;
     const built = toAtom(term);
-    const wire = engine.encodeWire(wireFromAtom(built));
+    const wire = engine.encodeAtom(built);
     const name = this.self.name;
     return new Answers<Atom>(
       `speculate(${built.text})`,
@@ -672,7 +734,7 @@ export class MeTTa implements Disposable {
   forms(source: string): Form[] {
     const event = this.#engine.start(["forms", source]).sync();
     if (event === null || event.kind !== "value") return [];
-    const rows = atomFromWire(event.wire);
+    const rows = event.atom;
     if (!(rows instanceof Expression)) return [];
     return rows.items.map((row) => {
       const parts = (row as Expression).items;
@@ -696,7 +758,7 @@ export class MeTTa implements Disposable {
     const max = options.maxEvents ?? 10_000;
     const event = this.#engine.start(["trace", source, space.name, max]).sync();
     if (event === null || event.kind !== "value") return [];
-    const rows = atomFromWire(event.wire);
+    const rows = event.atom;
     if (!(rows instanceof Expression)) return [];
     return rows.items.map((row) => {
       const parts = (row as Expression).items;
@@ -721,7 +783,7 @@ export class MeTTa implements Disposable {
     if (event === null || event.kind !== "value") {
       throw new NameError(`${head} has no compiled clauses in ${space.name}`);
     }
-    return String(hostValue(atomFromWire(event.wire)));
+    return String(hostValue(event.atom));
   }
 
   // --- reflection -----------------------------------------------------------
@@ -742,22 +804,22 @@ export class MeTTa implements Disposable {
     if (calling !== undefined) return this.space(calling);
     const event = this.#engine.start(["currentspace"]).sync();
     if (event === null || event.kind !== "value") return this.self;
-    return this.space(atomFromWire(event.wire));
+    return this.space(event.atom);
   }
 
   /** One atom of MeTTa source, through the engine's own reader. */
   parse(source: string): Atom {
-    return atomFromWire(this.#engine.read(source));
+    return this.#engine.read(source);
   }
 
   /** The engine's own rendering of an atom, which is the authority on how it spells. */
   text(term: Term): string {
-    return this.#engine.text(wireFromAtom(toAtom(term)));
+    return this.#engine.text(toAtom(term));
   }
 
   /** An atom's round trip through the engine: decode it, then encode it back. */
   roundTrip(term: Term): Atom {
-    return atomFromWire(this.#engine.roundTrip(wireFromAtom(toAtom(term))));
+    return this.#engine.roundTrip(toAtom(term));
   }
 
   /** The effect class the engine holds for an operation. */
@@ -770,7 +832,7 @@ export class MeTTa implements Disposable {
           : name.head;
     const event = this.#engine.start(["effect", head]).sync();
     if (event === null || event.kind !== "value") return "unknown";
-    return String(hostValue(atomFromWire(event.wire))) as EffectClass | "unknown";
+    return String(hostValue(event.atom)) as EffectClass | "unknown";
   }
 
   /** The engine's own account of how a match will be answered. */
@@ -907,7 +969,7 @@ function asProvider(backing: SpaceProvider | object): SpaceProvider {
 function groupsOf(event: JobEvent | null): AnswerGroup[] {
   if (event === null || event.kind !== "groups") return [];
   return event.groups.map((group) => ({
-    answers: group.map((answer) => atomFromWire(answer.wire)),
+    answers: group.map((answer) => answer.atom),
     texts: group.map((answer) => answer.text),
   }));
 }
@@ -928,13 +990,24 @@ function resolvePath(path: string): string {
 
 /** Whether an atom has the shape a scope pattern describes, structurally. */
 function matchesShape(scope: Atom, atom: Atom): boolean {
-  if (scope.kind === "variable") return true;
-  if (scope instanceof Expression) {
-    if (!(atom instanceof Expression)) return false;
-    if (scope.items.length !== atom.items.length) return false;
-    return scope.items.every((item, index) => matchesShape(item, atom.items[index] as Atom));
+  // A worklist of PAIRS, so a scope pattern as deep as an engine answer still
+  // decides rather than overflowing the JavaScript stack.
+  const work: Atom[] = [scope, atom];
+  while (work.length > 0) {
+    const held = work.pop() as Atom;
+    const wanted = work.pop() as Atom;
+    if (wanted.kind === "variable") continue;
+    if (wanted instanceof Expression) {
+      if (!(held instanceof Expression)) return false;
+      if (wanted.items.length !== held.items.length) return false;
+      for (let at = wanted.items.length - 1; at >= 0; at -= 1) {
+        work.push(wanted.items[at] as Atom, held.items[at] as Atom);
+      }
+      continue;
+    }
+    if (wanted !== held) return false;
   }
-  return scope === atom;
+  return true;
 }
 
 /** The strict wire doors, re-exported for a conformance kit. */

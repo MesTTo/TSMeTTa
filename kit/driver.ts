@@ -18,7 +18,7 @@
 
 import { createInterface } from "node:readline";
 
-import { boot, fromTransport, toTransport } from "../src/index.ts";
+import { atomFromWire, boot, fromTransport, toTransport, wireFromAtom } from "../src/index.ts";
 
 const engine = await boot();
 
@@ -28,14 +28,15 @@ const engine = await boot();
  * `toTransport` already convert.
  */
 const operations: Readonly<Record<string, (request: Record<string, never>) => unknown>> = {
-  read: ({ text }) => toTransport(engine.read(text as string)),
-  roundtrip: ({ transport }) => toTransport(engine.roundTrip(fromTransport(transport))),
+  read: ({ text }) => toTransport(wireFromAtom(engine.read(text as string))),
+  roundtrip: ({ transport }) =>
+    toTransport(wireFromAtom(engine.roundTrip(atomFromWire(fromTransport(transport))))),
   transport: ({ transport }) => toTransport(fromTransport(transport)),
-  render: ({ transport }) => engine.text(fromTransport(transport)),
+  render: ({ transport }) => engine.text(atomFromWire(fromTransport(transport))),
   transcript: ({ program }) => {
     const event = engine.start(["run", program as string]).sync();
     if (event === null || event.kind !== "groups") return [];
-    return event.groups.map((group) => group.map((answer) => toTransport(answer.wire)));
+    return event.groups.map((group) => group.map((answer) => toTransport(wireFromAtom(answer.atom))));
   },
 };
 

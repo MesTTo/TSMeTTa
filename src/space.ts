@@ -141,13 +141,22 @@ export interface WatchOptions extends AskOptions {
   readonly edges?: readonly ("add" | "remove")[];
   /** How long to wait between polls of the admission queue, in milliseconds. */
   readonly pollMs?: number;
+  /**
+   * The engine's own id for this watch, when the caller needs to ask about it.
+   *
+   * A watch mints one for itself by default and nothing outside needs to know
+   * it. Pass one from {@link Space.nextWatchId} to be able to ask
+   * {@link Space.pendingAdmissions} how much of this watch's queue the engine
+   * still holds, which is what a settling barrier is built from.
+   */
+  readonly watchId?: number;
 }
 
 function valueOf(event: JobEvent | null, what: string): Atom {
   if (event === null || event.kind !== "value") {
     throw new EngineError(`the engine answered nothing for ${what}`);
   }
-  return atomFromWire(event.wire);
+  return event.atom;
 }
 
 /**
@@ -200,8 +209,28 @@ export class Space {
     return this.#engine.start(command);
   }
 
+  /** A watch id no other watch in this engine is using. */
+  nextWatchId(): number {
+    return this.#engine.nextWatchId();
+  }
+
+  /**
+   * How many admissions the engine still holds for one watch.
+   *
+   * A watch is POLLED, so an event exists in the engine before any poll
+   * fetches it, and a host that wants to know whether a write has been seen
+   * cannot answer from its own side alone. This is the engine's half of that
+   * question; {@link Subscription.settled} is what puts the two halves
+   * together.
+   */
+  pendingAdmissions(watchId: number): number {
+    const event = this.#command(["watchpending", watchId]).sync();
+    if (event === null || event.kind !== "value") return 0;
+    return Number(hostValue(event.atom));
+  }
+
   #wire(term: Term): unknown {
-    return this.#engine.encodeWire(wireFromAtom(toAtom(term)));
+    return this.#engine.encodeAtom(toAtom(term));
   }
 
   // --- the collection protocol ---------------------------------------------
@@ -516,7 +545,7 @@ export class Space {
     for (;;) {
       const event = held.sync();
       if (event === null) break;
-      if (event.kind === "answer") answers.push(atomFromWire(event.wire));
+      if (event.kind === "answer") answers.push(event.atom);
     }
     return answers;
   }
@@ -584,7 +613,7 @@ export class Space {
     // [measured 2026-08-27].
     const query = expr(sym("match"), this.handle, matched, expr(QUOTE, exprOf(vars)));
     const engine = this.#engine;
-    const wire = engine.encodeWire(wireFromAtom(query));
+    const wire = engine.encodeAtom(query);
     const name = this.name;
     // Built directly rather than through `.map`, because a derived ask carries
     // no PLAN and a traced body needs the plan to lower this goal into an
@@ -655,7 +684,7 @@ export class Space {
     return new Answers<Admission>(
       description,
       (signal) => {
-        const id = engine.nextWatchId();
+        const id = options.watchId ?? engine.nextWatchId();
         engine.start(["watch", id, name, wire, [...edges]]).sync();
         let closed = false;
         const close = (): void => {
@@ -677,7 +706,7 @@ export class Space {
                   done: false,
                   value: {
                     edge: event.edge,
-                    atom: atomFromWire(event.wire),
+                    atom: event.atom,
                     text: event.text,
                   },
                 };
@@ -779,7 +808,7 @@ export class Space {
         `${built.text} answered nothing, where one answer was required`,
       );
     }
-    return atomFromWire(event.wire);
+    return event.atom;
   }
 
   /**
@@ -873,7 +902,7 @@ export class Space {
 
   #eval(description: string, term: Atom, options: AskOptions): Answers<Atom> {
     const engine = this.#engine;
-    const wire = engine.encodeWire(wireFromAtom(term));
+    const wire = engine.encodeAtom(term);
     const name = this.name;
     return new Answers<Atom>(
       description,
@@ -925,7 +954,7 @@ export function answerIterator(job: Job): AsyncIterator<Atom> {
           `this ask produced a ${event.kind} where an answer was expected`,
         );
         }
-        return { done: false, value: atomFromWire(event.wire) };
+        return { done: false, value: event.atom };
       } catch (error) {
         job.close();
         throw error;

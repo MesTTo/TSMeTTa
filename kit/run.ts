@@ -22,10 +22,12 @@ import { join } from "node:path";
 
 import {
   type Wire,
+  atomFromWire,
   boot,
   fromTransport,
   packageRoot,
   toTransport,
+  wireFromAtom,
 } from "../src/index.ts";
 
 /**
@@ -92,7 +94,10 @@ for (const { source } of corpus.programs) {
     programs.push({
       source,
       groups: groups.map((group) =>
-        group.map((answer) => ({ wire: comparable(answer.wire), text: answer.text })),
+        group.map((answer) => ({
+          wire: comparable(wireFromAtom(answer.atom)),
+          text: answer.text,
+        })),
       ),
     });
   } catch (error) {
@@ -104,12 +109,13 @@ const atoms = report["atoms"] as unknown[];
 for (const { transport } of corpus.atoms) {
   try {
     const wire = fromTransport(transport);
+    const atom = atomFromWire(wire);
     atoms.push({
       transport,
       wire: comparable(wire),
       backToTransport: toTransport(wire),
-      roundTrip: comparable(engine.roundTrip(wire)),
-      text: engine.text(wire),
+      roundTrip: comparable(wireFromAtom(engine.roundTrip(atom))),
+      text: engine.text(atom),
     });
   } catch (error) {
     atoms.push({ transport, error: error instanceof Error ? error.message : String(error) });
@@ -119,7 +125,7 @@ for (const { transport } of corpus.atoms) {
 const refused = report["refused"] as unknown[];
 for (const { transport } of corpus.refused) {
   try {
-    engine.roundTrip(fromTransport(transport));
+    engine.roundTrip(atomFromWire(fromTransport(transport)));
     refused.push({ transport, refused: false });
   } catch (error) {
     refused.push({

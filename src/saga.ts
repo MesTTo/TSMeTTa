@@ -36,7 +36,6 @@ import { MettaError } from "./errors.ts";
 import type { MeTTa } from "./metta.ts";
 import { showsAs } from "./present.ts";
 import type { Space } from "./space.ts";
-import { atomFromWire } from "./wire.ts";
 
 /** Declare which operation undoes another. */
 export function compensates(surface: MeTTa, operation: string, compensator: string): Atom {
@@ -122,7 +121,7 @@ export class Saga implements Disposable {
       const receipt = expr(
         sym("did"),
         sym(effect.name),
-        exprOf(effect.args.map((wire) => atomFromWire(this.#surface.engine.decodeWire(wire)))),
+        exprOf(effect.args.map((tokens) => this.#surface.engine.decodeAtom(tokens))),
         toAtom(effect.result as Term),
       );
       this.#space.add(receipt);

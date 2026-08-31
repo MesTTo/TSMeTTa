@@ -107,7 +107,7 @@ function variableCounts(atom: Atom): Map<string, number> {
       if (node.name !== "_") counts.set(node.name, (counts.get(node.name) ?? 0) + 1);
       continue;
     }
-    if (node instanceof Expression) stack.push(...node.items);
+    if (node instanceof Expression) for (const item of node.items) stack.push(item);
   }
   return counts;
 }
@@ -119,7 +119,7 @@ function* calls(atom: Atom): Generator<Expression> {
     const node = stack.pop() as Atom;
     if (!(node instanceof Expression)) continue;
     if (headOf(node) !== undefined) yield node;
-    stack.push(...node.items);
+    for (const item of node.items) stack.push(item);
   }
 }
 
@@ -300,7 +300,7 @@ function typeNames(type: Atom): string[] {
   while (stack.length > 0) {
     const node = stack.pop() as Atom;
     if (node instanceof Sym) found.push(node.name);
-    else if (node instanceof Expression) stack.push(...node.items);
+    else if (node instanceof Expression) for (const item of node.items) stack.push(item);
   }
   return found;
 }

@@ -32,6 +32,7 @@ import {
   type Term,
   expr,
   exprOf,
+  mapTerm,
   substitute,
   sym,
   toAtom,
@@ -193,11 +194,9 @@ export function fromPattern(pattern: Term): Arbitrary<Atom> {
 }
 
 function fill(atom: Atom, random: Random, size: number, ground: Arbitrary<Atom>): Atom {
-  if (atom.kind === "variable") return ground.generate(random, size);
-  if (atom instanceof Expression) {
-    return exprOf(atom.items.map((item) => fill(item, random, size, ground)));
-  }
-  return atom;
+  return mapTerm(atom, (leaf: Atom): Atom =>
+    leaf.kind === "variable" ? ground.generate(random, size) : leaf,
+  );
 }
 
 /** Simpler atoms to try in place of one that failed. */
@@ -780,13 +779,21 @@ export async function checkMintedHandles(
   const known = new Set(registered);
   const fabricated: string[] = [];
   const answers = provider.atoms?.() ?? [];
-  const walk = (atom: Atom): void => {
-    if (atom.kind === "space" || (atom instanceof Sym && atom.name.startsWith("&"))) {
-      const name = atom.text;
-      if (!known.has(name)) fabricated.push(name);
-      return;
+  // An explicit worklist: a provider may answer a term as deep as the engine
+  // allows, and this walk must not be the thing that cannot read it.
+  const walk = (root: Atom): void => {
+    const work: Atom[] = [root];
+    while (work.length > 0) {
+      const atom = work.pop() as Atom;
+      if (atom.kind === "space" || (atom instanceof Sym && atom.name.startsWith("&"))) {
+        const name = atom.text;
+        if (!known.has(name)) fabricated.push(name);
+        continue;
+      }
+      if (atom instanceof Expression) {
+        for (let at = atom.items.length - 1; at >= 0; at -= 1) work.push(atom.items[at] as Atom);
+      }
     }
-    if (atom instanceof Expression) for (const item of atom.items) walk(item);
   };
   if (Symbol.asyncIterator in answers) {
     for await (const atom of answers as AsyncIterable<Term>) walk(toAtom(atom));

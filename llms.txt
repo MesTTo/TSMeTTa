@@ -106,9 +106,17 @@ m.cast(S.Ann, S.Person);          // narrowed, or CastError naming its real type
 m.forms(source);                  // every top-level form, read and not run
 m.trace("!(quad 3)");             // the engine's own call and exit events
 m.disassemble("dbl");             // the clauses the name compiled to
-using _ = m.strict();             // refuse a directive answered unreduced
+m.evalStatus(S.Point(1, 2));      // value, not-reducible or empty, for a TERM
+m.reducible(S.Point(1, 2));       // false: nothing applies to that head
+using _ = m.strict();             // refuse anything answered unreduced, both doors
 using _ = m.limits({ inferences: 100_000 });
 ```
+
+A term is as deep as the ENGINE can hold: nothing on this side recurses per
+nesting level, `m.parse` answers at 500,000 deep, and past the engine's own
+stack the refusal is `StackLimitError` carrying the ceiling in bytes.
+`m.dispose()` releases the surface and every door refuses with `ClosedError`
+afterwards, including an ask that was in flight.
 
 ## Standing queries
 

@@ -29,6 +29,7 @@ import {
   Superpose,
   V,
   atomFromWire,
+  hostText,
   isError,
   metta,
   packageRoot,
@@ -64,6 +65,146 @@ describe("boot", () => {
         `${refusal.capability} says nothing about what it costs`,
       );
     }
+  });
+});
+
+describe("a term deeper than the JavaScript stack", () => {
+  // The transport recursed once per nesting level in each direction until
+  // 2026-08-31: `m.parse` of a term 2,048 deep raised `RangeError: Maximum
+  // call stack size exceeded` from inside the WebAssembly call and left the
+  // engine unusable, with every later goal answering `Unknown procedure:
+  // system:metta_node_do/2`. The bound is the ENGINE's own stack now [C47].
+  const DEEP = 50_000;
+  const deepSource = `${"(f ".repeat(DEEP)}1${")".repeat(DEEP)}`;
+
+  it("reads one through the engine's own reader and renders it back", () => {
+    const atom = m.parse(deepSource);
+    assert.equal(atom.text.length, deepSource.length);
+    assert.equal(atom.text, deepSource);
+  });
+
+  it("carries one into the engine and back unchanged", () => {
+    assert.equal(m.roundTrip(m.parse(deepSource)), m.parse(deepSource));
+    assert.equal(m.text(m.parse(deepSource)).length, deepSource.length);
+  });
+
+  // What the engine does at its OWN ceiling is test/depth.test.ts, which gets
+  // its own process so it can lower `stackLimit` to 64 MiB: reaching the
+  // build's 1 GiB ceiling here would make this file allocate two gigabytes
+  // beside twenty-nine other suites.
+});
+
+describe("what a variable is called on the wire", () => {
+  // SWI prints an unbound variable as its STACK OFFSET, and this seat used to
+  // send that as the variable's name. An offset moves when a collection moves
+  // the cell and is handed to whatever lands there next, so one variable could
+  // cross under two names and two under one. Measured 2026-08-31 in this
+  // build: `[f, V, <three million cells>, V]` gave `_20612914` for the first
+  // occurrence of V and `_70` for the second [C54].
+
+  it("mints the name rather than reading the cell's address", () => {
+    const answer = m.engine.once("metta_node_encode(V, W), term_to_atom(V, Printed)");
+    const wire = answer["W"] as readonly unknown[];
+    assert.equal(hostText(wire[0]), "v");
+    assert.notEqual(
+      hostText(wire[1]),
+      hostText(answer["Printed"]),
+      "the wire name is the cell's printed form, which is its stack offset",
+    );
+  });
+
+  it("spends one name per cell and never one name on two", () => {
+    const answer = m.engine.once("metta_node_encode([f, V, V, Other], W)");
+    const wire = answer["W"] as readonly unknown[];
+    // An `e` carries its child COUNT, which is a number rather than text, so
+    // the scan reads only the tokens that are a tag.
+    const names: string[] = [];
+    for (let at = 0; at < wire.length; at += 1) {
+      if (wire[at] === "v") names.push(hostText(wire[at + 1]));
+    }
+    assert.equal(names.length, 3);
+    assert.equal(names[0], names[1], "one cell, twice, is one name");
+    assert.notEqual(names[0], names[2], "two cells are never one name");
+  });
+
+  it("gives two crossings two names, so a host cannot conflate them", () => {
+    const first = hostText((m.engine.once("metta_node_encode(V, W)")["W"] as unknown[])[1]);
+    const second = hostText((m.engine.once("metta_node_encode(V, W)")["W"] as unknown[])[1]);
+    assert.notEqual(first, second, "a host atom compares by spelling");
+  });
+
+  it("answers a host operation's own argument variable back as that variable", () => {
+    // The reply decodes against the map the CALL was encoded under. Without
+    // it the returned variable was a fresh cell and the answer read `$_0`.
+    const surface = m;
+    surface.op(
+      function echoes(x: unknown) {
+        return x;
+      },
+      { raw: true, effect: "pureStructural" },
+    );
+    assert.deepEqual(surface.run("!(echoes $q)")[0]?.texts, ["$q"]);
+  });
+
+  it("gives one variable in two arguments one name", () => {
+    const seen: string[] = [];
+    m.op(
+      function bothOf(a: unknown, b: unknown) {
+        seen.push(String(a), String(b));
+        return S.ok();
+      },
+      { raw: true, effect: "pureStructural" },
+    );
+    m.run("!(both-of $w $w)");
+    assert.equal(seen.length, 2);
+    assert.equal(seen[0], seen[1], "one variable in two argument positions");
+  });
+});
+
+describe("the lifetime of a surface", () => {
+  it("refuses a root that is not a checkout, by name", async () => {
+    await assert.rejects(
+      metta({ root: "/no/such/tree" }),
+      (error: unknown) => {
+        assert.ok(MettaError.is(error, "ERR_METTA_SOURCE"), String(error));
+        assert.match(String(error), /is not a MeTTa Kernel checkout/);
+        return true;
+      },
+    );
+  });
+
+  it("refuses every door once it is disposed, rather than answering", async () => {
+    const released = await metta();
+    assert.equal(released.parse("(f 1)").text, "(f 1)");
+    released.dispose();
+    for (const door of [
+      () => released.parse("(f 1)"),
+      () => released.run("!(+ 1 2)"),
+      () => released.spaces(),
+      () => released.self.add(S.after()),
+    ]) {
+      assert.throws(door, (error: unknown) => {
+        assert.ok(MettaError.is(error, "ERR_METTA_CLOSED"), String(error));
+        return true;
+      });
+    }
+    // Disposing twice is not an error; releasing what is already released has
+    // nothing left to say.
+    released.dispose();
+  });
+
+  it("refuses an ask that was in flight when the surface closed", async () => {
+    const released = await metta();
+    released.self.add(...Array.from({ length: 20 }, (_, at) => S.row(S.n(at))));
+    const iterator = released.match(S.row(V.x))[Symbol.asyncIterator]();
+    await iterator.next();
+    released.dispose();
+    await assert.rejects(iterator.next(), (error: unknown) => {
+      assert.ok(MettaError.is(error, "ERR_METTA_CLOSED"), String(error));
+      return true;
+    });
+    // Closing the abandoned stream is still allowed: cleanup must not raise.
+    assert.equal((await iterator.return?.())?.done, true);
   });
 });
 

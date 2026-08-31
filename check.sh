@@ -52,4 +52,34 @@ check_node_bench() {
     [ -d "$HERE/extensions/node" ] || return 0
     sh "$HERE/extensions/node/bench.sh"
 }
+# The BUILT package, which no other lane loads. `npm test` compiles source into
+# build/ and runs that; the benchmarks do the same; the conformance comparison
+# drives the source too. dist/ is what the package's own `exports` map points a
+# consumer at, it is produced only by `npm run build:dist` or by npm's prepare
+# hook, and nothing checked it was current. On 2026-08-31 it held the previous
+# wire codec while the engine's bridge held the new one: a consumer got
+# `WireError: not a transport atom` and then an engine that answered nothing,
+# which read as a decode fix having broken the seat when the fix was fine and
+# the artifact was old.
+#
+# It BUILDS first and then runs a consumer through the result, so what it
+# guarantees is that the build product works and that anyone who has run the
+# gate has a current one -- not that a stale one is detected. Detecting is not
+# available and not the point: dist/ is gitignored, so a fresh checkout has
+# none at all and there is no committed state to compare against. The hazard
+# is a working tree whose dist/ predates its src/, and rebuilding is what ends
+# it. The C seat's install lane is the same shape for the same reason.
+check_node_dist() {
+    [ -d "$HERE/extensions/node" ] || return 0
+    [ -d "$HERE/extensions/node/node_modules" ] || {
+        echo "note: extensions/node/node_modules is absent, the built-package \
+check will not run; npm ci fetches swipl-wasm and a gate does not reach the \
+network" >&2
+        return 0
+    }
+    ( cd "$HERE/extensions/node" && npm run --silent build:dist &&
+      node tools/dist-consumer.mjs )
+}
+run GATE node-dist check_node_dist
+
 run GATE node-bench check_node_bench

@@ -119,12 +119,16 @@ const atomIntern: Case = {
 const WIRE_TRIPS = 50_000;
 
 /**
- * The codec, out and back.
+ * The PORTABLE codec, out and back.
  *
- * Out is wireFromAtom then toTransport, which is what crosses into the engine;
- * back is fromTransport then atomFromWire, which is what comes out of it. The
- * `===` at the end is the property a codec exists to keep, and it holds only
- * because both halves agree and the atom re-interns to the same object.
+ * `wireFromAtom` then `toTransport` out, `fromTransport` then `atomFromWire`
+ * back. That is the nested one-pair-per-atom grammar the golden corpus records
+ * and `metta-node/remote` puts on the network; it is NOT what crosses into
+ * this engine, which has spoken a flat token list through `encodeEngine` and
+ * `decodeEngine` since 2026-08-31 (C47) and is priced end to end by
+ * `query-rows`, `answers-lazy` and `host-op`. The `===` at the end is the
+ * property a codec exists to keep, and it holds only because both halves agree
+ * and the atom re-interns to the same object.
  *
  * Instructions decide, for the same reason atom-intern's do: this is the pure
  * host half of the transport and the engine is not running.

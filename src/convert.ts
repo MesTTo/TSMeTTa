@@ -327,14 +327,14 @@ export function project(value: unknown): Atom {
         return sym(typeof first === "string" ? first : String(project(first)));
       }
       default:
-        return expr(sym(held.projection.name), ...children.map(project));
+        return exprOf([sym(held.projection.name), ...children.map(project)]);
     }
   }
   if (own === Object || own === undefined) {
-    return expr(
+    return exprOf([
       sym("object"),
       ...Object.entries(value).map(([name, held2]) => expr(sym(name), project(held2))),
-    );
+    ]);
   }
   // A type nothing has taught crosses by REFERENCE, which is what it always
   // did: `G(value)` keeps the object itself, and the round trip is identity.
@@ -350,37 +350,97 @@ export function project(value: unknown): Atom {
  * for a shape nobody declared would be a guess.
  */
 export function build(atom: Term): unknown {
-  const built = toAtom(atom);
-  if (built instanceof Grounded) return built.value;
-  if (built instanceof Sym) {
-    for (const each of bySymbol) {
-      const claimed = (each.projection.fromAtom as unknown as (name: string) => unknown)(
-        built.name,
-      );
-      if (claimed !== undefined) return claimed;
+  // An explicit worklist, because what comes back through this door is an
+  // ENGINE answer and the engine's own bound on a term's depth is its stack
+  // limit, which is six orders of magnitude past the JavaScript stack's
+  // [measured 2026-08-31: 500,000 deep crosses, C47].
+  const values: unknown[] = [];
+  const work: unknown[] = [toAtom(atom)];
+  const closes: Close[] = [];
+  while (work.length > 0) {
+    const step = work.pop();
+    if (step === CLOSE) {
+      values.push(closed(closes.pop() as Close, values));
+      continue;
     }
-    return built.name;
-  }
-  if (!(built instanceof Expression)) return built;
-  const head = built.items[0];
-  if (head instanceof Sym) {
-    const held = byName.get(head.name);
+    const node = step as Atom;
+    if (node instanceof Grounded) {
+      values.push(node.value);
+      continue;
+    }
+    if (node instanceof Sym) {
+      values.push(fromSymbol(node));
+      continue;
+    }
+    if (!(node instanceof Expression)) {
+      values.push(node);
+      continue;
+    }
+    const head = node.items[0];
+    const held = head instanceof Sym ? byName.get(head.name) : undefined;
     if (held !== undefined) {
-      const children = built.items.slice(1).map(build);
-      return (held.projection.fromAtom as unknown as (...args: unknown[]) => unknown)(
-        ...children,
-      );
+      const children = node.items.slice(1);
+      closes.push({ go: "apply", held, arity: children.length });
+      work.push(CLOSE);
+      for (let at = children.length - 1; at >= 0; at -= 1) work.push(children[at]);
+      continue;
     }
-    if (head.name === "object") {
-      const out: Record<string, unknown> = {};
-      for (const field of built.items.slice(1)) {
-        if (!(field instanceof Expression) || field.items.length !== 2) continue;
-        out[String(field.items[0])] = build(field.items[1] as Atom);
-      }
-      return out;
+    if (head instanceof Sym && head.name === "object") {
+      // Only the well-formed fields count, and their names are read here so
+      // the close knows which value goes under which key.
+      const fields = node.items
+        .slice(1)
+        .filter(
+          (field): field is Expression => field instanceof Expression && field.items.length === 2,
+        );
+      closes.push({ go: "object", keys: fields.map((field) => String(field.items[0])) });
+      work.push(CLOSE);
+      for (let at = fields.length - 1; at >= 0; at -= 1) work.push(fields[at]?.items[1]);
+      continue;
     }
+    closes.push({ go: "list", arity: node.items.length });
+    work.push(CLOSE);
+    for (let at = node.items.length - 1; at >= 0; at -= 1) work.push(node.items[at]);
   }
-  return built.items.map(build);
+  return values[0];
+}
+
+/** The mark a worklist puts where a projected value's children end. */
+const CLOSE: unique symbol = Symbol("metta.convert.close");
+
+/** What a close has to rebuild, once its children are on the value stack. */
+type Close =
+  | { readonly go: "apply"; readonly held: Registered; readonly arity: number }
+  | { readonly go: "object"; readonly keys: readonly string[] }
+  | { readonly go: "list"; readonly arity: number };
+
+/** The value a close makes of the children it is waiting on. */
+function closed(close: Close, values: unknown[]): unknown {
+  const arity = close.go === "object" ? close.keys.length : close.arity;
+  // Popped into a pre-sized array rather than spliced off the tail, which
+  // allocates its result and moves what it leaves behind.
+  const parts = new Array<unknown>(arity);
+  for (let at = arity - 1; at >= 0; at -= 1) parts[at] = values.pop();
+  if (close.go === "object") {
+    const out: Record<string, unknown> = {};
+    close.keys.forEach((key, at) => {
+      out[key] = parts[at];
+    });
+    return out;
+  }
+  if (close.go === "list") return parts;
+  return (close.held.projection.fromAtom as unknown as (...args: unknown[]) => unknown)(...parts);
+}
+
+/** The value a symbol names: the first registration that claims it, or its name. */
+function fromSymbol(name: Sym): unknown {
+  for (const each of bySymbol) {
+    const claimed = (each.projection.fromAtom as unknown as (spelling: string) => unknown)(
+      name.name,
+    );
+    if (claimed !== undefined) return claimed;
+  }
+  return name.name;
 }
 
 /** One projected value, beside the atom it projected to. */

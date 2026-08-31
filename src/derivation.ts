@@ -24,7 +24,7 @@
  *   Future Enhancements: None
  */
 
-import { Atom, Expression, Sym, Var, exprOf, variable } from "./atom.ts";
+import { Atom, Expression, Sym, Var, exprOf, mapTerm, variable } from "./atom.ts";
 import { MettaError } from "./errors.ts";
 import { alphaKey } from "./matching.ts";
 import { showsAs } from "./present.ts";
@@ -189,10 +189,9 @@ export function readable(atom: Atom): Atom {
       }
       return renamed;
     }
-    if (node instanceof Expression) return exprOf(node.items.map(rename));
     return node;
   };
-  return rename(atom);
+  return mapTerm(atom, rename);
 }
 
 function headed(atom: Atom, name: string): atom is Expression {

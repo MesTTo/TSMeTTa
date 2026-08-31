@@ -63,6 +63,8 @@ export type Code =
   | "ERR_METTA_INFERENCES"
   /** The engine's own deadline ran out inside a reduction. */
   | "ERR_METTA_TIME"
+  /** The engine's own stack limit ran out building or reading a term. */
+  | "ERR_METTA_STACK"
   /** A space implemented in TypeScript raised, or refused. */
   | "ERR_METTA_PROVIDER"
   /** A standing query's own callback raised, or its queue overflowed. */
@@ -71,8 +73,6 @@ export type Code =
   | "ERR_METTA_TRANSPORT"
   /** A test assertion a program made did not hold. */
   | "ERR_METTA_ASSERTION"
-  /** The work was interrupted from outside. */
-  | "ERR_METTA_INTERRUPTED"
   /** A source a program named is not there. */
   | "ERR_METTA_SOURCE";
 
@@ -237,6 +237,19 @@ export class TimeLimitError extends ResourceLimitError {
   static override readonly defaultCode: Code = "ERR_METTA_TIME";
 }
 
+/**
+ * The engine ran out of its own Prolog stack, which is what bounds a term's
+ * DEPTH once nothing on this side recurses per level.
+ *
+ * `limit` is the ceiling in bytes as the engine reported it. The remedy is a
+ * larger `stack_limit`, which is a startup setting here (`METTA_STACK_LIMIT`,
+ * or `config.configure({ stackLimit })` before the first boot) and which a
+ * 32-bit WebAssembly build must still fit in its address space.
+ */
+export class StackLimitError extends ResourceLimitError {
+  static override readonly defaultCode: Code = "ERR_METTA_STACK";
+}
+
 /** A space implemented in TypeScript raised, or refused a capability. */
 export class ProviderError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_PROVIDER";
@@ -262,11 +275,6 @@ export class AssertionError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_ASSERTION";
 }
 
-/** The work was interrupted from outside, rather than failing. */
-export class InterruptedError extends MettaError {
-  static override readonly defaultCode: Code = "ERR_METTA_INTERRUPTED";
-}
-
 /** A file, module or library a program named is not there. */
 export class SourceNotFoundError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_SOURCE";
@@ -282,13 +290,24 @@ export function isTransportError(value: unknown): value is TransportError {
   return value instanceof TransportError;
 }
 
+/** How many bytes each unit SWI spells a stack ceiling in stands for. */
+const STACK_UNITS: Readonly<Record<string, number>> = {
+  b: 1,
+  Kb: 1024,
+  Mb: 1024 * 1024,
+  Gb: 1024 * 1024 * 1024,
+};
+
 /**
  * The class the engine's own signal names, so an engine refusal arrives as the
  * condition it is rather than as generic prose.
  *
  * The engine writes a control signal into its error term before the text
  * reaches this side; the bridge renders it, and this reads the rendering back.
- * A text with no signal in it is an `EngineError`, which is the honest default.
+ * Beside the two control signals it reads three of the engine's own wordings:
+ * a stack ceiling, a failed MeTTa assertion and a source it could not open,
+ * each of which has a class here and used to arrive as generic prose. A text
+ * with none of them in it is an `EngineError`, which is the honest default.
  */
 export function engineError(text: string): MettaError {
   const trimmed = text.trimEnd();
@@ -305,9 +324,32 @@ export function engineError(text: string): MettaError {
     if (named === "inference_limit") return new InferenceLimitError(trimmed, limit);
     if (named === "time_limit") return new TimeLimitError(trimmed, limit);
   }
+  // SWI's own wording for its stacks running out, which is what bounds a
+  // term's DEPTH now that nothing on this side recurses per level: a term
+  // 500,000 deep crosses and a million raises this
+  // [measured 2026-08-31, see C47].
+  const stack = /Stack limit \(([\d.]+)(b|Kb|Mb|Gb)\) exceeded|resource_error\(stack\)/.exec(
+    trimmed,
+  );
+  if (stack !== null) {
+    const size = Number(stack[1] ?? 0) * (STACK_UNITS[stack[2] ?? "b"] ?? 1);
+    return new StackLimitError(
+      `${trimmed}\nthe term was deeper or larger than the engine's own stack; raise ` +
+        `METTA_STACK_LIMIT (or config.configure({ stackLimit }) before the first boot), ` +
+        `which a 32-bit WebAssembly build must still fit in its address space`,
+      size,
+    );
+  }
+  // A MeTTa program's own assertion, which the engine raises rather than
+  // answering as data, so a caller who wants to catch a failed assertEqual
+  // has a class for it rather than a prose match.
+  if (/MeTTa assertion failed/.test(trimmed)) return new AssertionError(trimmed);
   if (/^ERROR:.*[Ss]yntax|cannot be read|operator expected/.test(trimmed)) {
     return new MettaSyntaxError(trimmed);
   }
+  // The engine's own words for a file it could not open. `source_sink` is
+  // SWI's existence-error culprit and `does not exist` is its message.
+  if (/source_sink|does not exist/.test(trimmed)) return new SourceNotFoundError(trimmed);
   if (/\bcapabilit/.test(trimmed)) return new CapabilityError(trimmed);
   return new EngineError(trimmed);
 }

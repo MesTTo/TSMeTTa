@@ -42,6 +42,13 @@ npm install /path/to/metta-node-<version>.tgz
 the tarball, and removes it again afterwards. Without that a published package
 would carry the bridge and not the engine it drives.
 
+`dist/` is a build product, not a checked-in one: `npm run build:dist` writes
+it and npm's `prepare` hook runs that on install. Import `src/` as below while
+working in this checkout, or build first — a `dist/` older than the `src/`
+beside it is a copy of an older codec, and the seat's own suites never load it
+because they compile source into `build/`. `sh check.sh node-dist` builds it
+and runs a consumer through the result.
+
 ```ts
 import { metta, S, V } from "./extensions/node/src/index.ts";
 
@@ -165,6 +172,13 @@ operation.
 first-seen order; `kb.match(pattern, template)` answers the template's
 instances, evaluated, which is MeTTa's own reading of the third argument of
 `match`.
+
+A variable the SOURCE did not name gets one minted for it, and that name is an
+identity: one cell spends one name however often it occurs, two cells never
+share one, and two separate answers never reuse a name, so putting them in one
+expression cannot silently share a variable. It used to be the cell's address
+in the engine's stack, which moves under a collection and is handed on
+afterwards [C54].
 
 `kb.eval(term)` reduces a term IN this space, which is the engine's own
 `evalc`: the space's equations are the ones in force and its model is the one
@@ -523,13 +537,27 @@ m.forms(source);                 // every top-level form, read and not run
 m.trace("!(quad 3)");            // the engine's own call and exit events
 m.disassemble("dbl");            // the Prolog clauses the name compiled to
 m.runStatus(source);             // per directive: value, not-reducible, empty
+m.evalStatus(S.Point(1, 2));     // the same three words, for a TERM
+m.reducible(S.Point(1, 2));      // false: nothing applies to that head
 m.engine.engineCounters;         // inferences, CPU, GC, table bytes
 ```
 
-`m.strict()` is the scope that refuses a directive the engine answers
-unreduced. It runs its source ONCE and judges it from what it did, rather than
-running it to judge it and running it again to keep it — which is what a strict
-scope built on two passes would do to every write inside it.
+`m.strict()` is the scope that refuses anything the engine answers unreduced,
+through either door. For source it runs it ONCE and judges it from what it did,
+rather than running it to judge it and running it again to keep it — which is
+what a strict scope built on two passes would do to every write inside it — and
+raises `StrictError` naming the directive. For a term it asks the engine
+whether the head reduces before the ask starts, and raises `NotReducibleError`:
+
+```ts
+using _ = m.strict();
+await m.eval(S.double(4)).one();   // 8
+m.eval(S.Point(1, 2));             // NotReducibleError, naming the term
+```
+
+Both doors ask the engine's own `metta_reducible_head/2`, which is why they
+cannot disagree about what `not-reducible` means. Outside a strict scope an
+unreduced term is data, which is MeTTa's own law.
 
 `m.limits({ inferences })` bounds what a reduction may spend. There is no
 `timeout` beside it and the surface says so rather than pretending: a
@@ -1044,6 +1072,53 @@ the number 1r3 has no JavaScript type; a rational crosses as its Prolog
 spelling and this host has nothing to hold it in
 ```
 
+## How deep a term may be
+
+As deep as the ENGINE can hold one. Nothing on this side recurses per nesting
+level: the wire is a flat preorder token list rather than a nested term, and
+every walk over a term — the codec, `String(atom)`, `mapTerm`, `toAtom`, the
+standard order, the renamers — carries its depth on a worklist. Measured on
+this build, `m.parse` of `(f (f ... 1 ...))` answers at 200,000 deep in 1.2
+seconds and at 500,000 in 2.7, and the term it answers renders, round trips and
+sorts.
+
+Past that the engine's own stack is the bound, and it says so:
+
+```ts
+try { m.parse(veryDeep); }
+catch (error) {
+  if (error instanceof StackLimitError) console.log(error.limit);  // 1073741824
+}
+```
+
+`StackLimitError` carries the ceiling in bytes and names its remedy, which is
+`METTA_STACK_LIMIT` (or `config.configure({ stackLimit })` before the first
+boot) and which a 32-bit WebAssembly build must still fit in its address space.
+The session is usable afterwards.
+
+The one walk that does NOT do this is `project`, the host-value-to-atom
+direction, which gives out around 2,700 levels of nested JavaScript objects.
+That is a caller's own object graph rather than an engine answer, and the
+platform is no better on the same data: `structuredClone` gives out at 3,127
+and `JSON.stringify` at 4,161.
+
+## A surface has a lifetime
+
+`m.dispose()` releases what the surface holds, and every door refuses
+afterwards with `ClosedError` rather than answering. That includes an ask that
+was in flight: its next pull refuses, while closing the abandoned stream is
+still allowed, because cleanup must not raise.
+
+```ts
+{
+  using m = await metta();
+  m.run("!(+ 1 2)");
+}
+```
+
+`Symbol.dispose` is the same call, so a `using` block is the shortest form of
+it on Node 24; on Node 22 the build downlevels it.
+
 ## Errors are data, and interruption is opt-in
 
 MeTTa answers an ERROR ATOM per failing branch and keeps the successful
@@ -1084,9 +1159,12 @@ catch (error) {
 
 `EngineError`, `MettaSyntaxError`, `WireError`, `ResultError`, `NameError`,
 `CapabilityError`, `CompileError`, `ClosedError`, `UnsupportedError`,
-`StrictError`, `NotReducibleError`, `CastError`, `InferenceLimitError`,
-`TimeLimitError`, `ProviderError`, `SubscriberError`, `TransportError` — all
-under `MettaError`, all with `cause` and `toJSON`.
+`StrictError`, `NotReducibleError`, `CastError`, `AssertionError`,
+`SourceNotFoundError`, `InferenceLimitError`, `TimeLimitError`,
+`StackLimitError`, `ProviderError`, `SubscriberError`, `TransportError` — all
+under `MettaError`, all with `cause` and `toJSON`, and every one of them is
+raised by something: a class nobody produces is a `catch` branch a caller
+cannot take, so there is no such class here.
 
 A deadline is NOT one of them: `AbortSignal.timeout` aborts with the platform's
 own `TimeoutError`, which is what every other async API raises, and inventing a
@@ -1109,7 +1187,8 @@ Every refusal carries a stable `code`, so a test or a tool matches the code
 and the prose stays free to improve: `ERR_METTA_ENGINE`, `ERR_METTA_WIRE`,
 `ERR_METTA_ABSENT`, `ERR_METTA_AMBIGUOUS`, `ERR_METTA_NAME`,
 `ERR_METTA_CAPABILITY`, `ERR_METTA_TRACE`, `ERR_METTA_LOWER`,
-`ERR_METTA_CLOSED`, `ERR_METTA_UNSUPPORTED`.
+`ERR_METTA_CLOSED`, `ERR_METTA_UNSUPPORTED`, `ERR_METTA_NOT_REDUCIBLE`,
+`ERR_METTA_ASSERTION`, `ERR_METTA_SOURCE`, `ERR_METTA_STACK`.
 
 ## How a host operation reaches JavaScript
 

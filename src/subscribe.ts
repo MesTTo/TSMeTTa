@@ -73,6 +73,9 @@ export class Subscription implements Disposable, AsyncIterable<Event> {
   readonly #onEvent: ((event: Event) => void | Promise<void>) | undefined;
   readonly #onError: ((error: unknown, event: Event) => void) | undefined;
   readonly #pump: Promise<void>;
+  readonly #watchId: number;
+  #taken = 0;
+  #delivered = 0;
   #failure: unknown;
   #ended = false;
 
@@ -86,9 +89,13 @@ export class Subscription implements Disposable, AsyncIterable<Event> {
     const edges: readonly ("add" | "remove")[] =
       options.edges ??
       (options.on === undefined || options.on === "both" ? ["add", "remove"] : [options.on]);
+    // The id is minted HERE rather than inside the watch, because `settled()`
+    // has to ask the engine about this watch in particular.
+    this.#watchId = space.nextWatchId();
     const watch = space.watch(this.#pattern, {
       ...options,
       edges,
+      watchId: this.#watchId,
       signal: this.#controller.signal,
     });
     this.#pump = this.#run(watch);
@@ -100,8 +107,13 @@ export class Subscription implements Disposable, AsyncIterable<Event> {
   async #run(watch: AsyncIterable<Event>): Promise<void> {
     try {
       for await (const event of watch) {
+        // Counted on both sides of the delivery, because an event taken from
+        // the engine and not yet handed on is invisible to both the engine's
+        // queue and this one's: `settled()` needs the pair to see it.
+        this.#taken += 1;
         if (this.#ended) return;
         await this.#deliver(event);
+        this.#delivered += 1;
       }
     } catch (error) {
       if (!this.#ended) this.#failure = error;
@@ -156,9 +168,24 @@ export class Subscription implements Disposable, AsyncIterable<Event> {
    * happens. This is the door a test uses instead of sleeping.
    */
   async settled(): Promise<void> {
-    // Two turns of the event loop past the poll interval: one for the poll to
-    // run, one for its delivery to land.
-    await new Promise((resume) => setTimeout(resume, 20));
+    // A BARRIER, not a sleep. This used to wait a fixed 20 milliseconds and
+    // call that settled, which is a race the caller loses whenever a poll plus
+    // its crossing plus its delivery takes longer than that: on a loaded box
+    // it returned before the last write had arrived and the reader saw a short
+    // queue [measured 2026-08-31, C53].
+    //
+    // Two readings answer it exactly. The engine's own queue for this watch
+    // holds what no poll has fetched; `taken` against `delivered` holds what a
+    // poll fetched and the pump has not handed on. The macrotask between them
+    // is what makes them comparable, because a macrotask runs after every
+    // pending microtask, the pump's own continuation included.
+    for (;;) {
+      if (this.#ended || this.#failure !== undefined) return;
+      const queued = this.#space.pendingAdmissions(this.#watchId);
+      await new Promise((resume) => setTimeout(resume, 0));
+      if (queued === 0 && this.#taken === this.#delivered) return;
+      await new Promise((resume) => setTimeout(resume, 1));
+    }
   }
 
   /** Take every queued event, leaving the queue empty. */

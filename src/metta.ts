@@ -380,8 +380,8 @@ export class MeTTa implements Disposable {
    * Install a THEORY: a class whose methods are its equations.
    *
    * A class with no marks installs every own prototype method; one with
-   * `@equation`, `@grounded` or `@tabled` marks installs exactly those, which
-   * is the opt-in for a class that also carries helpers. The unit door stays
+   * `@equation` or `@grounded` marks installs exactly those, which is the
+   * opt-in for a class that also carries helpers. The unit door stays
    * `define`; this is the grouping form and is required nowhere.
    *
    * Note that a decorator needs a BUILD: TypeScript compiles Stage-3 method
@@ -393,7 +393,6 @@ export class MeTTa implements Disposable {
       const named = method.name === undefined ? {} : { name: method.name };
       const settings = { ...options, ...named };
       if (method.door === "op") return this.op(method.body, settings);
-      if (method.door === "cache") return this.cache(method.body, settings);
       return this.define(method.body, settings);
     });
   }
@@ -469,17 +468,6 @@ export class MeTTa implements Disposable {
   /** Keep a body as host code the engine calls. */
   op(target: (...args: never[]) => unknown, options: OpOptions = {}): Defined {
     return opDoor(this.#installer(), target, options);
-  }
-
-  /**
-   * Define, and declare the engine's table for it in one act.
-   *
-   * The word `cache` here always means the ENGINE's tabling. A host-side
-   * memoize would cache handles rather than answer sets and would break
-   * multiplicity.
-   */
-  cache(target: (...args: never[]) => unknown, options: DefineOptions = {}): Defined {
-    return this.define(target, { ...options, cache: true });
   }
 
   #installer(): Parameters<typeof defineDoor>[0] {

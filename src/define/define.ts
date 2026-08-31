@@ -1,7 +1,6 @@
 /**
  * Purpose: the three doors a program installs meaning through: `define` for an
  *   equation the engine holds, `op` for host code the engine calls, and
- *   `cache` for a definition the engine tables.
  * Assumes:
  *   - `fn.name` is the head, mapped through TypeScript's own casing, so
  *     `function balanceOf` installs `balance-of`; `{ name: "prime?" }` opts in
@@ -46,12 +45,10 @@ export interface DefineOptions {
   readonly scope?: Readonly<Record<string, Term>>;
   /** An arrow type to declare beside the equations. */
   readonly type?: Term;
-  /** Whether the engine should table this definition's answers. */
-  readonly cache?: boolean;
 }
 
 /** What `op` may say about itself. */
-export interface OpOptions extends Omit<DefineOptions, "cache"> {
+export interface OpOptions extends DefineOptions {
   /**
    * The weakest effect class that is honestly true of the body.
    *
@@ -231,12 +228,6 @@ function finish(
   }
   space.add(...equations);
   install.remember(head, arity);
-  if (options.cache === true) {
-    // The word `cache` here always means the ENGINE's tabling. A host-side
-    // memoize would cache handles rather than answer sets and would break
-    // multiplicity, so it is not what this door does.
-    space.add(expr(sym("memoize"), sym(head)));
-  }
   return callable(install, head, arity, equations, space);
 }
 

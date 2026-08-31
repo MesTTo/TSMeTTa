@@ -182,14 +182,6 @@ export async function op(
   return (await engine()).op(target, opOptions);
 }
 
-/** Define and table in the default engine. */
-export async function cache(
-  target: (...args: never[]) => unknown,
-  defineOptions: DefineOptions = {},
-): Promise<Defined> {
-  return (await engine()).cache(target, defineOptions);
-}
-
 /** One atom of MeTTa source, through the default engine's own reader. */
 export async function parse(source: string): Promise<Atom> {
   return (await engine()).parse(source);

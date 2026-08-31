@@ -194,7 +194,6 @@ export {
   grounded,
   methodsOf,
   named,
-  tabled,
 } from "./theory.ts";
 
 // The extension tier.

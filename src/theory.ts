@@ -7,9 +7,8 @@
  * Guarantees:
  *   - `m.theory(Theory)` defines every own prototype method, so the class needs
  *     no decorator and works on any runtime
- *   - `@equation`, `@grounded` and `@tabled` narrow that to the marked methods
- *     when a class also carries helpers, and they COMPOSE, so
- *     `@tabled @equation` is one definition the engine tables
+ *   - `@equation` and `@grounded` narrow that to the marked methods when a
+ *     class also carries helpers
  * Decides: reflection is the floor and the decorators are the sugar above it.
  *   Stage-3 decorators reach methods and TypeScript compiles them, but V8 has
  *   not shipped them, so `node theory.ts` under type stripping rejects the
@@ -25,7 +24,7 @@
 import { NameError, UnsupportedError } from "./errors.ts";
 
 /** How a marked method is installed. */
-export type Door = "define" | "op" | "cache";
+export type Door = "define" | "op";
 
 /** What one method of a theory declares about itself. */
 export interface Marked {
@@ -41,9 +40,8 @@ export interface Marked {
  */
 const marks = new WeakMap<object, Map<string, Marked>>();
 
-/** Which door wins when two marks meet: `cache` refines `define`, `op` is its own. */
+/** Which door wins when two marks meet: `op` is its own, `define` is the rest. */
 function stronger(left: Door, right: Door): Door {
-  if (left === "cache" || right === "cache") return "cache";
   if (left === "op" || right === "op") return "op";
   return "define";
 }
@@ -93,9 +91,6 @@ export const equation: ReturnType<typeof decorator> = decorator("define");
 
 /** Mark a method as host code the engine calls. */
 export const grounded: ReturnType<typeof decorator> = decorator("op");
-
-/** Mark a method as an equation the engine also tables. */
-export const tabled: ReturnType<typeof decorator> = decorator("cache");
 
 /** Mark a method, and say the exact head it installs under. */
 export function named(head: string, door: Door = "define"): ReturnType<typeof decorator> {

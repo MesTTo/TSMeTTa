@@ -371,12 +371,17 @@ describe("the call door", () => {
   });
 });
 
-describe("tabling", () => {
-  it("declares the engine's own table beside the equations", async () => {
+describe("memoization", () => {
+  it("is a library declaration, not a door of its own", async () => {
+    // `m.cache` used to be this, adding `(memoize fib)` for you while its own
+    // comment claimed it meant tabling. It was a host verb for ONE library, so
+    // it is gone on this seat as it is on Python's, and the library form is
+    // what both write.
     m.run("!(import! &self (library lib_memo))");
-    const fib = m.cache(function fib(n: number): number {
+    const fib = m.define(function fib(n: number): number {
       return n < 2 ? n : fib(n - 1) + fib(n - 2);
     });
+    m.add(S.memoize(S.fib));
     assert.equal(String(await fib(20).one()), "6765");
     const declared = await m.match(S.memoize(V.head));
     assert.ok(declared.some((row) => String(row["head"]) === "fib"));

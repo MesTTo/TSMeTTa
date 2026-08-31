@@ -8,7 +8,7 @@
  *   ever loads `dist/`.
  * Guarantees: exits 0 having evaluated one program through the built library,
  *   and exits nonzero naming what failed otherwise
- *   [tested: extensions/node/check.sh node-dist; commit=WORKTREE].
+ *   [tested: extensions/node/check.sh node-dist; commit=1c40a5f96c308941b4c0669594acb06403109751].
  * Fails when: `dist/` was built from older sources than the ones beside it.
  *   That is not hypothetical: on 2026-08-31 `dist/` held the previous wire
  *   codec while the engine's bridge held the new one, so a consumer got

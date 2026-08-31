@@ -21,10 +21,8 @@ import {
   Derivation,
   InferenceLimitError,
   type MeTTa,
-  NotReducibleError,
   type ProofNode,
   S,
-  StrictError,
   V,
   metta,
   sub,
@@ -153,27 +151,17 @@ describe("asking the engine about itself", () => {
     assert.equal(groups[0]?.[0]?.text, "3");
   });
 
-  it("refuses an unreduced directive inside a strict scope, running the source once", () => {
-    const counted = m.space("&strict-writes");
-    counted.clear();
-    {
-      using _scope = m.strict();
-      assert.ok(m.isStrict);
-      assert.deepEqual(m.run("!(+ 1 2)")[0]?.texts, ["3"]);
-      assert.throws(
-        () => m.run(`!(add-atom &strict-writes (wrote))\n!(typoo 1)`),
-        (error: unknown) => {
-          assert.ok(error instanceof StrictError);
-          return true;
-        },
-      );
-    }
-    assert.ok(!m.isStrict);
-    // ONE write, not two: the source is executed once and judged from what it
-    // did, rather than executed to judge it and executed again to keep it.
-    assert.equal(counted.size, 1);
-    // Outside the scope the same directive is ordinary data again.
+  it("answers an unreduced directive as itself, which is MeTTa's own law", () => {
+    // There was a strict() scope that refused this, on both seats. It is gone
+    // (user, 2026-08-31): a term nothing applies to being its own answer is
+    // how `!(hello world)` works, so refusing it refused the language.
     assert.deepEqual(m.run("!(typoo 1)")[0]?.texts, ["(typoo 1)"]);
+    assert.deepEqual(m.run("!(+ 1 2)")[0]?.texts, ["3"]);
+    // runStatus is how a caller decides about it, as data.
+    assert.deepEqual(
+      m.runStatus("!(+ 1 2)\n!(typoo 1)").map((group) => group.map((row) => row.status)),
+      [["value"], ["not-reducible"]],
+    );
   });
 
   it("reports what the engine did with a TERM, the way runStatus does with source", () => {
@@ -193,25 +181,6 @@ describe("asking the engine about itself", () => {
     // The engine's own test, which is the one runStatus asks of a directive.
     assert.ok(m.reducible(S.dbl2(4)));
     assert.ok(!m.reducible(S.Point(1, 2)));
-  });
-
-  it("refuses an unreduced term inside a strict scope", () => {
-    m.run("(= (dbl3 $x) (* 2 $x))");
-    {
-      using _scope = m.strict();
-      assert.equal(String(m.eval(S.dbl3(4)).description), "(dbl3 4)");
-      assert.throws(
-        () => m.eval(S.Point(1, 2)),
-        (error: unknown) => {
-          assert.ok(error instanceof NotReducibleError);
-          assert.equal(error.code, "ERR_METTA_NOT_REDUCIBLE");
-          assert.match(error.message, /\(Point 1 2\) is not reducible/);
-          return true;
-        },
-      );
-    }
-    // Outside the scope the same term answers itself, which is MeTTa's own law.
-    assert.equal(String(m.eval(S.Point(1, 2)).description), "(Point 1 2)");
   });
 
   it("bounds what a reduction may spend in inferences", () => {

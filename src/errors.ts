@@ -187,22 +187,6 @@ export class UnsupportedError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_UNSUPPORTED";
 }
 
-/** A directive answered itself, where a strict scope required a reduction. */
-export class StrictError extends MettaError {
-  static override readonly defaultCode: Code = "ERR_METTA_STRICT";
-}
-
-/**
- * A term the engine has no equation for, where the caller required one.
- *
- * MeTTa's own answer to an unreduced call is the call itself, which is data
- * rather than a failure. This is the opt-in refusal for a caller who asked for
- * a value and got the question back.
- */
-export class NotReducibleError extends MettaError {
-  static override readonly defaultCode: Code = "ERR_METTA_NOT_REDUCIBLE";
-}
-
 /** A value the engine's type discipline will not accept as the target type. */
 export class CastError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_CAST";

@@ -25,13 +25,11 @@ import {
   MettaError,
   MettaSyntaxError,
   NameError,
-  NotReducibleError,
   ProviderError,
   ResourceLimitError,
   ResultError,
   SourceNotFoundError,
   StackLimitError,
-  StrictError,
   SubscriberError,
   TimeLimitError,
   TransportError,
@@ -53,8 +51,6 @@ const FAMILY: readonly [new (message: string) => MettaError, Code][] = [
   [CompileError, "ERR_METTA_LOWER"],
   [ClosedError, "ERR_METTA_CLOSED"],
   [UnsupportedError, "ERR_METTA_UNSUPPORTED"],
-  [StrictError, "ERR_METTA_STRICT"],
-  [NotReducibleError, "ERR_METTA_NOT_REDUCIBLE"],
   [CastError, "ERR_METTA_CAST"],
   [ProviderError, "ERR_METTA_PROVIDER"],
   [SubscriberError, "ERR_METTA_SUBSCRIBER"],
@@ -86,11 +82,11 @@ describe("the error family", () => {
   });
 
   it("gives every published class a producer, so no catch branch is unreachable", () => {
-    // A class nobody raises is a branch a caller cannot take. Three of them
-    // were exactly that: NotReducibleError, AssertionError and (deleted)
-    // InterruptedError [see C51]. This holds the line for the two that stayed.
+    // A class nobody raises is a branch a caller cannot take. NotReducibleError
+    // and StrictError became exactly that when the strict scope was removed
+    // (user, 2026-08-31), so both are gone rather than left unreachable.
     const raised = new Set([
-      ...["NotReducibleError", "AssertionError", "StackLimitError", "SourceNotFoundError"],
+      ...["AssertionError", "StackLimitError", "SourceNotFoundError"],
     ]);
     for (const name of raised) {
       assert.ok(

@@ -542,22 +542,22 @@ m.reducible(S.Point(1, 2));      // false: nothing applies to that head
 m.engine.engineCounters;         // inferences, CPU, GC, table bytes
 ```
 
-`m.strict()` is the scope that refuses anything the engine answers unreduced,
-through either door. For source it runs it ONCE and judges it from what it did,
-rather than running it to judge it and running it again to keep it — which is
-what a strict scope built on two passes would do to every write inside it — and
-raises `StrictError` naming the directive. For a term it asks the engine
-whether the head reduces before the ask starts, and raises `NotReducibleError`:
+An unreduced term is DATA, which is MeTTa's own law: `!(hello world)` answers
+`(hello world)` and that is the whole of hello world in this language. There is
+no scope that refuses one, and there was; it is gone (user, 2026-08-31),
+because refusing an unreduced term refuses the language.
+
+Deciding what to do about one is the caller's, and `m.reducible` is the
+question, asked of the engine's own `metta_reducible_head/2` without reducing
+anything:
 
 ```ts
-using _ = m.strict();
-await m.eval(S.double(4)).one();   // 8
-m.eval(S.Point(1, 2));             // NotReducibleError, naming the term
+m.reducible(S.double(4));      // true
+m.reducible(S.Point(1, 2));    // false
 ```
 
-Both doors ask the engine's own `metta_reducible_head/2`, which is why they
-cannot disagree about what `not-reducible` means. Outside a strict scope an
-unreduced term is data, which is MeTTa's own law.
+`runStatus` and `evalStatus` are the same question over a whole source or a
+term, answering `value`, `not-reducible` or `empty` beside each answer.
 
 `m.limits({ inferences })` bounds what a reduction may spend. There is no
 `timeout` beside it and the surface says so rather than pretending: a

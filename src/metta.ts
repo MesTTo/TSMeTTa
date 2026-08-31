@@ -46,10 +46,8 @@ import {
 import {
   MettaError,
   NameError,
-  NotReducibleError,
   ResultError,
   SourceNotFoundError,
-  StrictError,
 } from "./errors.ts";
 import { race as raceAsks } from "./parallel.ts";
 import { showsAs } from "./present.ts";
@@ -154,7 +152,6 @@ export class MeTTa implements Disposable {
   #spaces = new Map<string, Space>();
   #known = new Set<string>();
   #scopes: Scope[] = [];
-  #strict = 0;
 
   /** The engine's own default space. */
   readonly self: Space;
@@ -270,18 +267,6 @@ export class MeTTa implements Disposable {
   /** @internal The ask every callable and every door goes through. */
   ask(term: Atom, space: Space, options: AskOptions = {}): Answers<Atom> {
     const engine = this.#engine;
-    // A strict scope is a synchronous BLOCK and an ask is lazy, so the term
-    // door has to decide here, where the block is still open. The question is
-    // asked of the engine and does not reduce anything. `strict()` promises to
-    // refuse a term the engine will not reduce, and `run` alone kept that
-    // promise until now
-    // [tested: refuses an unreduced term inside a strict scope; commit=c530ccb8fb7d0a5b2aa53df6e9f981ada9f81be8].
-    if (this.#strict > 0 && !this.reducible(term, space)) {
-      throw new NotReducibleError(
-        `${term.text} is not reducible: no equation, builtin or special form applies ` +
-          `to it, and this is a strict scope`,
-      );
-    }
     const wire = engine.encodeAtom(term);
     const name = space.name;
     return new Answers<Atom>(
@@ -299,43 +284,13 @@ export class MeTTa implements Disposable {
    * together. `eval` is the door for a term already in hand.
    */
   run(source: string): AnswerGroup[] {
-    if (this.#strict === 0) return groupsOf(this.#engine.start(["run", source]).sync());
-    return this.#strictly(source, this.self);
-  }
-
-  /**
-   * Refuse any directive the engine answers UNREDUCED, for the block.
-   *
-   * ```ts
-   * using _ = m.strict();
-   * m.run("!(typoo 1)");   // throws StrictError naming the directive
-   * ```
-   *
-   * A bare data constructor is refused for the same reason a typo is: neither
-   * reduces. An EMPTY answer is allowed, being the pruned branch `(empty)` and
-   * an unmatched `match` both produce.
-   *
-   * The source runs ONCE. The engine reports each directive's status beside
-   * its answers, so nothing is executed to judge it and executed again to keep
-   * it, which is what a strict scope that ran the source twice would do to
-   * every write in it.
-   */
-  strict(): ScopeHandle {
-    this.#strict += 1;
-    return new ScopeHandle(() => {
-      this.#strict -= 1;
-    });
-  }
-
-  /** Whether a strict scope is open right now. */
-  get isStrict(): boolean {
-    return this.#strict > 0;
+    return groupsOf(this.#engine.start(["run", source]).sync());
   }
 
   /**
    * Run source and report, per directive, whether the engine reduced it.
    *
-   * The diagnostic underneath `strict()`, and useful on its own: `value` for a
+   * Which directives reduced and which answered themselves: `value` for a
    * directive that reduced, `not-reducible` for one that answered itself, and
    * `empty` for a pruned branch.
    */
@@ -382,8 +337,8 @@ export class MeTTa implements Disposable {
    * what MeTTa does with any head it cannot call. `empty` means the goal
    * answered nothing at all and its atom is the symbol `none`. Reading the
    * last two as the same thing is the mistake this exists to prevent, and it
-   * is the diagnostic underneath a strict `eval` the way `runStatus` is the
-   * one underneath a strict `run`.
+   * is the term-shaped question the way `runStatus` is the source-shaped
+   * one; a caller who wants to decide about an unreduced term asks here.
    */
   evalStatus(term: Term, space: Space = this.self): StatusGroup {
     const atom = toAtom(term);
@@ -397,23 +352,6 @@ export class MeTTa implements Disposable {
     }
     if (rows.length === 0) return [{ status: "empty", answer: sym("none"), text: "none" }];
     return rows;
-  }
-
-  #strictly(source: string, space: Space): AnswerGroup[] {
-    const groups = this.runStatus(source, space);
-    for (const group of groups) {
-      for (const row of group) {
-        if (row.status !== "not-reducible") continue;
-        throw new StrictError(
-          `${row.answer.text} did not reduce, and this is a strict scope; ` +
-            `either define the head or leave the scope`,
-        );
-      }
-    }
-    return groups.map((group) => ({
-      answers: group.filter((row) => row.status !== "empty").map((row) => row.answer),
-      texts: group.filter((row) => row.status !== "empty").map((row) => row.text),
-    }));
   }
 
   /**

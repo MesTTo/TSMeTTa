@@ -275,7 +275,7 @@ export class MeTTa implements Disposable {
     // asked of the engine and does not reduce anything. `strict()` promises to
     // refuse a term the engine will not reduce, and `run` alone kept that
     // promise until now
-    // [tested: refuses an unreduced term inside a strict scope; commit=WORKTREE].
+    // [tested: refuses an unreduced term inside a strict scope; commit=c530ccb8fb7d0a5b2aa53df6e9f981ada9f81be8].
     if (this.#strict > 0 && !this.reducible(term, space)) {
       throw new NotReducibleError(
         `${term.text} is not reducible: no equation, builtin or special form applies ` +

@@ -28,12 +28,12 @@
  *     an explicit worklist, so a term's depth costs heap and never the
  *     JavaScript call stack
  *     [tested: carries a term a hundred thousand deep through every codec leg;
- *     commit=WORKTREE]
+ *     commit=c530ccb8fb7d0a5b2aa53df6e9f981ada9f81be8]
  *   - the engine path builds NO intermediate tree: {@link decodeEngine} reads
  *     the flat token list straight into atoms and {@link encodeEngine} writes
  *     atoms straight into tokens
  *     [tested: spells an expression as its tag, its child count and its children;
- *     commit=WORKTREE]
+ *     commit=c530ccb8fb7d0a5b2aa53df6e9f981ada9f81be8]
  * Owns: the live-host-value table. An object that crossed into the engine is
  *   retained until the engine is disposed, because nothing on this side can
  *   observe that the engine has dropped the id.
@@ -248,7 +248,7 @@ export class HostValues {
  * what a worklist costs over a recursive walk on a shallow term
  * [measured 2026-08-31: the wire-roundtrip row fell from 3,905,175,528 to
  * 3,562,550,943 retired instructions on this one change;
- * command=sh extensions/node/bench.sh wire-roundtrip; commit=WORKTREE].
+ * command=sh extensions/node/bench.sh wire-roundtrip; commit=c530ccb8fb7d0a5b2aa53df6e9f981ada9f81be8].
  */
 function gather<T>(built: T[], arity: number): T[] {
   const children = new Array<T>(arity);
@@ -339,7 +339,7 @@ function hostReference(payload: unknown, context: DecodeContext): unknown {
  * {@link atomOfToken} and back through {@link wireOfLeaf} cost this path 50
  * percent, so the two readers stay two
  * [measured 2026-08-31 with retired instructions over 20,000 terms of 4,681
- * nodes; commit=WORKTREE]. They must agree, and
+ * nodes; commit=c530ccb8fb7d0a5b2aa53df6e9f981ada9f81be8]. They must agree, and
  * "agrees with the atom reader on every tag" is what says so.
  */
 function decodeLeaf(tag: unknown, payload: unknown, context: DecodeContext): Wire {
@@ -385,7 +385,7 @@ function decodeLeaf(tag: unknown, payload: unknown, context: DecodeContext): Wir
  * mostly leaves and the wire pair {@link decodeLeaf} answers is an allocation
  * nothing on this path reads: going through it cost 3.3 percent
  * [measured 2026-08-31 with retired instructions over 20,000 terms of 4,681
- * nodes at width 8 depth 4; commit=WORKTREE].
+ * nodes at width 8 depth 4; commit=c530ccb8fb7d0a5b2aa53df6e9f981ada9f81be8].
  *
  * It must agree with {@link decodeLeaf} on every tag, and the one that says so
  * is "agrees with the wire reader on every tag" in test/wire.test.ts.

@@ -989,7 +989,7 @@ export class Engine {
     // plain `T` would carry the decoded Prolog term back across the boundary
     // as a nested structure and swipl-wasm's toJSON would recurse once per
     // level over it. Only `Out` is wanted, and it is flat
-    // [tested: carries one into the engine and back unchanged; commit=WORKTREE].
+    // [tested: carries one into the engine and back unchanged; commit=c530ccb8fb7d0a5b2aa53df6e9f981ada9f81be8].
     const answer = this.once(
       "metta_node_decode(W, [], _Names, _T), metta_node_encode_named(_T, _Names, Out)",
       { W: transport },

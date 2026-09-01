@@ -20,6 +20,9 @@
  *     inherited rows [tested: "has sees inherited rows and honours journalled
  *     removals", "keeps one visible copy after removing one duplicate in a
  *     world"; commit=6b117a66f6d1028496594942d4b4bdb4cc2b14fe]
+ *   - settling a world releases its draft from both engine and surface
+ *     ownership [tested: "evicts committed and restored world drafts from both
+ *     host caches"; commit=WORKTREE]
  * Decides: a world is a DRAFT, not a suspended transaction. Adds go into a
  *   child space, which the engine's own parent declaration makes read through
  *   the parent and write locally; removals are journalled here and applied at
@@ -171,14 +174,16 @@ export class World implements Disposable {
   #engine: Engine;
   #parent: Space;
   #draft: Space;
+  #releaseDraft: () => void;
   #removals: Atom[] = [];
   #settled: "open" | "committed" | "restored" = "open";
 
   /** @internal Use `m.world(...)`. */
-  constructor(engine: Engine, parent: Space, draft: Space) {
+  constructor(engine: Engine, parent: Space, draft: Space, releaseDraft: () => void) {
     this.#engine = engine;
     this.#parent = parent;
     this.#draft = draft;
+    this.#releaseDraft = releaseDraft;
     draft.readsThrough(parent);
   }
 
@@ -282,6 +287,7 @@ export class World implements Disposable {
   #drop(): void {
     this.#removals = [];
     this.#draft.release();
+    this.#releaseDraft();
   }
 
   /** Leaving the block restores, unless the world was committed inside it. */

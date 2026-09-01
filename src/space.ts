@@ -32,6 +32,11 @@
  *   - each delivered watch admission releases the one-shot bridge job that
  *     drained it [tested: "releases each drain job after delivering an
  *     admission"; commit=d3b3d62e19cd5dc941a6af8df24bc48992327236]
+ *   - every space resolves the engine's canonical reflection-space object
+ *     [tested: "resolves one canonical catalog from every space"; commit=WORKTREE]
+ *   - concurrent takes return only after deleting an exact candidate; a loser
+ *     retries [tested: "lets concurrent takes consume distinct matching atoms";
+ *     commit=WORKTREE]
  * Decides: the collection verbs are SYNCHRONOUS. The transport is in process,
  *   so a synchronous twin genuinely exists, and the async-primary law asks for
  *   an async surface where the transport needs one rather than everywhere. The
@@ -88,6 +93,9 @@ import { atomFromWire, wireFromAtom } from "./wire.ts";
 
 /** The engine's own space, where a declaration ABOUT a space goes. */
 const CATALOG = "&metta";
+
+/** The canonical reflection-space object for each live engine. */
+const catalogByEngine = new WeakMap<Engine, Space>();
 
 /** A source-safe operation name for one admission guard. */
 let nextAdmissionGuard = 1;
@@ -204,7 +212,10 @@ export class Space {
     this.#engine = engine;
     this.handle = handle;
     this.reference = handle instanceof SpaceHandle ? handle.name : engine.encodeAtom(handle);
-    if (handle instanceof SpaceHandle) engine.knownSpaces.add(handle.name);
+    if (handle instanceof SpaceHandle) {
+      engine.knownSpaces.add(handle.name);
+      if (handle.name === CATALOG) catalogByEngine.set(engine, this);
+    }
   }
 
   /**
@@ -216,7 +227,7 @@ export class Space {
    * one argument rather than two.
    */
   get catalog(): Space {
-    return new Space(this.#engine, spaceAtom("&metta"));
+    return catalogByEngine.get(this.#engine) ?? new Space(this.#engine, spaceAtom(CATALOG));
   }
 
   /** The ampersand-prefixed engine name. */
@@ -907,11 +918,10 @@ export class Space {
    * Wait until an atom matching this pattern is here, remove ONE, and answer
    * its row. Linda's `in`.
    *
-   * The read and the removal are two engine calls with nothing between them,
-   * and this host is single-threaded, so no other JavaScript can take the same
-   * atom in between. That is what makes it a take rather than a race, and it is
-   * a property of THIS transport rather than of the engine: a second host
-   * against one engine would need the engine's own atomic door.
+   * Finding a candidate awaits and therefore lets other JavaScript interleave
+   * before the removal. The removal's boolean result is the arbiter: this
+   * waiter returns only after deleting the exact instantiated atom it saw, and
+   * retries when another waiter deleted that candidate first.
    */
   async take(pattern: Term, options: WaitOptions = {}): Promise<Row> {
     return this.#await(pattern, options, true);

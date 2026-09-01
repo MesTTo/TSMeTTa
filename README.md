@@ -386,9 +386,10 @@ const row = await jobs.take(S.job(V.n), { signal: AbortSignal.timeout(50) });
 `peek` waits until a matching atom is there and leaves it; `take` removes one.
 There is no engine-side blocking wait (`take-atom` needs `library(thread)`,
 which a WebAssembly SWI does not have), so these poll, bounded by the signal.
-The take is still a take rather than a race: the read and the removal are two
-synchronous engine calls with nothing between them, and this host is
-single-threaded.
+The take is still a take rather than a race. Each waiter reads a candidate and
+then asks the engine to delete that exact atom. JavaScript may interleave other
+waiters between those calls; the delete result is the arbiter, so a waiter that
+lost the candidate retries instead of returning it.
 
 `m.race([a, b])` answers the first branch and cancels the rest through their
 signals; `Promise.any` is the platform's word for it, with the cancellation

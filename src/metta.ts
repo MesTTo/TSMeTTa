@@ -15,6 +15,9 @@
  *   - parametric spaces retain their ground expression identity instead of a
  *     flattened display-name approximation [tested: "keeps parametric space
  *     identities structured and collision-free"; commit=e112cbc47bf8f77f002a8edf5c2668aa5f337c5f]
+ *   - settling a world removes its released draft from the surface cache and
+ *     decoder-name set [tested: "evicts committed and restored world drafts
+ *     from both host caches"; commit=WORKTREE]
  *   - nothing this surface does writes to the host's console
  * Owns: one engine, its spaces, its registered operations, and its scopes.
  * Open Obligations:
@@ -576,7 +579,12 @@ export class MeTTa implements Disposable {
    */
   world(over: Space = this.self): World {
     const draft = this.space(nextWorldName());
-    return new World(this.#engine, over, draft);
+    return new World(this.#engine, over, draft, () => {
+      const identity = draft.handle;
+      if (this.#spaces.get(identity) !== draft) return;
+      this.#spaces.delete(identity);
+      if (identity instanceof SpaceHandle) this.#engine.knownSpaces.delete(identity.name);
+    });
   }
 
   /**

@@ -9,6 +9,9 @@
  *   - `await metta()` is the whole boot: a module may say it at top level
  *   - an ask is lazy, a definition costs no crossing per call, and a scope
  *     restores itself
+ *   - `evalStatus` reports every answer of a nondeterministic term
+ *     [tested: "reports every status row of a nondeterministic term";
+ *     commit=WORKTREE]
  *   - nothing this surface does writes to the host's console
  * Owns: one engine, its spaces, its registered operations, and its scopes.
  * Open Obligations:
@@ -344,12 +347,10 @@ export class MeTTa implements Disposable {
     const atom = toAtom(term);
     const status: DirectiveStatus = this.reducible(atom, space) ? "value" : "not-reducible";
     const job = this.#engine.start(["eval", this.#engine.encodeAtom(atom), space.name]);
-    const rows: StatusRow[] = [];
-    for (;;) {
-      const event = job.sync();
-      if (event === null) break;
-      if (event.kind === "answer") rows.push({ status, answer: event.atom, text: event.text });
-    }
+    const rows = job
+      .syncAll()
+      .filter((event): event is JobEvent & { readonly kind: "answer" } => event.kind === "answer")
+      .map((event): StatusRow => ({ status, answer: event.atom, text: event.text }));
     if (rows.length === 0) return [{ status: "empty", answer: sym("none"), text: "none" }];
     return rows;
   }

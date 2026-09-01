@@ -16,6 +16,10 @@
  *     a return, a throw, or the end of the block
  *   - a world's `commit()` applies its whole delta inside ONE engine
  *     transaction, and `restore()` leaves the parent untouched
+ *   - a world's reads consume each journalled removal once and include its
+ *     inherited rows [tested: "has sees inherited rows and honours journalled
+ *     removals", "keeps one visible copy after removing one duplicate in a
+ *     world"; commit=WORKTREE]
  * Decides: a world is a DRAFT, not a suspended transaction. Adds go into a
  *   child space, which the engine's own parent declaration makes read through
  *   the parent and write locally; removals are journalled here and applied at
@@ -31,6 +35,7 @@ import { type Atom, type Term, substitute, toAtom } from "./atom.ts";
 import { Answers, type AskOptions, type Row } from "./answers.ts";
 import { type Counters, type Engine, type Scope } from "./engine.ts";
 import { ClosedError, MettaError } from "./errors.ts";
+import { matchTerms } from "./matching.ts";
 import { showsAs } from "./present.ts";
 import { Space } from "./space.ts";
 
@@ -216,20 +221,21 @@ export class World implements Disposable {
 
   /** The draft's view of a pattern: the parent plus the draft, minus the journal. */
   match(pattern: Term, options: AskOptions = {}): Answers<Row> {
-    const removed = this.#removals;
-    const rows = this.#draft.match(pattern, options);
-    if (removed.length === 0) return rows;
-    // A journalled removal is filtered here rather than in the engine, because
-    // the parent still holds the atom until commit. The pattern is matched
-    // against the removal list by the engine's own reading of the row.
-    return rows.filter((row) => !hidesRow(this.#draft, pattern, row, removed));
+    const matched = toAtom(pattern);
+    const draft = this.#draft;
+    const removals = [...this.#removals];
+    if (removals.length === 0) return draft.match(matched, options);
+    const rows = draft.match(matched);
+    return new Answers<Row>(
+      `world(${draft.name}, ${matched.text})`,
+      () => visibleWorldRows(draft, matched, rows, removals),
+      options.signal,
+    );
   }
 
   /** Whether the draft holds an atom unifying with this pattern. */
-  has(pattern: Term): boolean {
-    if (!this.#draft.has(pattern)) return false;
-    if (this.#removals.length === 0) return true;
-    return !this.#removals.some((atom) => atom === toAtom(pattern));
+  async has(pattern: Term): Promise<boolean> {
+    return this.match(pattern).exists();
   }
 
   /** Every atom the draft added, without the parent's. */
@@ -286,24 +292,33 @@ showsAs(
   (world: World) => `World(${world.space.name} over ${world.over.name})`,
 );
 
-/**
- * Whether a row came only from an atom the world removed.
- *
- * The pattern is re-instantiated with the row's own bindings and looked up in
- * the journal. Interning is what makes that lookup structural: two equal atoms
- * are one object, so `includes` is the comparison a reader expects.
- */
-function hidesRow(
+/** Rows in the draft union after spending one budget per parent removal. */
+async function* visibleWorldRows(
   draft: Space,
-  pattern: Term,
-  row: Row,
+  pattern: Atom,
+  rows: Answers<Row>,
   removals: readonly Atom[],
-): boolean {
-  const filled = substitute(toAtom(pattern), row as Record<string, Term>);
-  if (!removals.includes(filled)) return false;
-  // A removal only hides the row while the DRAFT does not hold the atom
-  // itself: adding it back after removing it makes the row real again.
-  return !draft.has(filled);
+): AsyncGenerator<Row> {
+  const local = new Map<Atom, number>();
+  for await (const atom of draft.atoms()) {
+    local.set(atom, (local.get(atom) ?? 0) + 1);
+  }
+  const remaining = [...removals];
+  for await (const row of rows) {
+    const filled = substitute(pattern, row as Record<string, Term>);
+    const own = local.get(filled) ?? 0;
+    if (own > 0) {
+      if (own === 1) local.delete(filled);
+      else local.set(filled, own - 1);
+      yield row;
+      continue;
+    }
+    const hidden = remaining.findIndex(
+      (removal) => matchTerms(removal, filled) !== undefined,
+    );
+    if (hidden >= 0) remaining.splice(hidden, 1);
+    else yield row;
+  }
 }
 
 /** @internal A world's draft space name, unique within the process. */

@@ -15,6 +15,9 @@
  *     `onError`, or is re-raised on the next drain when there is none
  *   - `LiveView` counts MULTIPLICITY, because a space is a multiset and a view
  *     that collapsed duplicates would be answering a different question
+ *   - `LiveView.open` seeds from stored atoms, so its snapshot and later
+ *     admission events carry the same values [tested: "seeds with stored atoms
+ *     rather than reductions of the pattern"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -22,7 +25,7 @@
  */
 
 import type { Atom, Term } from "./atom.ts";
-import { toAtom } from "./atom.ts";
+import { substitute, toAtom } from "./atom.ts";
 import { SubscriberError } from "./errors.ts";
 import { showsAs } from "./present.ts";
 import type { Admission, Space, WatchOptions } from "./space.ts";
@@ -277,8 +280,12 @@ export class LiveView implements Disposable, Iterable<Atom> {
 
   /** Seed the view from the space, then keep it current. */
   static async open(space: Space, pattern: Term): Promise<LiveView> {
-    const seed = await space.match(pattern, toAtom(pattern)).toArray();
-    return new LiveView(space, pattern, seed);
+    const matched = toAtom(pattern);
+    const seed = await space
+      .match(matched)
+      .map((row) => substitute(matched, row))
+      .toArray();
+    return new LiveView(space, matched, seed);
   }
 
   #bump(atom: Atom, by: number): void {

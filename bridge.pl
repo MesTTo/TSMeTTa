@@ -55,6 +55,9 @@
 %   - runnable free variables retain source names in their wire value and host
 %     text [tested: "keeps a source variable's own name in the answer and in
 %     the text"]
+%   - a world's journal removes one matching parent occurrence per entry,
+%     including when the entry contains variables [tested: "spends one removal
+%     budget for a nonground journal entry"; commit=WORKTREE]
 % Owns: one SWI engine per open job, released by metta_node_stop/1, which the
 %   JavaScript iterator calls from its own return() so an abandoned for-await
 %   releases it; the watch queues; the registered-operation table.
@@ -575,6 +578,15 @@ metta_node_verb(Verb) :- memberchk(Verb, [eval, source, run, load, add, remove,
                                           currentspace, custommatch, digest,
                                           token, untoken]).
 
+% Resolve a world journal pattern to one concrete occurrence before removing
+% it. The engine's ordinary bare-variable removal deliberately clears a whole
+% space, while one journal entry is one multiset debit.
+metta_node_remove_one(Space, Pattern) :-
+    (   once((metta_host_stored(Space, Stored), Stored = Pattern))
+    ->  metta_host_remove_reported(Space, Stored, _)
+    ;   true
+    ).
+
 % Evaluate a term already built on the host side. This is the primary door:
 % going through text would lose a live host reference, which has no spelling.
 metta_node_command(eval, [Wire, Space0], [answer, Out, Text]) :-
@@ -750,7 +762,7 @@ metta_node_command(commit, [Child0, Parent0, RemoveWires], [value, [s, "ok"]]) :
     metta_node_atom(Parent0, Parent),
     maplist(metta_node_decode, RemoveWires, Removals),
     findall(A, metta_host_stored(Child, A), Added),
-    forall(member(R, Removals), metta_host_remove_reported(Parent, R, _)),
+    forall(member(R, Removals), metta_node_remove_one(Parent, R)),
     metta_add_atoms(Parent, Added),
     metta_host_clear_space(Child).
 

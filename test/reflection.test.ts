@@ -183,6 +183,17 @@ describe("asking the engine about itself", () => {
     assert.ok(!m.reducible(S.Point(1, 2)));
   });
 
+  it("reports every status row of a nondeterministic term", () => {
+    assert.deepEqual(
+      m.evalStatus(S.superpose([1, 2, 3])).map((row) => [row.status, row.text]),
+      [
+        ["value", "1"],
+        ["value", "2"],
+        ["value", "3"],
+      ],
+    );
+  });
+
   it("bounds what a reduction may spend in inferences", () => {
     m.run("(= (spin $n) (spin (+ $n 1)))");
     assert.throws(

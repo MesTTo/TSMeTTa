@@ -138,6 +138,18 @@ describe("standing queries", () => {
 });
 
 describe("a live view", () => {
+  it("seeds with stored atoms rather than reductions of the pattern", async () => {
+    const kb = fresh();
+    m.run("(= (score ada) 42)");
+    kb.add(S.score(S.ada));
+
+    using view = await LiveView.open(kb, S.score(V.who));
+
+    assert.deepEqual([...view].map(String), ["(score ada)"]);
+    assert.ok(view.has(S.score(S.ada)));
+    assert.ok(!view.has(42));
+  });
+
   it("seeds from the space and stays current, counting multiplicity", async () => {
     const kb = fresh();
     kb.add(S.alarm(S.fire));

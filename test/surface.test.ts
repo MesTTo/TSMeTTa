@@ -269,6 +269,49 @@ describe("a world", () => {
     assert.deepEqual(after, ["(todo 1 done)"]);
   });
 
+  it("has sees inherited rows and honours journalled removals", async () => {
+    const kb = fresh();
+    kb.add(S.todo(1, S.active));
+    const w = m.world(kb);
+
+    assert.ok(await w.has(S.todo(V.id, S.active)));
+    w.remove(S.todo(1, S.active));
+    assert.ok(!(await w.has(S.todo(V.id, S.active))));
+    w.add(S.todo(2, S.active));
+    assert.ok(await w.has(S.todo(V.id, S.active)));
+  });
+
+  it("keeps one visible copy after removing one duplicate in a world", async () => {
+    const kb = fresh();
+    kb.add(S.flag(S.held), S.flag(S.held));
+    const w = m.world(kb);
+
+    w.remove(S.flag(S.held));
+    assert.equal((await w.match(S.flag(S.held))).length, 1);
+    assert.ok(await w.has(S.flag(S.held)));
+    w.commit();
+    assert.equal((await kb.match(S.flag(S.held))).length, 1);
+  });
+
+  it("spends one removal budget for a nonground journal entry", async () => {
+    const kb = fresh();
+    kb.add(S.todo(1, S.active), S.todo(2, S.active));
+    const w = m.world(kb);
+
+    w.remove(S.todo(V.id, S.active));
+    assert.equal((await w.match(S.todo(V.id, S.active))).length, 1);
+    w.commit();
+    assert.equal((await kb.match(S.todo(V.id, S.active))).length, 1);
+
+    const any = fresh();
+    any.add(S.first(), S.second());
+    const anyWorld = m.world(any);
+    anyWorld.remove(V.atom);
+    assert.equal((await anyWorld.match(V.atom)).length, 1);
+    anyWorld.commit();
+    assert.equal(any.size, 1, "a bare variable removes one occurrence, not the whole space");
+  });
+
   it("refuses a second settlement, by code", () => {
     const w = m.world(fresh());
     w.commit();

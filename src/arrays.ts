@@ -19,6 +19,18 @@
  *     sorts that prefix once: O(n log k + k log k) time and O(k) space
  *     [tested: "matches a full stable top-k order across bounds and non-finite scores",
  *     "sorts only the retained top-k prefix after one streaming pass"; commit=6b5caa45cc0abc8b2d396c0614e22f427678be4b]
+ *   - `EmbeddingStore.remove` does not move or rewrite survivors; key order,
+ *     equal-score result order and survivor identity stay intact
+ *     [tested: "removes from the ordered index without rewriting every later
+ *     key", "resets its width after the last removal"; commit=WORKTREE]
+ *   - front-removal cost stays flat from 10,000 to 200,000 entries
+ *     [measured: old median 0.137769 ms then 4.140005 ms; ordered Map median
+ *     0.000330 ms then 0.000290 ms; command=node
+ *     ai-tmp/state-crash-embedding-remove-bench.mjs baseline 10000 && node
+ *     ai-tmp/state-crash-embedding-remove-bench.mjs current 10000 && node
+ *     ai-tmp/state-crash-embedding-remove-bench.mjs baseline 200000 && node
+ *     ai-tmp/state-crash-embedding-remove-bench.mjs current 200000;
+ *     fixture=101 front removals per size on Node 22.22.1; commit=WORKTREE]
  * Decides: a MATRIX is a typed array plus a shape, held beside it rather than
  *   inside it, because a `Float64Array` has one dimension and inventing a
  *   subclass to carry another would make every library's array the wrong kind.
@@ -353,18 +365,23 @@ export interface EmbeddingStoreOptions {
  * one thing. `(<name>-knn $query $k)` is nondeterministic retrieval, best
  * first; `(<name>-embed $key)` answers the stored vector or nothing.
  *
- * The vectors are copied into one contiguous row-major buffer, rebuilt lazily
- * after a write, and each row's norm is kept beside it. A query is then one
- * pass of `n * width` multiply-adds over that buffer with no per-vector
- * indirection, and the norms are not recomputed per query.
+ * An insertion-ordered map owns the vectors. They are copied into one
+ * contiguous row-major buffer, rebuilt lazily after a write, and each row's
+ * norm is kept beside it. A query is then one pass of `n * width`
+ * multiply-adds over that buffer with no per-vector indirection, and the norms
+ * are not recomputed per query.
  */
 export class EmbeddingStore implements Disposable {
-  readonly #keys: Atom[] = [];
-  readonly #slots = new Map<Atom, number>();
-  readonly #vectors: Float64Array[] = [];
+  // Map replacement preserves an entry's position; delete followed by set
+  // appends it. Node implements the specified order with an ordered hash table
+  // whose delete finds one bucket entry and marks that entry as a hole.
+  // https://tc39.es/ecma262/2026/multipage/keyed-collections.html#sec-map.prototype.set
+  // https://github.com/v8/v8/blob/f2f944440cd96ec11dd85e2dd2f79326fd750835/src/objects/ordered-hash-table.cc
+  readonly #entries = new Map<Atom, Float64Array>();
   readonly #installed: Defined[];
   readonly #mirror: boolean;
   readonly #space: Space;
+  #keyOrder: readonly Atom[] | undefined;
   #matrix: Float64Array | undefined;
   #norms: Float64Array | undefined;
   #width: number | undefined;
@@ -392,7 +409,7 @@ export class EmbeddingStore implements Disposable {
 
   /** How many keys are stored. */
   get size(): number {
-    return this.#keys.length;
+    return this.#entries.size;
   }
 
   /** The width every vector has, or undefined while the store is empty. */
@@ -402,7 +419,7 @@ export class EmbeddingStore implements Disposable {
 
   /** Every key, in first-seen order. */
   get keys(): readonly Atom[] {
-    return this.#keys;
+    return this.#orderedKeys();
   }
 
   /** Store one vector, replacing whatever that key held. */
@@ -416,16 +433,15 @@ export class EmbeddingStore implements Disposable {
           `${String(held.length)}`,
       );
     }
-    const at = this.#slots.get(atom);
-    if (at === undefined) {
-      this.#slots.set(atom, this.#keys.length);
-      this.#keys.push(atom);
-      this.#vectors.push(held);
+    const previous = this.#entries.get(atom);
+    if (previous === undefined) {
+      this.#entries.set(atom, held);
+      this.#keyOrder = undefined;
     } else {
       if (this.#mirror) {
-        this.#space.delete(expr(sym("embedding"), atom, G(this.#vectors[at] as Float64Array)));
+        this.#space.delete(expr(sym("embedding"), atom, G(previous)));
       }
-      this.#vectors[at] = held;
+      this.#entries.set(atom, held);
     }
     this.#matrix = undefined;
     this.#norms = undefined;
@@ -434,27 +450,22 @@ export class EmbeddingStore implements Disposable {
 
   /** The vector one key holds, or undefined. */
   get(key: Term): Float64Array | undefined {
-    const at = this.#slots.get(toAtom(key));
-    return at === undefined ? undefined : this.#vectors[at];
+    return this.#entries.get(toAtom(key));
   }
 
   /** Forget one key. Answers whether it was there. */
   remove(key: Term): boolean {
     const atom = toAtom(key);
-    const at = this.#slots.get(atom);
-    if (at === undefined) return false;
+    const held = this.#entries.get(atom);
+    if (held === undefined) return false;
     if (this.#mirror) {
-      this.#space.delete(expr(sym("embedding"), atom, G(this.#vectors[at] as Float64Array)));
+      this.#space.delete(expr(sym("embedding"), atom, G(held)));
     }
-    this.#keys.splice(at, 1);
-    this.#vectors.splice(at, 1);
-    this.#slots.delete(atom);
-    // Every slot after the hole moved down by one.
-    for (let each = at; each < this.#keys.length; each += 1) {
-      this.#slots.set(this.#keys[each] as Atom, each);
-    }
+    this.#entries.delete(atom);
+    this.#keyOrder = undefined;
     this.#matrix = undefined;
     this.#norms = undefined;
+    if (this.#entries.size === 0) this.#width = undefined;
     return true;
   }
 
@@ -464,20 +475,20 @@ export class EmbeddingStore implements Disposable {
       throw new MettaError(`k is a positive whole number of neighbours, not ${String(k)}`);
     }
     const asked = asVector(query);
-    if (this.#keys.length === 0) return [];
+    if (this.#entries.size === 0) return [];
     if (this.#width !== undefined && asked.length !== this.#width) {
       throw new MettaError(
         `this store holds vectors of width ${String(this.#width)} and the query has ` +
           `${String(asked.length)}`,
       );
     }
-    const { matrix, norms } = this.#packed();
+    const { keys, matrix, norms } = this.#packed();
     const width = this.#width ?? 0;
     let queryNorm = 0;
     for (let at = 0; at < asked.length; at += 1) queryNorm += (asked[at] as number) ** 2;
     queryNorm = Math.sqrt(queryNorm);
-    const scores = new Float64Array(this.#keys.length);
-    for (let row = 0; row < this.#keys.length; row += 1) {
+    const scores = new Float64Array(keys.length);
+    for (let row = 0; row < keys.length; row += 1) {
       let dot = 0;
       const base = row * width;
       for (let at = 0; at < width; at += 1) {
@@ -488,7 +499,7 @@ export class EmbeddingStore implements Disposable {
       scores[row] = dot / (queryNorm * (norms[row] as number));
     }
     return topIndices(scores, k).map((at) => ({
-      key: this.#keys[at] as Atom,
+      key: keys[at] as Atom,
       score: scores[at] as number,
     }));
   }
@@ -496,13 +507,12 @@ export class EmbeddingStore implements Disposable {
   /** Forget everything, mirrored facts included. */
   clear(): void {
     if (this.#mirror) {
-      for (const [at, key] of this.#keys.entries()) {
-        this.#space.delete(expr(sym("embedding"), key, G(this.#vectors[at] as Float64Array)));
+      for (const [key, vector] of this.#entries) {
+        this.#space.delete(expr(sym("embedding"), key, G(vector)));
       }
     }
-    this.#keys.length = 0;
-    this.#vectors.length = 0;
-    this.#slots.clear();
+    this.#entries.clear();
+    this.#keyOrder = undefined;
     this.#matrix = undefined;
     this.#norms = undefined;
     this.#width = undefined;
@@ -517,26 +527,37 @@ export class EmbeddingStore implements Disposable {
     this.close();
   }
 
-  #packed(): { matrix: Float64Array; norms: Float64Array } {
+  #orderedKeys(): readonly Atom[] {
+    const held = this.#keyOrder;
+    if (held !== undefined) return held;
+    const built = Object.freeze([...this.#entries.keys()]);
+    this.#keyOrder = built;
+    return built;
+  }
+
+  #packed(): { keys: readonly Atom[]; matrix: Float64Array; norms: Float64Array } {
+    const keys = this.#orderedKeys();
     const held = this.#matrix;
     const norms = this.#norms;
-    if (held !== undefined && norms !== undefined) return { matrix: held, norms };
+    if (held !== undefined && norms !== undefined) return { keys, matrix: held, norms };
     const width = this.#width ?? 0;
-    const built = new Float64Array(this.#keys.length * width);
-    const lengths = new Float64Array(this.#keys.length);
-    for (const [row, vector] of this.#vectors.entries()) {
+    const built = new Float64Array(keys.length * width);
+    const lengths = new Float64Array(keys.length);
+    let row = 0;
+    for (const vector of this.#entries.values()) {
       built.set(vector, row * width);
       let total = 0;
       for (let at = 0; at < width; at += 1) total += (vector[at] as number) ** 2;
       lengths[row] = Math.sqrt(total);
+      row += 1;
     }
     this.#matrix = built;
     this.#norms = lengths;
-    return { matrix: built, norms: lengths };
+    return { keys, matrix: built, norms: lengths };
   }
 
   toString(): string {
-    return `EmbeddingStore(${String(this.#keys.length)} x ${String(this.#width ?? 0)})`;
+    return `EmbeddingStore(${String(this.#entries.size)} x ${String(this.#width ?? 0)})`;
   }
 }
 

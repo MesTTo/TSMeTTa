@@ -6,6 +6,10 @@
  *   - each door is exercised against a live engine where it needs one
  *   - the custom-match seam is shown to be ABSENT until something registers,
  *     which is the property that keeps it free for programs that never use it
+ *   - embedding removal leaves survivor identity and stable result order
+ *     intact without rewriting later index entries
+ *     [tested: "removes from the ordered index without rewriting every later
+ *     key", "resets its width after the last removal"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -421,6 +425,49 @@ describe("vectors by key", () => {
     buffer[1] = 1;
     store.add(S.second, buffer);
     assert.deepEqual([...(store.get(S.first) ?? [])], [1, 0]);
+  });
+
+  it("removes from the ordered index without rewriting every later key", () => {
+    using store = new EmbeddingStore(m, { name: "cov-delete", mirror: false });
+    const keys = Array.from({ length: 8_192 }, (_, at) => sym(`delete-${String(at)}`));
+    for (const key of keys) store.add(key, [1, 0]);
+    const lastVector = store.get(keys.at(-1) as Atom);
+
+    const original = Map.prototype.set;
+    let rewritten = 0;
+    Map.prototype.set = function counted<K, V>(this: Map<K, V>, key: K, value: V): Map<K, V> {
+      rewritten += 1;
+      return original.call(this, key, value) as Map<K, V>;
+    } as typeof Map.prototype.set;
+    try {
+      assert.ok(store.remove(keys[0] as Atom));
+    } finally {
+      Map.prototype.set = original;
+    }
+
+    assert.equal(rewritten, 0, "removal re-indexed every key after the hole");
+    assert.equal(store.get(keys.at(-1) as Atom), lastVector, "a survivor changed identity");
+    assert.deepEqual([...store.keys].slice(0, 3), keys.slice(1, 4));
+    assert.deepEqual(
+      store.search([1, 0], 3).map(({ key }) => key),
+      keys.slice(1, 4),
+      "equal-scoring results lost insertion order",
+    );
+
+    const readded = keys[100] as Atom;
+    assert.ok(store.remove(readded));
+    store.add(readded, [1, 0]);
+    assert.equal(store.keys.at(-1), readded, "a re-added key did not take a new last position");
+  });
+
+  it("resets its width after the last removal", () => {
+    using store = new EmbeddingStore(m, { name: "cov-empty-delete", mirror: false });
+    store.add(S.only, [1, 0]);
+    assert.ok(store.remove(S.only));
+    assert.equal(store.size, 0);
+    assert.equal(store.width, undefined);
+    store.add(S.wider, [1, 0, 0]);
+    assert.equal(store.width, 3);
   });
 
   it("refuses a vector cosine similarity has no answer for", () => {

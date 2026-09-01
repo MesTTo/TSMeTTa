@@ -371,11 +371,11 @@ m.theory(Arithmetic);          // installs `twice-over` and `thrice-over`
 ```
 
 A class with no marks installs every own prototype method. `@equation`,
-`@grounded` and `@tabled` narrow that to the marked ones, for a class that also
-carries helpers, and they compose. They need a BUILD, though: TypeScript
-compiles Stage-3 method decorators and V8 has not shipped them, so a decorated
-class does not run under Node's own type stripping. The unmarked form runs
-everywhere.
+`@grounded` and `@named("exact-head")` narrow that to the marked ones, for a
+class that also carries helpers, and the marks compose on one method. They need
+a BUILD, though: TypeScript compiles Stage-3 method decorators and V8 has not
+shipped them, so a decorated class does not run under Node's own type stripping.
+The unmarked form runs everywhere.
 
 ## Coordination
 

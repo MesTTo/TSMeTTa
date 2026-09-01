@@ -9,6 +9,9 @@
  *     no decorator and works on any runtime
  *   - `@equation` and `@grounded` narrow that to the marked methods when a
  *     class also carries helpers
+ *   - marks compose on one method: `op` wins and an explicit name survives
+ *     [tested: "composes equation, grounded, and named marks on one method";
+ *     commit=WORKTREE]
  *   - discovery neither constructs the class nor evaluates accessors
  *     [tested: npm run build --silent && node --test
  *     --test-name-pattern='discovers decorated theory methods without constructing|skips accessors while discovering theory methods'
@@ -52,9 +55,8 @@ function stronger(left: Door, right: Door): Door {
 }
 
 function mark(method: Function, marked: Marked): void {
-  // Marks COMPOSE, so `@tabled @equation fib()` is one definition the engine
-  // tables rather than two definitions of one head, and an explicit name given
-  // by either mark survives the other.
+  // Marks COMPOSE, so `@grounded @named("fib-fast") fib()` is one host
+  // operation under its exact name rather than two installations.
   const existing = marks.get(method);
   const name = marked.name ?? existing?.name;
   marks.set(method, {

@@ -26,6 +26,10 @@
  *   - a null literal is MeTTa's empty expression, not a symbol whose text only
  *     resembles it [tested: "lowers null to the empty expression";
  *     commit=191f969429df26e26769391d44234f20af481fff]
+ *   - unary minus over a number or bigint literal remains one literal atom,
+ *     so data position does not depend on a later reduction [tested: "folds
+ *     unary minus over number and bigint literals into literal atoms";
+ *     commit=WORKTREE]
  * Decides: the lowering is a TRANSLATION, not an interpretation. `===` becomes
  *   the engine's `==`, `%` becomes the engine's `%`, and a call becomes an
  *   expression, so what runs is MeTTa and the TypeScript was only notation.
@@ -368,6 +372,18 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
     }
     case "UnaryExpression": {
       const unary = node as { operator: string; argument: AcornExpression };
+      // Acorn and ESTree keep a leading sign above the literal. Fold at that
+      // seam, as ESLint does when it needs the signed constant's value, rather
+      // than turning literal DATA into a runnable subtraction expression.
+      // [source: Acorn@5bd50cd72dc9ddb1856ed13cfa8a1c4884be917a
+      // acorn/src/expression.js:611-619 and
+      // ESLint@2417cad57d7d1bc4cf3ecf0f0575cfb10ff2011c
+      // lib/rules/radix.js:47-62; commit=WORKTREE]
+      if (unary.operator === "-" && unary.argument.type === "Literal") {
+        const value = (unary.argument as { value: unknown }).value;
+        if (typeof value === "number") return toAtom(-value);
+        if (typeof value === "bigint") return toAtom(-value);
+      }
       const inner = lowerExpression(unary.argument, bindings, scope);
       if (unary.operator === "-") return expr(sym("-"), toAtom(0), inner);
       if (unary.operator === "+") return inner;

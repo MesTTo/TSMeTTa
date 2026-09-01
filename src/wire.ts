@@ -38,7 +38,8 @@
  *     [tested: "refuses a numeric root before it can impersonate an
  *     expression-close marker"; commit=d3b3d62e19cd5dc941a6af8df24bc48992327236]
  *   - repeated crossings of one primitive host value reuse its live handle
- *     [tested: "reuses one host id for each primitive value"; commit=WORKTREE]
+ *     [tested: "reuses one host id for each primitive value";
+ *     commit=e4367498bed06c34f25aff75335e7b25f28b3b73]
  * Owns: the live-host-value table. A value that crossed into the engine is
  *   retained until the engine is disposed, because nothing on this side can
  *   observe that the engine has dropped the id.

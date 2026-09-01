@@ -7,7 +7,7 @@
  *   - repeated primitive host values reuse one live handle and clearing the
  *     table cannot resurrect that handle [tested: "reuses one host id for each
  *     primitive value"; "clears primitive ids without recycling a released
- *     handle"; commit=WORKTREE]
+ *     handle"; commit=e4367498bed06c34f25aff75335e7b25f28b3b73]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

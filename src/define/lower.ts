@@ -23,6 +23,9 @@
  *   - an explicit scope contributes only its own properties
  *     [tested: "does not resolve inherited names from an explicit lowering scope";
  *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
+ *   - a null literal is MeTTa's empty expression, not a symbol whose text only
+ *     resembles it [tested: "lowers null to the empty expression";
+ *     commit=WORKTREE]
  * Decides: the lowering is a TRANSLATION, not an interpretation. `===` becomes
  *   the engine's `==`, `%` becomes the engine's `%`, and a call becomes an
  *   expression, so what runs is MeTTa and the TypeScript was only notation.
@@ -317,7 +320,7 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
   switch (node.type) {
     case "Literal": {
       const value = (node as { value: unknown }).value;
-      if (value === null) return sym("()");
+      if (value === null) return expr();
       if (typeof value === "bigint" || typeof value === "number" || typeof value === "string" || typeof value === "boolean") {
         return toAtom(value);
       }

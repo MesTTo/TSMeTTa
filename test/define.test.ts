@@ -7,6 +7,9 @@
  *     asked above it
  *   - a construct with no MeTTa meaning refuses at DEFINITION time, naming
  *     both the construct and the remedy
+ *   - a null literal lowers to MeTTa's empty expression rather than a symbol
+ *     that only renders the same way [tested: "lowers null to the empty
+ *     expression"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -64,6 +67,20 @@ describe("a lowered body", () => {
     assert.equal(String(await divisor(91, 2).one()), "7");
     assert.equal(String(await divisor(97, 2).one()), "97");
     assert.equal(findDivisor(91, 2), 7, "the same body still runs in TypeScript");
+  });
+
+  it("lowers null to the empty expression", async () => {
+    const nothing = m.define(function nothing(): null {
+      return null;
+    });
+    const equation = nothing.equations[0] as Expression;
+    const body = equation.items[2];
+    assert.ok(body instanceof Expression);
+    assert.deepEqual(body.items, []);
+
+    const answer = await nothing().one();
+    assert.ok(answer instanceof Expression);
+    assert.deepEqual(answer.items, []);
   });
 
   it("installs the head TypeScript's own casing images to", () => {

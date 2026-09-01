@@ -23,7 +23,7 @@
  *     is not floating-point noise
  *   - preset and law names resolve only through their tables' own entries
  *     [tested: "ships the carriers a program reaches for", "refuses inherited
- *     object names as algebra law aliases"; commit=WORKTREE]
+ *     object names as algebra law aliases"; commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
  * Decides: the reads are asynchronous where the Python original is
  *   synchronous, because reading a space's atoms is asynchronous on this
  *   transport and pretending otherwise would mean draining a cursor behind the

@@ -20,7 +20,8 @@
  *   - `alphaKey` is equal for two terms that differ only in variable
  *     SPELLING, so an ordinary `Map` keyed by it is an alpha-invariant index
  *   - every legal variable name binds independently of Object.prototype
- *     [tested: "binds variable names inherited by Object.prototype"; commit=WORKTREE]
+ *     [tested: "binds variable names inherited by Object.prototype";
+ *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
  * Decides: no occurs check, which is the engine's own behaviour and the Python
  *   host matcher's. A cyclic binding is therefore reachable, and the
  *   normalisation walk is written to stay finite when it meets one rather than

@@ -21,7 +21,8 @@
  *   - synchronous collection preserves every event in engine order, and host
  *     operation dispatch selects the registered name AND arity
  *     [tested: "keeps every answer of a nondeterministic transaction",
- *     "dispatches the currently registered arity at a shared name"; commit=WORKTREE]
+ *     "dispatches the currently registered arity at a shared name";
+ *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
  * Owns: one WebAssembly instance per boot(), one Prolog engine per open job,
  *   and the live-host-value table, all released by dispose().
  * Decides: a job is addressed by integer because the WebAssembly value

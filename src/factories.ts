@@ -16,7 +16,7 @@
  *   - inherited Object.prototype names remain ordinary MeTTa vocabulary while
  *     primitive coercion of a factory stays valid JavaScript
  *     [tested: "treats inherited object names as ordinary MeTTa names";
- *     commit=WORKTREE]
+ *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
  * Decides: `S` and `fn` both apply the map, and `V` does not. A symbol and an
  *   operation are shared VOCABULARY, so each host reaches them through its own
  *   casing and `S["car-atom"]`, `S.carAtom` and `fn.carAtom` are one atom said

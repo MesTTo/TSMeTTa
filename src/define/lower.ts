@@ -22,7 +22,7 @@
  *     loudly instead of silently building the wrong term
  *   - an explicit scope contributes only its own properties
  *     [tested: "does not resolve inherited names from an explicit lowering scope";
- *     commit=WORKTREE]
+ *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
  * Decides: the lowering is a TRANSLATION, not an interpretation. `===` becomes
  *   the engine's `==`, `%` becomes the engine's `%`, and a call becomes an
  *   expression, so what runs is MeTTa and the TypeScript was only notation.

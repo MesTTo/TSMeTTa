@@ -17,7 +17,7 @@
  *   - `atoms()` walks stored atoms without evaluating any of them
  *   - a transaction returns every answer in engine order rather than only the
  *     last [tested: "keeps every answer of a nondeterministic transaction";
- *     commit=WORKTREE]
+ *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
  * Decides: the collection verbs are SYNCHRONOUS. The transport is in process,
  *   so a synchronous twin genuinely exists, and the async-primary law asks for
  *   an async surface where the transport needs one rather than everywhere. The

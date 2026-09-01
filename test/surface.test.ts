@@ -6,6 +6,9 @@
  *   - a binding row survives a bound value that names a function, which a bare
  *     tuple template would have reduced [measured 2026-08-27]
  *   - a world's restore leaves its parent exactly as it was
+ *   - `runOne` refuses nondeterministic terms instead of silently returning
+ *     their final answer [tested: "runOne refuses a term with more than one
+ *     answer"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -177,6 +180,15 @@ describe("rows", () => {
     kb.add(S.n(2), S.n(3));
     const doubled = await kb.match(S.n(V.x), S["*"](V.x, 2));
     assert.deepEqual(doubled.map(String).sort(), ["4", "6"]);
+  });
+});
+
+describe("one synchronous answer", () => {
+  it("runOne refuses a term with more than one answer", () => {
+    assert.throws(
+      () => m.runOne(S.superpose([1, 2, 3])),
+      (error: MettaError) => error.code === "ERR_METTA_AMBIGUOUS",
+    );
   });
 });
 

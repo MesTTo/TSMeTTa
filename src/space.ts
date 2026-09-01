@@ -18,6 +18,9 @@
  *   - a transaction returns every answer in engine order rather than only the
  *     last [tested: "keeps every answer of a nondeterministic transaction";
  *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
+ *   - `runOne` enforces exact cardinality instead of selecting one answer from
+ *     a nondeterministic result [tested: "runOne refuses a term with more than
+ *     one answer"; commit=WORKTREE]
  *   - a ground expression remains a structured space identity across every
  *     collection, query, reflection, and lifecycle door [tested: "keeps
  *     parametric space identities structured and collision-free";
@@ -837,13 +840,21 @@ export class Space {
    */
   runOne(term: Term): Atom {
     const built = toAtom(term);
-    const event = this.#command(["eval", this.#wire(built), this.reference]).sync();
-    if (event === null || event.kind !== "answer") {
+    const answers = this.#command(["eval", this.#wire(built), this.reference])
+      .syncAll()
+      .filter((event): event is JobEvent & { readonly kind: "answer" } => event.kind === "answer");
+    if (answers.length === 0) {
       throw new ResultError(
         `${built.text} answered nothing, where one answer was required`,
       );
     }
-    return event.atom;
+    if (answers.length > 1) {
+      throw new ResultError(
+        `more than one answer to ${built.text}, where exactly one was required`,
+        { code: "ERR_METTA_AMBIGUOUS" },
+      );
+    }
+    return answers[0].atom;
   }
 
   /**

@@ -20,7 +20,8 @@
  *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
  *   - a ground expression remains a structured space identity across every
  *     collection, query, reflection, and lifecycle door [tested: "keeps
- *     parametric space identities structured and collision-free"; commit=WORKTREE]
+ *     parametric space identities structured and collision-free";
+ *     commit=e112cbc47bf8f77f002a8edf5c2668aa5f337c5f]
  * Decides: the collection verbs are SYNCHRONOUS. The transport is in process,
  *   so a synchronous twin genuinely exists, and the async-primary law asks for
  *   an async surface where the transport needs one rather than everywhere. The

@@ -14,7 +14,7 @@
  *     commit=6b117a66f6d1028496594942d4b4bdb4cc2b14fe]
  *   - parametric spaces retain their ground expression identity instead of a
  *     flattened display-name approximation [tested: "keeps parametric space
- *     identities structured and collision-free"; commit=WORKTREE]
+ *     identities structured and collision-free"; commit=e112cbc47bf8f77f002a8edf5c2668aa5f337c5f]
  *   - nothing this surface does writes to the host's console
  * Owns: one engine, its spaces, its registered operations, and its scopes.
  * Open Obligations:

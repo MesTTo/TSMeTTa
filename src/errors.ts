@@ -17,7 +17,8 @@
  *   - every concrete exported condition has a source producer; retired strict
  *     scope conditions are absent rather than reserving unreachable catch arms
  *     [tested: "discovers every published condition and its producer";
- *     "contains no retired strict-scope conditions"; commit=WORKTREE]
+ *     "contains no retired strict-scope conditions";
+ *     commit=f634a8072585acef6195994b1220cb822575822e]
  *   - a reduction that failed across several nondeterministic branches raises
  *     the platform's own `AggregateError` with one `cause`-chained entry per
  *     branch, rather than an error shape invented here

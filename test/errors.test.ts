@@ -7,7 +7,8 @@
  *   - every exported concrete condition has a source producer and obsolete
  *     strict-scope conditions cannot return to the types or documentation
  *     [tested: "discovers every published condition and its producer";
- *     "contains no retired strict-scope conditions"; commit=WORKTREE]
+ *     "contains no retired strict-scope conditions";
+ *     commit=f634a8072585acef6195994b1220cb822575822e]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

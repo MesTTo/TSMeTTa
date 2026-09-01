@@ -11,6 +11,9 @@
  *   - a Set view preserves the distinction between a MeTTa symbol and a
  *     grounded host string [tested: "round-trips symbols written through a Set
  *     view"; commit=ed4a5431b5725fd19fea8d09f1228e857aa40865]
+ *   - a collection view answers a bound key through the collection's native
+ *     lookup without walking its entries [tested: "uses native keyed lookups
+ *     for bound collection probes"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -28,10 +31,12 @@ import {
   type MeTTa,
   S,
   type SpaceProvider,
+  type Term,
   V,
   capabilitiesOf,
   hostValue,
   metta,
+  toAtom,
 } from "../src/index.ts";
 import { diff, mapped, objectView, overlay, readOnly, union, view } from "../src/spaces.ts";
 import { checkSpaceProvider } from "../src/testing.ts";
@@ -217,6 +222,61 @@ describe("the space combinators", () => {
     } finally {
       m.detach(name);
     }
+  });
+
+  it("uses native keyed lookups for bound collection probes", () => {
+    const matches = (data: object, pattern: Term): Atom[] => {
+      const matcher = view(data).match;
+      assert.ok(matcher !== undefined);
+      return [...(matcher(toAtom(pattern)) as Iterable<Atom>)];
+    };
+
+    const keyed = new Map<unknown, number>([
+      ["ada", 3],
+      [S.ada.atom, 5],
+    ]);
+    let mapWalks = 0;
+    const mapEntries = keyed.entries.bind(keyed);
+    keyed.entries = () => {
+      mapWalks += 1;
+      return mapEntries();
+    };
+    assert.deepEqual(
+      matches(keyed, S.kv(S.ada, V.score)).map(String),
+      ["(kv ada 3)", "(kv ada 5)"],
+    );
+    assert.equal(mapWalks, 0, "a bound Map key walked the Map");
+
+    const grounded = G(3);
+    const members = new Set<unknown>([3, grounded]);
+    let setWalks = 0;
+    const setIterator = members[Symbol.iterator].bind(members);
+    members[Symbol.iterator] = () => {
+      setWalks += 1;
+      return setIterator();
+    };
+    assert.equal(matches(members, grounded).length, 2, "both stored images must remain answers");
+    assert.equal(setWalks, 0, "a ground Set member walked the Set");
+
+    let arrayReads = 0;
+    const list = new Proxy(["zero", "one"], {
+      get(target, key, receiver) {
+        if (key === "0" || key === "1") arrayReads += 1;
+        return Reflect.get(target, key, receiver) as unknown;
+      },
+    });
+    assert.deepEqual(matches(list, S.kv(1, "one")).map(String), ['(kv 1 "one")']);
+    assert.equal(arrayReads, 1, "a bound array index read every element");
+
+    let objectWalks = 0;
+    const record = new Proxy({ ada: 3 }, {
+      ownKeys(target) {
+        objectWalks += 1;
+        return Reflect.ownKeys(target);
+      },
+    });
+    assert.deepEqual(matches(record, S.kv(S.ada, 3)).map(String), ["(kv ada 3)"]);
+    assert.equal(objectWalks, 0, "a bound object key enumerated the object");
   });
 
   it("refuses a write through the engine's own capability rule", async () => {

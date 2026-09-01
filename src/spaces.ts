@@ -29,6 +29,9 @@
  *     stay grounded strings, so both values can coexist and round trip
  *     [tested: "round-trips symbols written through a Set view";
  *     commit=ed4a5431b5725fd19fea8d09f1228e857aa40865]
+ *   - a ground Set member or keyed collection position is pushed into the
+ *     collection's native lookup instead of scanning its entries [tested:
+ *     "uses native keyed lookups for bound collection probes"; commit=WORKTREE]
  * Decides: a combinator takes a live `Space` handle or a provider, never a
  *   NAME. A name alone carries no engine, and a combinator that accepted one
  *   would have to guess which engine it meant.
@@ -355,12 +358,9 @@ const KV = sym("kv");
  * ```
  */
 export function view(data: object): SpaceProvider {
-  const entries = (): Iterable<readonly [Term, unknown]> => {
-    if (data instanceof Map) return [...data.entries()] as [Term, unknown][];
-    if (Array.isArray(data)) return data.map((value, index) => [index, value] as const);
-    return Object.entries(data).map(([key, value]) => [sym(key), value] as const);
-  };
   const keyAtom = (key: Term): Atom => (typeof key === "string" ? sym(key) : toAtom(key));
+  const candidate = (key: Term, value: unknown): Atom =>
+    expr(KV, keyAtom(key), toAtom(value as Term));
   if (data instanceof Set) {
     const memberOf = (atom: Atom): unknown => atom instanceof Sym ? atom : hostOf(atom);
     return {
@@ -371,9 +371,12 @@ export function view(data: object): SpaceProvider {
         // A ground probe is one `Set.has`, which is the whole point of
         // pushing the pattern down: the collection's own index answers.
         if (isGround(pattern)) {
-          for (const member of data) {
-            if (toAtom(member as Term) === pattern) yield pattern;
-          }
+          const member = memberOf(pattern);
+          if (data.has(member)) yield pattern;
+          // A Set may have been populated directly with the atom rather than
+          // through this view. Both representations image to the same atom and
+          // remain two occurrences when both are present.
+          if (member !== pattern && data.has(pattern)) yield pattern;
           return;
         }
         for (const member of data) yield toAtom(member as Term);
@@ -389,9 +392,46 @@ export function view(data: object): SpaceProvider {
       },
     };
   }
+
+  let entries: () => Iterable<readonly [Term, unknown]>;
+  let atKey: (key: Atom) => Iterable<readonly [Term, unknown]>;
+  if (data instanceof Map) {
+    entries = () => data.entries() as MapIterator<[Term, unknown]>;
+    atKey = function* (key: Atom): Generator<readonly [Term, unknown]> {
+      const host = hostOf(key);
+      if (data.has(host)) yield [host as Term, data.get(host)];
+      // A Map can have been populated directly with an atom key. Preserve the
+      // two candidates when both the host key and atom key are present.
+      if (host !== key && data.has(key)) yield [key, data.get(key)];
+    };
+  } else if (Array.isArray(data)) {
+    entries = function* (): Generator<readonly [Term, unknown]> {
+      for (let index = 0; index < data.length; index += 1) {
+        if (Object.hasOwn(data, index)) yield [index, data[index]];
+      }
+    };
+    atKey = function* (key: Atom): Generator<readonly [Term, unknown]> {
+      const host = hostOf(key);
+      if (typeof host !== "number" && typeof host !== "bigint") return;
+      const index = Number(host);
+      if (!Number.isSafeInteger(index) || index < 0 || !Object.hasOwn(data, index)) return;
+      yield [index, data[index]];
+    };
+  } else {
+    const record = data as Record<string, unknown>;
+    entries = function* (): Generator<readonly [Term, unknown]> {
+      for (const key in record) {
+        if (Object.hasOwn(record, key)) yield [key, record[key]];
+      }
+    };
+    atKey = function* (key: Atom): Generator<readonly [Term, unknown]> {
+      if (!(key instanceof Sym) || !Object.hasOwn(record, key.name)) return;
+      yield [key.name, record[key.name]];
+    };
+  }
   return {
     *atoms(): Generator<Atom> {
-      for (const [key, value] of entries()) yield expr(KV, keyAtom(key), toAtom(value as Term));
+      for (const [key, value] of entries()) yield candidate(key, value);
     },
     *match(pattern: Atom): Generator<Atom> {
       if (
@@ -401,9 +441,10 @@ export function view(data: object): SpaceProvider {
       ) {
         return;
       }
-      for (const [key, value] of entries()) {
-        const candidate = expr(KV, keyAtom(key), toAtom(value as Term));
-        if (matchTerms(pattern, candidate) !== undefined) yield candidate;
+      const key = pattern.items[1] as Atom;
+      for (const [held, value] of isGround(key) ? atKey(key) : entries()) {
+        const found = candidate(held, value);
+        if (matchTerms(pattern, found) !== undefined) yield found;
       }
     },
     add(atom: Atom): void {

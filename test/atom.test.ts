@@ -216,13 +216,83 @@ describe("walking", () => {
 });
 
 describe("the standard order", () => {
-  it("sorts variable, number, symbol, text, expression", () => {
+  it("sorts variable, number, text, symbol, expression", () => {
     const sorted = [expr(sym("z")), sym("b"), variable("v"), G(3), G("s")].sort(byStandardOrder);
-    assert.deepEqual(sorted.map(String), ["$v", "3", "b", '"s"', "(z)"]);
+    assert.deepEqual(sorted.map(String), ["$v", "3", '"s"', "b", "(z)"]);
   });
 
-  it("sorts expressions by arity before contents", () => {
-    const sorted = [expr(sym("a"), sym("b")), expr(sym("z"))].sort(byStandardOrder);
-    assert.deepEqual(sorted.map(String), ["(z)", "(a b)"]);
+  it("matches the engine's numeric, atomic and list order at every edge", () => {
+    assert.ok(byStandardOrder(G(Number.NaN), G(Number.NEGATIVE_INFINITY)) < 0);
+    assert.ok(byStandardOrder(G(-0), float(0)) < 0);
+    assert.ok(byStandardOrder(float(0), G(0)) < 0);
+    assert.ok(byStandardOrder(G(2n ** 60n), G(2n ** 60n + 1n)) < 0);
+    assert.ok(byStandardOrder(G(2 ** 60), G(2n ** 60n + 1n)) < 0);
+    assert.ok(byStandardOrder(G("true"), G(true)) < 0);
+    assert.ok(byStandardOrder(expr(), sym("Apple")) < 0);
+    assert.ok(byStandardOrder(expr(sym("a"), sym("b")), expr(sym("z"))) < 0);
+    assert.ok(byStandardOrder(expr(sym("a")), expr(sym("a"), sym("b"))) < 0);
+    assert.ok(byStandardOrder(sym("\u{e000}"), sym("\u{10000}")) < 0);
+  });
+
+  it("is a total order across every host atom distinction", () => {
+    const first = {};
+    const second = {};
+    const atoms: readonly Atom[] = [
+      variable("alpha"),
+      variable("beta"),
+      G(Number.NaN),
+      G(Number.NEGATIVE_INFINITY),
+      G(-0),
+      float(0),
+      G(0),
+      G(0n),
+      G(2 ** 60),
+      G(2n ** 60n),
+      G(2n ** 60n + 1n),
+      G(Number.POSITIVE_INFINITY),
+      G("\u{e000}"),
+      G("\u{10000}"),
+      expr(),
+      sym("[]"),
+      G(first),
+      G(second),
+      G(Symbol.for("metta-node.atom.order")),
+      G(Symbol("metta-node.atom.order")),
+      space("&same"),
+      sym("&same"),
+      G(false),
+      sym("false"),
+      G(true),
+      sym("true"),
+      expr(sym("a")),
+      expr(sym("a"), sym("b")),
+      expr(sym("z")),
+    ];
+    const sign = (value: number): number => Math.sign(value);
+    for (const left of atoms) {
+      assert.equal(byStandardOrder(left, left), 0, `atom ${String(left.id)} is not reflexive`);
+      for (const right of atoms) {
+        const leftRight = byStandardOrder(left, right);
+        const rightLeft = byStandardOrder(right, left);
+        assert.equal(
+          sign(leftRight) + sign(rightLeft),
+          0,
+          `atoms ${String(left.id)} and ${String(right.id)} are not antisymmetric`,
+        );
+        assert.equal(
+          leftRight === 0,
+          left === right,
+          `distinct atoms ${String(left.id)} and ${String(right.id)} compare equal`,
+        );
+        for (const last of atoms) {
+          if (leftRight <= 0 && byStandardOrder(right, last) <= 0) {
+            assert.ok(
+              byStandardOrder(left, last) <= 0,
+              `atoms ${String(left.id)}, ${String(right.id)}, ${String(last.id)} are not transitive`,
+            );
+          }
+        }
+      }
+    }
   });
 });

@@ -8,6 +8,9 @@
  *   - Number and BigInt cross the signed-i64 boundary without losing a digit
  *   - an abandoned stream leaves the rest of an unbounded generator uncomputed
  *   - nothing the engine says reaches the host's console
+ *   - `byStandardOrder` sorts the shared atom image exactly as SWI `msort`
+ *     [tested: "sorts the shared atom image exactly as the engine's msort";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -21,6 +24,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  Atom,
+  Expression,
+  G,
   Grounded,
   type MeTTa,
   MettaError,
@@ -29,12 +35,17 @@ import {
   Superpose,
   V,
   atomFromWire,
+  byStandardOrder,
+  expr,
+  exprOf,
+  float,
   hostText,
   isError,
   metta,
   packageRoot,
   space,
   sym,
+  variable,
   wireFromAtom,
 } from "../src/index.ts";
 
@@ -303,6 +314,49 @@ describe("running a program", () => {
 });
 
 describe("the codec, through the engine", () => {
+  it("sorts the shared atom image exactly as the engine's msort", async () => {
+    const first = {};
+    const second = {};
+    const firstAtom = G(first);
+    const secondAtom = G(second);
+    // Fix the engine's opaque-handle ids before permuting the atoms. The host
+    // uses the corresponding atom identities for the part SWI cannot name.
+    await m.eval(firstAtom).toArray();
+    await m.eval(secondAtom).toArray();
+    const atoms = [
+      expr(sym("z")),
+      expr(sym("a"), sym("b")),
+      expr(sym("a")),
+      expr(),
+      sym("z"),
+      sym("Apple"),
+      G("kiwi"),
+      G(false),
+      G(true),
+      space("&space"),
+      firstAtom,
+      secondAtom,
+      G(Number.NaN),
+      G(Number.NEGATIVE_INFINITY),
+      G(-0),
+      float(0),
+      G(0),
+      G(0n),
+      G(2n ** 60n),
+      G(2n ** 60n + 1n),
+      variable("order"),
+    ];
+    const [answer] = await m.eval(S.msort(exprOf(atoms))).toArray();
+    assert.ok(answer instanceof Expression);
+    const label = (atom: Atom): string => {
+      if (atom instanceof Grounded && atom.value === first) return "opaque:first";
+      if (atom instanceof Grounded && atom.value === second) return "opaque:second";
+      if (atom.kind === "variable") return "variable";
+      return atom.text;
+    };
+    assert.deepEqual(answer.items.map(label), [...atoms].sort(byStandardOrder).map(label));
+  });
+
   it("tells a MeTTa integer from a MeTTa float", () => {
     const integer = m.run("!(+ 1 1)")[0]!.answers[0]!;
     const float = m.run("!(+ 1.0 1.0)")[0]!.answers[0]!;

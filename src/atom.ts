@@ -25,10 +25,16 @@
  *   - a registered symbol interns by its registry identity while an unregistered
  *     symbol interns by reference [tested: "interns registered symbols without
  *     treating them as weak keys"; commit=d3b3d62e19cd5dc941a6af8df24bc48992327236]
+ *   - `byStandardOrder` is a total refinement of the engine's order: it keeps
+ *     exact mixed numeric values, NaN, signed zero, Unicode text and proper-list
+ *     lexicography ordered, then breaks engine-equal host representations by
+ *     identity [tested: "matches the engine's numeric, atomic and list order at
+ *     every edge", "is a total order across every host atom distinction",
+ *     "sorts the shared atom image exactly as the engine's msort"; commit=WORKTREE]
  * Owns: the process-wide intern table. It holds every atom weakly.
- * Decides: the standard order is Prolog's, which is the order the engine's own
- *   sort uses: variable, number, symbol, string, compound. A live host value
- *   sorts last, after every term the engine can compare itself.
+ * Decides: the standard order refines SWI's wire order: variable, number,
+ *   string, empty list, atom, nonempty list. Where two distinct host atoms have
+ *   one engine image, process identity breaks the tie so zero means `===`.
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -595,49 +601,86 @@ export function floatText(value: number): string {
 
 const VARIABLE_RANK = 0;
 const NUMBER_RANK = 1;
-const SYMBOL_RANK = 2;
-const TEXT_RANK = 3;
-const REFERENCE_RANK = 4;
-const SPACE_RANK = 5;
-const EXPRESSION_RANK = 6;
+const TEXT_RANK = 2;
+const EMPTY_RANK = 3;
+const ATOM_RANK = 4;
+const EXPRESSION_RANK = 5;
 
 function rank(atom: Atom): number {
   if (atom instanceof Grounded) {
     const kind = typeof atom.value;
     if (kind === "number" || kind === "bigint") return NUMBER_RANK;
     if (kind === "string") return TEXT_RANK;
-    if (kind === "boolean") return TEXT_RANK;
-    return REFERENCE_RANK;
+    return ATOM_RANK;
   }
-  switch (atom.kind) {
-    case "variable":
-      return VARIABLE_RANK;
-    case "symbol":
-      return SYMBOL_RANK;
-    case "space":
-      return SPACE_RANK;
-    default:
-      return EXPRESSION_RANK;
-  }
+  if (atom instanceof Var) return VARIABLE_RANK;
+  if (atom instanceof Expression) return atom.items.length === 0 ? EMPTY_RANK : EXPRESSION_RANK;
+  return ATOM_RANK;
 }
 
-function compareValues(left: unknown, right: unknown): number {
-  if (
-    (typeof left === "number" || typeof left === "bigint") &&
-    (typeof right === "number" || typeof right === "bigint")
-  ) {
-    const a = Number(left);
-    const b = Number(right);
-    return a < b ? -1 : a > b ? 1 : 0;
+/** Compare Unicode scalar values, as SWI does, rather than UTF-16 code units. */
+function compareText(left: string, right: string): number {
+  let leftAt = 0;
+  let rightAt = 0;
+  while (leftAt < left.length && rightAt < right.length) {
+    const leftPoint = left.codePointAt(leftAt) as number;
+    const rightPoint = right.codePointAt(rightAt) as number;
+    if (leftPoint !== rightPoint) return leftPoint < rightPoint ? -1 : 1;
+    leftAt += leftPoint > 0xffff ? 2 : 1;
+    rightAt += rightPoint > 0xffff ? 2 : 1;
   }
-  const a = String(left);
-  const b = String(right);
-  return a < b ? -1 : a > b ? 1 : 0;
+  return leftAt < left.length ? 1 : rightAt < right.length ? -1 : 0;
 }
 
-function nameOf(atom: Atom): string {
-  if (atom instanceof Sym || atom instanceof Var || atom instanceof SpaceHandle) return atom.name;
-  return atom.text;
+/** A distinct process atom never compares equal to another. */
+function compareIdentity(left: Atom, right: Atom): number {
+  return left === right ? 0 : left.id - right.id;
+}
+
+/** Whether a numeric atom crosses as an SWI float rather than an integer. */
+function isFloatNumber(atom: Grounded<number | bigint>): boolean {
+  const value = atom.value;
+  return (
+    typeof value === "number" &&
+    (atom instanceof FloatAtom || !Number.isSafeInteger(value) || Object.is(value, -0))
+  );
+}
+
+/** Exact SWI numeric order, with host representation breaking engine ties. */
+function compareNumbers(
+  left: Grounded<number | bigint>,
+  right: Grounded<number | bigint>,
+): number {
+  const a = left.value;
+  const b = right.value;
+  const aNaN = typeof a === "number" && Number.isNaN(a);
+  const bNaN = typeof b === "number" && Number.isNaN(b);
+  if (aNaN || bNaN) {
+    if (aNaN !== bNaN) return aNaN ? -1 : 1;
+    return compareIdentity(left, right);
+  }
+  // ECMAScript's mixed Number/BigInt relational comparison compares their
+  // mathematical values; converting either side would lose wide integers.
+  if (a < b) return -1;
+  if (a > b) return 1;
+  if (typeof a === "number" && typeof b === "number" && Object.is(a, -0) !== Object.is(b, -0)) {
+    return Object.is(a, -0) ? -1 : 1;
+  }
+  const byFloat = Number(isFloatNumber(right)) - Number(isFloatNumber(left));
+  if (byFloat !== 0) return byFloat;
+  // A safe Number integer and a BigInt have one SWI image. Keep the host's two
+  // representations distinct so comparator equality still means atom identity.
+  if (typeof a !== typeof b) return typeof a === "number" ? -1 : 1;
+  return compareIdentity(left, right);
+}
+
+/** The SWI atom spelling a non-number, non-string host atom has. */
+function atomicName(atom: Atom): string {
+  if (atom instanceof Sym || atom instanceof SpaceHandle) return atom.name;
+  if (atom instanceof Grounded && typeof atom.value === "boolean") return String(atom.value);
+  // The bridge gives an opaque host value this prefix plus a session id. The
+  // atom id supplies the same stable distinction before any engine crossing.
+  return `$metta_node_object#${String(atom.id)}`;
 }
 
 /**
@@ -646,34 +689,64 @@ function nameOf(atom: Atom): string {
  * `atoms.sort(byStandardOrder)` where Python writes `sorted(atoms)`: one
  * argument where Python had none, because `Array.prototype.sort` wants a
  * comparator and inventing a default that is not the engine's would be worse.
- * The order is Prolog's standard order of terms, which is the order the engine
- * sorts by: variable, number, symbol, string, compound.
+ * The shared image follows SWI's standard order, with identity tie-breakers
+ * for distinctions the crossing erases. The numeric `<`/`>` below is exact
+ * across Number and BigInt by ECMAScript's mixed relational comparison.
  */
 export function byStandardOrder(left: Atom, right: Atom): number {
   // A worklist of PAIRS still to compare, deepest-first, so a term that is
   // deeper than the JavaScript stack still sorts. Children are pushed in
   // reverse, which is what keeps the comparison lexicographic.
-  const work: Atom[] = [left, right];
+  const work: (Atom | number)[] = [left, right];
   while (work.length > 0) {
-    const b = work.pop() as Atom;
-    const a = work.pop() as Atom;
-    const byRank = rank(a) - rank(b);
+    const b = work.pop() as Atom | number;
+    const a = work.pop() as Atom | number;
+    if (typeof a === "number" && typeof b === "number") {
+      if (a !== b) return a - b;
+      continue;
+    }
+    const leftAtom = a as Atom;
+    const rightAtom = b as Atom;
+    const leftRank = rank(leftAtom);
+    const rightRank = rank(rightAtom);
+    const byRank = leftRank - rightRank;
     if (byRank !== 0) return byRank;
-    if (a instanceof Expression && b instanceof Expression) {
-      if (a.items.length !== b.items.length) return a.items.length - b.items.length;
-      for (let at = a.items.length - 1; at >= 0; at -= 1) {
-        work.push(a.items[at] as Atom, b.items[at] as Atom);
+    if (
+      leftRank === EXPRESSION_RANK &&
+      leftAtom instanceof Expression &&
+      rightAtom instanceof Expression
+    ) {
+      const common = Math.min(leftAtom.items.length, rightAtom.items.length);
+      work.push(leftAtom.items.length, rightAtom.items.length);
+      for (let at = common - 1; at >= 0; at -= 1) {
+        work.push(leftAtom.items[at] as Atom, rightAtom.items[at] as Atom);
       }
       continue;
     }
-    const order =
-      a instanceof Grounded && b instanceof Grounded
-        ? compareValues(a.value, b.value)
-        : nameOf(a) < nameOf(b)
-          ? -1
-          : nameOf(a) > nameOf(b)
-            ? 1
-            : 0;
+    let order: number;
+    if (
+      leftRank === NUMBER_RANK &&
+      leftAtom instanceof Grounded &&
+      rightAtom instanceof Grounded
+    ) {
+      order = compareNumbers(
+        leftAtom as Grounded<number | bigint>,
+        rightAtom as Grounded<number | bigint>,
+      );
+    } else if (leftRank === TEXT_RANK) {
+      order = compareText(
+        (leftAtom as Grounded<string>).value,
+        (rightAtom as Grounded<string>).value,
+      );
+    } else if (leftRank === ATOM_RANK) {
+      order = compareText(atomicName(leftAtom), atomicName(rightAtom));
+      if (order === 0) order = compareIdentity(leftAtom, rightAtom);
+    } else if (leftAtom instanceof Var && rightAtom instanceof Var) {
+      order = compareText(leftAtom.name, rightAtom.name);
+      if (order === 0) order = compareIdentity(leftAtom, rightAtom);
+    } else {
+      order = compareIdentity(leftAtom, rightAtom);
+    }
     if (order !== 0) return order;
   }
   return 0;

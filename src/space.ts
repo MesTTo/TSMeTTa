@@ -24,7 +24,7 @@
  *   - `solve` walks each side's variables once, and `readsThrough` consumes
  *     each public parent identity directly [tested: "walks solve's left
  *     variables once"; "reads through each parent identity without a name
- *     adapter"; commit=WORKTREE]
+ *     adapter"; commit=b9b4cbcf7b9bf0b77df7ecde3c38d9d5dfe46395]
  *   - a ground expression remains a structured space identity across every
  *     collection, query, reflection, and lifecycle door [tested: "keeps
  *     parametric space identities structured and collision-free";

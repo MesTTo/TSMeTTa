@@ -12,7 +12,7 @@
  *   - solving walks each side's variables once, and parent-space composition
  *     accepts each public identity directly [tested: "walks solve's left
  *     variables once"; "reads through each parent identity without a name
- *     adapter"; commit=WORKTREE]
+ *     adapter"; commit=b9b4cbcf7b9bf0b77df7ecde3c38d9d5dfe46395]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

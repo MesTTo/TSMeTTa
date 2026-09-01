@@ -72,6 +72,40 @@ describe("a saga", () => {
     assert.equal((await book.space.atoms()).length, 1, "the journal is ordinary data");
   });
 
+  it("does not journal the transport callback for an attached-space write", async () => {
+    using book = fresh();
+    const rows = new Map<string, number>([["ada", 3]]);
+    const scores = m.attach(`&saga-scores-${String(counter)}`, rows);
+    try {
+      await book.run(S.charge(10));
+      await book.run(S["add-atom"](scores.handle, S.kv(S.bob, 5)));
+
+      assert.equal(rows.get("bob"), 5);
+      assert.deepEqual(book.receipts.map(String), ["(did charge (10) 10)"]);
+      await book.rollback();
+      assert.deepEqual(ledger, ["charge 10", "refund 10"]);
+    } finally {
+      m.detach(scores.handle);
+    }
+  });
+
+  it("records the settled result of an asynchronous effect", async () => {
+    using book = fresh();
+    const operation = m.op(
+      async function settledCharge(amount: number): Promise<number> {
+        await Promise.resolve();
+        return amount + 1;
+      },
+      { effect: "writesState" },
+    );
+    try {
+      await book.run(S["settled-charge"](4));
+      assert.deepEqual(book.receipts.map(String), ["(did settled-charge (4) 5)"]);
+    } finally {
+      operation.forget();
+    }
+  });
+
   it("compensates in reverse order, and clears what it undid", async () => {
     using book = fresh();
     await book.run(S.charge(10));

@@ -23,6 +23,10 @@
  *     [tested: "keeps every answer of a nondeterministic transaction",
  *     "dispatches the currently registered arity at a shared name";
  *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
+ *   - saga capture records settled user-operation writes, never the transport
+ *     callbacks that implement an attached space [tested: "does not journal the
+ *     transport callback for an attached-space write", "records the settled
+ *     result of an asynchronous effect"; commit=WORKTREE]
  * Owns: one WebAssembly instance per boot(), one Prolog engine per open job,
  *   and the live-host-value table, all released by dispose().
  * Decides: a job is addressed by integer because the WebAssembly value
@@ -582,22 +586,35 @@ export class Job {
       // and is called back into leaves the outer call's space in place.
       this.#engine.callingSpace = outer;
     }
-    // One null read on the operation path, which is what a saga costs a
-    // program that has none. A capture is open only inside `Saga.run`, and it
-    // takes only the operations whose DECLARED effect is a write or stronger:
-    // a receipt for a read would be an obligation to undo nothing.
-    if (capturing !== null && effectRank(op.effect) >= WRITES) {
-      capturing.push({ name, args: wires, result: answered });
-    }
+    // Capture the exact open journal now. A promise settles before the suspended
+    // engine resumes, but retaining this identity also makes the ownership
+    // explicit instead of consulting mutable ambient state after an await.
+    const journal =
+      capturing !== null && this.#engine.journals(op) && effectRank(op.effect) >= WRITES
+        ? capturing
+        : null;
     const many = op.kind === "many" || op.kind === "raw_many";
     if (isPromise(answered)) {
       return answered.then(
-        (settled) => this.#shape(settled, many),
+        (settled) => this.#reply(name, wires, settled, many, journal),
         (error: unknown) => ["error", messageOf(error)] as readonly unknown[],
       );
     }
+    return this.#reply(name, wires, answered, many, journal);
+  }
+
+  /** Shape one successful answer, then record the result that actually settled. */
+  #reply(
+    name: string,
+    args: readonly unknown[],
+    result: unknown,
+    many: boolean,
+    journal: CapturedEffect[] | null,
+  ): readonly unknown[] {
     try {
-      return this.#shape(answered, many);
+      const reply = this.#shape(result, many);
+      journal?.push({ name, args, result });
+      return reply;
     } catch (error) {
       return ["error", messageOf(error)];
     }
@@ -713,6 +730,7 @@ export class Engine {
   #stderr: string[];
   #ops = new Map<string, HostOp>();
   #transportOps = new Map<string, HostOp>();
+  #journalledOps = new WeakSet<HostOp>();
   #watches = 0;
 
   /** The values this host has handed the engine a reference to. */
@@ -928,7 +946,9 @@ export class Engine {
    */
   register(op: HostOp): void {
     this.start(["registerop", op.name, op.arity, op.kind, op.effect]).sync();
-    this.#ops.set(`${op.name}/${String(op.arity)}`, op);
+    const installed = { ...op };
+    this.#journalledOps.add(installed);
+    this.#ops.set(`${op.name}/${String(op.arity)}`, installed);
   }
 
   /**
@@ -941,7 +961,14 @@ export class Engine {
    * function would put a name in the catalog that nothing may call.
    */
   provide(op: HostOp): void {
-    this.#transportOps.set(op.name, op);
+    // Clone so even the same caller-owned object passed through both doors gets
+    // the policy of this registration, not whichever door saw the object first.
+    this.#transportOps.set(op.name, { ...op });
+  }
+
+  /** @internal Whether this installed operation represents user work to journal. */
+  journals(op: HostOp): boolean {
+    return this.#journalledOps.has(op);
   }
 
   /**

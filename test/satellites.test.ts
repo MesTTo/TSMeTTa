@@ -8,7 +8,7 @@
  *   - top-k selection agrees with a full stable order while sorting only the
  *     retained prefix after its streaming pass
  *     [tested: "matches a full stable top-k order across bounds and non-finite scores",
- *     "sorts only the retained top-k prefix after one streaming pass"; commit=WORKTREE]
+ *     "sorts only the retained top-k prefix after one streaming pass"; commit=6b5caa45cc0abc8b2d396c0614e22f427678be4b]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

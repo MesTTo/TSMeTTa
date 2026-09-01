@@ -18,7 +18,7 @@
  *   - `topIndices` retains only k candidates in a stable bounded heap, then
  *     sorts that prefix once: O(n log k + k log k) time and O(k) space
  *     [tested: "matches a full stable top-k order across bounds and non-finite scores",
- *     "sorts only the retained top-k prefix after one streaming pass"; commit=WORKTREE]
+ *     "sorts only the retained top-k prefix after one streaming pass"; commit=6b5caa45cc0abc8b2d396c0614e22f427678be4b]
  * Decides: a MATRIX is a typed array plus a shape, held beside it rather than
  *   inside it, because a `Float64Array` has one dimension and inventing a
  *   subclass to carry another would make every library's array the wrong kind.

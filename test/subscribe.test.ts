@@ -3,6 +3,10 @@
  * Guarantees:
  *   - a subscription is a resource, and leaving its block ends it
  *   - a live view counts multiplicity, because a space is a multiset
+ *   - a live view maintains that total through seeding, updates, removals,
+ *     and clear, so repeated size reads never scan its count map
+ *     [tested: "maintains total multiplicity through seed, updates, removals, and clear",
+ *     "reads size without scanning the multiplicity map"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -150,24 +154,53 @@ describe("a live view", () => {
     assert.ok(!view.has(42));
   });
 
-  it("seeds from the space and stays current, counting multiplicity", async () => {
+  it("maintains total multiplicity through seed, updates, removals, and clear", async () => {
     const kb = fresh();
     kb.add(S.alarm(S.fire));
+    kb.add(S.alarm(S.fire));
+    kb.add(S.other(S.noise));
     using view = await LiveView.open(kb, S.alarm(V.what));
-    assert.equal(view.size, 1);
+    assert.equal(view.size, 2);
+    assert.equal(view.count(S.alarm(S.fire)), 2);
     assert.ok(view.has(S.alarm(S.fire)));
 
     kb.add(S.alarm(S.fire));
     kb.add(S.alarm(S.flood));
     await view.settled();
     // A space is a MULTISET: the same atom twice counts twice.
-    assert.equal(view.count(S.alarm(S.fire)), 2);
-    assert.equal(view.size, 3);
+    assert.equal(view.count(S.alarm(S.fire)), 3);
+    assert.equal(view.size, 4);
     assert.equal([...view].length, 2, "distinct atoms, once each");
 
     kb.delete(S.alarm(S.fire));
     await view.settled();
-    assert.equal(view.count(S.alarm(S.fire)), 1);
+    assert.equal(view.count(S.alarm(S.fire)), 2);
+    assert.equal(view.size, 3);
     assert.ok(view.has(S.alarm(S.fire)));
+
+    kb.clear();
+    await view.settled();
+    assert.equal(view.size, 0);
+    assert.equal(view.count(S.alarm(S.fire)), 0);
+    assert.deepEqual([...view], []);
+  });
+
+  it("reads size without scanning the multiplicity map", async () => {
+    const kb = fresh();
+    for (let at = 0; at < 256; at += 1) kb.add(S.signal(at));
+    using view = await LiveView.open(kb, S.signal(V.value));
+
+    const original = Map.prototype.values;
+    let scans = 0;
+    Map.prototype.values = function counted<K, V>(this: Map<K, V>): MapIterator<V> {
+      scans += 1;
+      return original.call(this) as MapIterator<V>;
+    } as typeof Map.prototype.values;
+    try {
+      for (let read = 0; read < 1_024; read += 1) assert.equal(view.size, 256);
+    } finally {
+      Map.prototype.values = original;
+    }
+    assert.equal(scans, 0, "LiveView.size scanned the count map");
   });
 });

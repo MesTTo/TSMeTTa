@@ -18,6 +18,11 @@
  *   - `LiveView.open` seeds from stored atoms, so its snapshot and later
  *     admission events carry the same values [tested: "seeds with stored atoms
  *     rather than reductions of the pattern"; commit=6b117a66f6d1028496594942d4b4bdb4cc2b14fe]
+ *   - `LiveView.size` is a maintained multiplicity total, updated by the same
+ *     seed, admission, removal, and clear events as its count map, so a read is
+ *     constant time [tested: "maintains total multiplicity through seed, updates,
+ *     removals, and clear", "reads size without scanning the multiplicity map";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -267,6 +272,7 @@ export function subscribe(
 export class LiveView implements Disposable, Iterable<Atom> {
   readonly #counts = new Map<Atom, number>();
   readonly #subscription: Subscription;
+  #total = 0;
 
   /** @internal Use {@link LiveView.open}. */
   constructor(space: Space, pattern: Term, seed: readonly Atom[]) {
@@ -288,17 +294,20 @@ export class LiveView implements Disposable, Iterable<Atom> {
     return new LiveView(space, matched, seed);
   }
 
+  // A cached aggregate updated by the accepted occurrence delta is the same
+  // invariant used by Guava's map-backed multiset:
+  // https://github.com/google/guava/blob/3de1f25e258ef6fd887595cc865efe185b373aa6/guava/src/com/google/common/collect/AbstractMapBasedMultiset.java#L267-L333
   #bump(atom: Atom, by: number): void {
-    const held = (this.#counts.get(atom) ?? 0) + by;
-    if (held <= 0) this.#counts.delete(atom);
-    else this.#counts.set(atom, held);
+    const before = this.#counts.get(atom) ?? 0;
+    const after = Math.max(0, before + by);
+    if (after === 0) this.#counts.delete(atom);
+    else this.#counts.set(atom, after);
+    this.#total += after - before;
   }
 
   /** How many atoms match, counting a duplicate twice. */
   get size(): number {
-    let total = 0;
-    for (const count of this.#counts.values()) total += count;
-    return total;
+    return this.#total;
   }
 
   /** How many copies of one atom are here. */

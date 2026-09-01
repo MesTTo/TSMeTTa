@@ -20,7 +20,7 @@
  *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
  *   - `runOne` enforces exact cardinality instead of selecting one answer from
  *     a nondeterministic result [tested: "runOne refuses a term with more than
- *     one answer"; commit=12defbe4bc38e57030705bc131e54f138bbf2b15]
+ *     one answer"; commit=WORKTREE]
  *   - `solve` walks each side's variables once, and `readsThrough` consumes
  *     each public parent identity directly [tested: "walks solve's left
  *     variables once"; "reads through each parent identity without a name
@@ -864,7 +864,8 @@ export class Space {
     const answers = this.#command(["eval", this.#wire(built), this.reference])
       .syncAll()
       .filter((event): event is JobEvent & { readonly kind: "answer" } => event.kind === "answer");
-    if (answers.length === 0) {
+    const answer = answers[0];
+    if (answer === undefined) {
       throw new ResultError(
         `${built.text} answered nothing, where one answer was required`,
       );
@@ -875,7 +876,7 @@ export class Space {
         { code: "ERR_METTA_AMBIGUOUS" },
       );
     }
-    return answers[0].atom;
+    return answer.atom;
   }
 
   /**

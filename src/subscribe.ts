@@ -22,7 +22,7 @@
  *     seed, admission, removal, and clear events as its count map, so a read is
  *     constant time [tested: "maintains total multiplicity through seed, updates,
  *     removals, and clear", "reads size without scanning the multiplicity map";
- *     commit=WORKTREE]
+ *     commit=c61a50dfa9c1a958ec1aa67b0070d50b9b32fa7b]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

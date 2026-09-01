@@ -6,7 +6,7 @@
  *   - a live view maintains that total through seeding, updates, removals,
  *     and clear, so repeated size reads never scan its count map
  *     [tested: "maintains total multiplicity through seed, updates, removals, and clear",
- *     "reads size without scanning the multiplicity map"; commit=WORKTREE]
+ *     "reads size without scanning the multiplicity map"; commit=c61a50dfa9c1a958ec1aa67b0070d50b9b32fa7b]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

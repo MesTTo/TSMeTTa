@@ -1227,19 +1227,24 @@ quietly:
 Everything else loads. Tabling is present, `library(sha)` is present, and the
 engine parses, translates and evaluates end to end.
 
-Beside the platform's absences, these parts of the Python package have no
-counterpart here yet, each for a stated reason rather than by oversight:
+### Python package counterparts
 
-| absent | why |
-|---|---|
-| `algebra`: the counting, tropical, probability, provenance and ranking carriers, and `under` | annotated matching is an engine capability this transport has not been wired to; the `semiring` vocabulary is here, so the words a program would use already are |
-| `arrays`: numeric-array interop | the Python side images numpy; TypeScript's counterpart is a typed array over a provider, which `m.attach` already supports without a module of its own |
-| `remote`: a space over a network | a `SpaceProvider` whose methods `fetch` IS this, and it needs no engine support; what is absent is a packaged client |
-| `lint`: static analysis of definitions | a linter is a program over `m.forms`, which is here; the analysis is not |
-| `manifest` / `boot`: assembling an app from a `(boot ...)` manifest | no counterpart |
-| `tables`, `convert`, `integrate` | no counterpart |
-| `TabledMap` | it reads the engine's table statistics, which this bridge does not expose |
-| a pattern-position lazy path | Python lifts the marker out of the pattern before matching; this surface evaluates `(match ...)` as an ordinary term, so `metta-node/paths` does the same job as an OPERATION the engine calls, which is a door TypeScript has and Python does not |
+The platform refusals above are separate from the Python package comparison.
+The Python capabilities once described here as missing are present under these
+public Node subpaths:
+
+| Python capability | Node package surface | public counterpart |
+|---|---|---|
+| annotated and weighted evaluation | `metta-node/algebra` | `counting`, `tropical`, `prob`, `prov`, `ranked`, and `TaggedAnswer.under` |
+| numeric-array interop | `metta-node/arrays` | typed arrays, `Tensor`, `EmbeddingStore`, and `installArrays` |
+| a space over a network | `metta-node/remote` | `connect`, `serve`, `RemoteSpace`, and `Gateway` |
+| static analysis of definitions | `metta-node/lint` | `RULES`, `Finding`, `lint`, and `lintFile` |
+| assembling an app from a manifest | `metta-node/manifest` | `boot`, `Boot`, and `VOCABULARY` |
+| spaces over rows | `metta-node/tables` | `tableSpace`, `arrayTables`, and `bridge` |
+| host-value conversion | `metta-node/convert` | `registerType`, `project`, `build`, and `autoImage` |
+| library discovery and installation | `metta-node/integrate` | `integrate`, `discover`, `entryPoints`, and reflection helpers |
+| a tabled computed map | `metta-node/structures` | `TabledMap`, including the engine's table counters through `stats` |
+| a lazy path into a host value | `metta-node/paths` | `Path`, `path`, `reach`, and `installPaths`; the engine calls a registered operation instead of lifting a marker from a pattern |
 
 ## What the binding calls
 

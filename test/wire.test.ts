@@ -4,6 +4,10 @@
  * Guarantees:
  *   - the grammar's refusals are refusals here, by name, and the `o` tag stays
  *     out of the strict profile
+ *   - repeated primitive host values reuse one live handle and clearing the
+ *     table cannot resurrect that handle [tested: "reuses one host id for each
+ *     primitive value"; "clears primitive ids without recycling a released
+ *     handle"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -152,6 +156,28 @@ describe("the engine transport's own tag", () => {
     const held = {};
     assert.equal(values.idFor(held), values.idFor(held));
     assert.equal(values.size, 1);
+  });
+
+  it("reuses one host id for each primitive value", () => {
+    const values = new HostValues();
+    const local = Symbol("local");
+    const registered = Symbol.for("metta-node-wire-test");
+    const primitives = [null, undefined, local, registered, 42, "forty-two", true] as const;
+    const first = primitives.map((value) => values.idFor(value));
+    const second = primitives.map((value) => values.idFor(value));
+
+    assert.deepEqual(second, first);
+    assert.equal(values.size, primitives.length);
+  });
+
+  it("clears primitive ids without recycling a released handle", () => {
+    const values = new HostValues();
+    const released = values.idFor(null);
+    values.clear();
+    assert.throws(() => values.valueOf(released), /was released/);
+    const fresh = values.idFor(null);
+    assert.notEqual(fresh, released);
+    assert.equal(values.valueOf(fresh), null);
   });
 
   it("refuses a released id rather than answering a fresh value", () => {

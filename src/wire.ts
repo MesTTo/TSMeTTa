@@ -37,7 +37,9 @@
  *   - a numeric root cannot impersonate the worklist's expression-close marker
  *     [tested: "refuses a numeric root before it can impersonate an
  *     expression-close marker"; commit=d3b3d62e19cd5dc941a6af8df24bc48992327236]
- * Owns: the live-host-value table. An object that crossed into the engine is
+ *   - repeated crossings of one primitive host value reuse its live handle
+ *     [tested: "reuses one host id for each primitive value"; commit=WORKTREE]
+ * Owns: the live-host-value table. A value that crossed into the engine is
  *   retained until the engine is disposed, because nothing on this side can
  *   observe that the engine has dropped the id.
  * Decides: cursors and host values are addressed by integer, because the
@@ -188,22 +190,25 @@ export function numberToText(value: number | bigint): string {
 export class HostValues {
   #byId = new Map<number, unknown>();
   #byValue = new WeakMap<WeakKey, number>();
+  #byPrimitive = new Map<unknown, number>();
   #next = 1;
 
   /** The id for this value, minting one the first time. */
   idFor(value: unknown): number {
-    if (value !== null && (typeof value === "object" || typeof value === "function")) {
-      const held = this.#byValue.get(value as WeakKey);
-      if (held !== undefined) return held;
-      const id = this.#next;
-      this.#next += 1;
-      this.#byId.set(id, value);
-      this.#byValue.set(value as WeakKey, id);
-      return id;
-    }
+    const weak =
+      value !== null &&
+      (typeof value === "object" ||
+        typeof value === "function" ||
+        (typeof value === "symbol" && Symbol.keyFor(value) === undefined));
+    const held = weak
+      ? this.#byValue.get(value as WeakKey)
+      : this.#byPrimitive.get(value);
+    if (held !== undefined) return held;
     const id = this.#next;
     this.#next += 1;
     this.#byId.set(id, value);
+    if (weak) this.#byValue.set(value as WeakKey, id);
+    else this.#byPrimitive.set(value, id);
     return id;
   }
 
@@ -226,6 +231,7 @@ export class HostValues {
   clear(): void {
     this.#byId.clear();
     this.#byValue = new WeakMap<WeakKey, number>();
+    this.#byPrimitive.clear();
   }
 }
 

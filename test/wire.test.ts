@@ -8,6 +8,9 @@
  *     table cannot resurrect that handle [tested: "reuses one host id for each
  *     primitive value"; "clears primitive ids without recycling a released
  *     handle"; commit=e4367498bed06c34f25aff75335e7b25f28b3b73]
+ *   - round-trip space provenance follows structural positions and is disabled
+ *     after equal-length shapes diverge [tested: "does not align provenance across a shape change";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -291,6 +294,12 @@ describe("the engine transport, which is flat", () => {
     // Without the provenance the same answer is a symbol, which is what the
     // strict grammar says it is.
     assert.equal(decodeEngine(echoed, {}), expr(sym("f"), sym("&kb")));
+  });
+
+  it("does not align provenance across a shape change", () => {
+    const sent = ["e", 3, "s", "f", "s", "a", "p", "&kb"];
+    const reshaped = ["e", 2, "s", "f", "e", 1, "s", "&kb"];
+    assert.equal(fromRoundTrip(sent, reshaped), expr(sym("f"), expr(sym("&kb"))));
   });
 });
 

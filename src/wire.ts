@@ -40,6 +40,10 @@
  *   - repeated crossings of one primitive host value reuse its live handle
  *     [tested: "reuses one host id for each primitive value";
  *     commit=e4367498bed06c34f25aff75335e7b25f28b3b73]
+ *   - round-trip space provenance is restored only while the sent and received
+ *     token streams have the same structural path
+ *     [tested: "does not align provenance across a shape change";
+ *     commit=WORKTREE]
  * Owns: the live-host-value table. A value that crossed into the engine is
  *   retained until the engine is disposed, because nothing on this side can
  *   observe that the engine has dropped the id.
@@ -557,9 +561,14 @@ export function decodeEngine(tokens: unknown, context: DecodeContext, provenance
   // below would be three allocations for a term with no children.
   if (stream.length === 2 && stream[0] !== "e") {
     const only = atomOfToken(stream[0], stream[1], context);
-    return provenance?.[0] === "p" && only instanceof Sym ? space(only.name) : only;
+    return provenance?.length === 2 &&
+      provenance[0] === "p" &&
+      stream[0] === "s" &&
+      only instanceof Sym
+      ? space(only.name)
+      : only;
   }
-  const aligned = provenance !== undefined && provenance.length === stream.length;
+  let aligned = provenance !== undefined && provenance.length === stream.length;
   const root: Atom[] = [];
   // Two parallel stacks rather than one stack of frame objects: the children
   // gathered so far, and how many each level is still waiting for. The bottom
@@ -577,6 +586,15 @@ export function decodeEngine(tokens: unknown, context: DecodeContext, provenance
     let value: Atom;
     if (tag === "e") {
       const arity = countAt(stream, at);
+      if (aligned) {
+        try {
+          aligned = provenance?.[tagAt] === "e" && countAt(provenance, tagAt + 1) === arity;
+        } catch {
+          // Provenance is advisory. A malformed or differently shaped input
+          // disables restoration; it cannot make an otherwise valid answer fail.
+          aligned = false;
+        }
+      }
       at += 1;
       if (arity > 0) {
         gathered.push([]);
@@ -585,6 +603,13 @@ export function decodeEngine(tokens: unknown, context: DecodeContext, provenance
       }
       value = exprOf([]);
     } else {
+      if (
+        aligned &&
+        provenance?.[tagAt] !== tag &&
+        !(tag === "s" && provenance?.[tagAt] === "p")
+      ) {
+        aligned = false;
+      }
       value = atomOfToken(tag, stream[at], context);
       at += 1;
       if (aligned && value instanceof Sym && provenance?.[tagAt] === "p") value = space(value.name);

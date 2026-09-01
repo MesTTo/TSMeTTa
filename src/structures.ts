@@ -30,7 +30,10 @@
  *     program that never stores a pattern pays nothing for the ones it could
  *     have
  *   - `MatchIndex.matches` answers in REGISTRATION order whatever order the
- *     tree walk reached them in [tested: "answers in registration order"]
+ *     tree walk reached them in, reads its ordered registration map directly
+ *     when no tree walk is possible, and prunes dead trie paths on deletion
+ *     [tested: "answers in registration order"; "walks registration order without sorting";
+ *     commit=WORKTREE]
  * Decides: `MatchIndex` is an imperfect discrimination tree — the term-indexing
  *   structure automated theorem provers use at millions-of-terms scale. The
  *   tree answers CANDIDATES and `matchTerms` confirms, which is what makes a
@@ -536,18 +539,27 @@ export class MatchIndex<V = undefined> {
    */
   delete(pattern: Term, value: V): boolean {
     const atom = toAtom(pattern);
-    let node: TreeNode | undefined = this.#root;
+    let node = this.#root;
+    const trail: { readonly parent: TreeNode; readonly token: Token; readonly child: TreeNode }[] = [];
     for (const token of tokens(atom)) {
-      node = node.edges.get(token);
-      if (node === undefined) return false;
+      const child: TreeNode | undefined = node.edges.get(token);
+      if (child === undefined) return false;
+      trail.push({ parent: node, token, child });
+      node = child;
     }
-    for (const id of [...node.leaves]) {
+    for (let at = 0; at < node.leaves.length; at += 1) {
+      const id = node.leaves[at] as number;
       const held = this.#entries.get(id);
       if (held === undefined) continue;
       if (held[0] !== atom || held[1] !== value) continue;
-      node.leaves.splice(node.leaves.indexOf(id), 1);
+      node.leaves.splice(at, 1);
       this.#entries.delete(id);
       this.#size -= 1;
+      for (let step = trail.length - 1; step >= 0; step -= 1) {
+        const { parent, token, child } = trail[step] as (typeof trail)[number];
+        if (child.leaves.length > 0 || child.edges.size > 0) break;
+        parent.edges.delete(token);
+      }
       return true;
     }
     return false;
@@ -571,7 +583,7 @@ export class MatchIndex<V = undefined> {
   *matches(atom: Term): Generator<[Atom, V]> {
     const probe = toAtom(atom);
     if (!isGround(probe)) {
-      for (const [, entry] of [...this.#entries].sort((a, b) => a[0] - b[0])) {
+      for (const entry of this.#entries.values()) {
         if (unifies(entry[0], probe)) yield entry;
       }
       return;
@@ -602,7 +614,7 @@ export class MatchIndex<V = undefined> {
 
   /** Every registration, in registration order. */
   *entries(): Generator<[Atom, V]> {
-    for (const [, entry] of [...this.#entries].sort((a, b) => a[0] - b[0])) yield entry;
+    yield* this.#entries.values();
   }
 
   [Symbol.iterator](): Generator<[Atom, V]> {

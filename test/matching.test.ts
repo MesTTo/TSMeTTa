@@ -6,6 +6,9 @@
  *   - neither walk is recursive, so a term ten thousand deep is handled
  *   - `PatternMap`'s mapping protocol stays exact while `matching` answers the
  *     dispatch question
+ *   - `MatchIndex` preserves registration order without sorting its already
+ *     ordered registration map, and deletions preserve shared-prefix siblings
+ *     [tested: "walks registration order without sorting"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -183,5 +186,41 @@ describe("the atom-keyed collections", () => {
     index.add(S.edge(S.b, S.c), "bc");
     assert.deepEqual([...index.matches(S.edge(S.a, V.to))].map(([, v]) => v), ["ab"]);
     assert.equal([...index.matches(S.edge(V.from, V.to))].length, 2);
+  });
+
+  it("walks registration order without sorting", () => {
+    const index = new MatchIndex<string>();
+    index.add(S.edge(S.a, S.b), "ab");
+    index.add(S.edge(S.a, S.c), "ac");
+    index.add(S.edge(S.d, S.e), "de");
+    assert.ok(index.delete(S.edge(S.a, S.b), "ab"));
+    index.add(S.edge(S.a, S.f), "af");
+
+    const originalSort = Array.prototype.sort;
+    Array.prototype.sort = function noSortAllowed(): never {
+      throw new Error("MatchIndex re-sorted registration order");
+    };
+    try {
+      assert.deepEqual([...index].map(([, value]) => value), ["ac", "de", "af"]);
+      assert.deepEqual(
+        [...index.matches(S.edge(V.from, V.to))].map(([, value]) => value),
+        ["ac", "de", "af"],
+      );
+    } finally {
+      Array.prototype.sort = originalSort;
+    }
+
+    // Removing one leaf under `(edge a ...)` must not detach its live sibling.
+    assert.ok(index.delete(S.edge(S.a, S.f), "af"));
+    assert.deepEqual([...index.matches(S.edge(S.a, S.c))].map(([, value]) => value), ["ac"]);
+
+    // Repeated distinct-path churn must leave no stale registration visible.
+    for (let at = 0; at < 1_000; at += 1) {
+      const pattern = S.churn(at);
+      index.add(pattern, `v${String(at)}`);
+      assert.ok(index.delete(pattern, `v${String(at)}`));
+    }
+    assert.equal(index.size, 2);
+    assert.deepEqual([...index].map(([, value]) => value), ["ac", "de"]);
   });
 });

@@ -26,7 +26,8 @@
  *   - saga capture records settled user-operation writes, never the transport
  *     callbacks that implement an attached space [tested: "does not journal the
  *     transport callback for an attached-space write", "records the settled
- *     result of an asynchronous effect"; commit=WORKTREE]
+ *     result of an asynchronous effect";
+ *     commit=b37169f308aded23c8bde973eb5ed2f327720c65]
  * Owns: one WebAssembly instance per boot(), one Prolog engine per open job,
  *   and the live-host-value table, all released by dispose().
  * Decides: a job is addressed by integer because the WebAssembly value

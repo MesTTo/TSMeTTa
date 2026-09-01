@@ -10,7 +10,7 @@
  *   - a credential is checked before the body is read
  *   - every operation refusal uses the protocol's one 4xx error shape without
  *     a dead classification branch [tested: "uses one protocol error status for every refusal";
- *     commit=WORKTREE]
+ *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

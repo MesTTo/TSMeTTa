@@ -22,7 +22,7 @@
  *     which is `queue.Queue`'s policy and not `deque(maxlen=)`'s
  *   - `Channel.size` is the one queued-value count; the surface carries no
  *     synonymous alias [tested: "keeps one name for the queued count";
- *     commit=WORKTREE]
+ *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

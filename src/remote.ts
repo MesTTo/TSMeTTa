@@ -27,7 +27,7 @@
  *     is read [tested: "refuses a wrong token before reading the body"]
  *   - operation refusals use the protocol's single 4xx error shape, whatever
  *     local class produced them [tested: "uses one protocol error status for every refusal";
- *     commit=WORKTREE]
+ *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
  * Owns: on the server side, one cursor per open stream, each released by
  *   `/stop`, by an idle deadline, or by the gateway closing.
  * Open Obligations:

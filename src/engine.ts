@@ -30,7 +30,7 @@
  *     commit=b37169f308aded23c8bde973eb5ed2f327720c65]
  *   - a job exposes complete collection, not a partial uniqueness helper that
  *     can return before proving uniqueness [tested: "does not expose the partial Job.only helper";
- *     commit=WORKTREE]
+ *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
  * Owns: one WebAssembly instance per boot(), one Prolog engine per open job,
  *   and the live-host-value table, all released by dispose().
  * Decides: a job is addressed by integer because the WebAssembly value

@@ -3,7 +3,8 @@
  * Guarantees:
  *   - `Job` exposes exhaustion and collection, but no dead uniqueness helper
  *     that can return before proving uniqueness and leak its engine
- *     [tested: "does not expose the partial Job.only helper"; commit=WORKTREE]
+ *     [tested: "does not expose the partial Job.only helper";
+ *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

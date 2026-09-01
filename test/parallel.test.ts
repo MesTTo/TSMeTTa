@@ -9,7 +9,7 @@
  *     commit=0fc1435242a699749fdd6ba3995239648c02242e]
  *   - `Channel.size` is the sole queued-value count instead of carrying a
  *     synonymous second property [tested: "keeps one name for the queued count";
- *     commit=WORKTREE]
+ *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

@@ -5,6 +5,9 @@
  *     refuses what a provider does not implement
  *   - a live host collection is read afresh for every query, with no
  *     publication step
+ *   - a multiset difference compares live host values by identity rather than
+ *     by their shared rendering [tested: "distinguishes live host values by
+ *     identity when diffing"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -16,6 +19,7 @@ import { after, before, describe, it } from "node:test";
 
 import {
   type Atom,
+  G,
   Match,
   MettaError,
   type MeTTa,
@@ -242,6 +246,19 @@ describe("the space combinators", () => {
     const report = await diff(a, b);
     assert.deepEqual(report.onlyInFirst.map(String), ["(kv ada 1)"]);
     assert.deepEqual(report.onlyInSecond.map(String), ["(kv cy 3)"]);
+  });
+
+  it("distinguishes live host values by identity when diffing", async () => {
+    const first = {};
+    const second = {};
+    assert.equal(G(first).text, G(second).text, "the fixture needs one shared rendering");
+
+    const apart = await diff(view(new Set([first])), view(new Set([second])));
+    assert.deepEqual(apart.onlyInFirst, [G(first)]);
+    assert.deepEqual(apart.onlyInSecond, [G(second)]);
+
+    const same = await diff(view(new Set([first])), view(new Set([first])));
+    assert.deepEqual(same, { onlyInFirst: [], onlyInSecond: [] });
   });
 
   it("presents a live object's own fields, and writes them back", async () => {

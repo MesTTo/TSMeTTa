@@ -21,6 +21,10 @@
  *     map leaves the second map's value visible
  *   - `mapped` derives both directions from one declaration, so a rename, a
  *     projection or a legacy-shape adapter is one line rather than a provider
+ *   - `diff` compares alpha-canonical atoms themselves, so equal structure
+ *     cancels by multiplicity while distinct live host values never collapse
+ *     through a shared rendering [tested: "distinguishes live host values by
+ *     identity when diffing"; commit=WORKTREE]
  * Decides: a combinator takes a live `Space` handle or a provider, never a
  *   NAME. A name alone carries no engine, and a combinator that accepted one
  *   would have to guess which engine it meant.
@@ -42,7 +46,7 @@ import {
   toAtom,
 } from "./atom.ts";
 import { MettaError } from "./errors.ts";
-import { alphaKey, isGround, matchTerms } from "./matching.ts";
+import { alphaCanonical, isGround, matchTerms } from "./matching.ts";
 import type { SpaceProvider } from "./provider.ts";
 import { Space } from "./space.ts";
 
@@ -312,14 +316,14 @@ async function collect(source: Atoms): Promise<Atom[]> {
 }
 
 function surplus(these: readonly Atom[], those: readonly Atom[]): Atom[] {
-  const remaining = new Map<string, number>();
+  const remaining = new Map<Atom, number>();
   for (const atom of those) {
-    const key = alphaKey(atom);
+    const key = alphaCanonical(atom);
     remaining.set(key, (remaining.get(key) ?? 0) + 1);
   }
   const extras: Atom[] = [];
   for (const atom of these) {
-    const key = alphaKey(atom);
+    const key = alphaCanonical(atom);
     const left = remaining.get(key) ?? 0;
     if (left > 0) remaining.set(key, left - 1);
     else extras.push(atom);

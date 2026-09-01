@@ -33,7 +33,7 @@
  *     tree walk reached them in, reads its ordered registration map directly
  *     when no tree walk is possible, and prunes dead trie paths on deletion
  *     [tested: "answers in registration order"; "walks registration order without sorting";
- *     commit=WORKTREE]
+ *     commit=fc5eb6ec4f780dd7abab83aa753a1277feddcd47]
  * Decides: `MatchIndex` is an imperfect discrimination tree — the term-indexing
  *   structure automated theorem provers use at millions-of-terms scale. The
  *   tree answers CANDIDATES and `matchTerms` confirms, which is what makes a

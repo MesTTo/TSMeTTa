@@ -8,7 +8,8 @@
  *     dispatch question
  *   - `MatchIndex` preserves registration order without sorting its already
  *     ordered registration map, and deletions preserve shared-prefix siblings
- *     [tested: "walks registration order without sorting"; commit=WORKTREE]
+ *     [tested: "walks registration order without sorting";
+ *     commit=fc5eb6ec4f780dd7abab83aa753a1277feddcd47]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

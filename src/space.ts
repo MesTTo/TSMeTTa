@@ -24,7 +24,7 @@
  *     commit=e112cbc47bf8f77f002a8edf5c2668aa5f337c5f]
  *   - each delivered watch admission releases the one-shot bridge job that
  *     drained it [tested: "releases each drain job after delivering an
- *     admission"; commit=WORKTREE]
+ *     admission"; commit=d3b3d62e19cd5dc941a6af8df24bc48992327236]
  * Decides: the collection verbs are SYNCHRONOUS. The transport is in process,
  *   so a synchronous twin genuinely exists, and the async-primary law asks for
  *   an async surface where the transport needs one rather than everywhere. The

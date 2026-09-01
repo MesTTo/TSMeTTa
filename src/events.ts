@@ -13,7 +13,7 @@
  *     [tested: "keeps its state when a step throws"]
  *   - without an `onError`, `settled()` re-raises the step's `SubscriberError`
  *     with its cause intact [tested: "re-raises an unhandled step failure from
- *     settled()"; commit=WORKTREE]
+ *     settled()"; commit=d3b3d62e19cd5dc941a6af8df24bc48992327236]
  *   - `publish` is the write door that a fold and an ordinary query see
  *     identically, because it IS an ordinary write
  * Decides: a fold holds its state HERE rather than in the space. A fold whose

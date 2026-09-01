@@ -28,7 +28,7 @@
  *     "preserves a branch's own deadline while adding race cancellation"; commit=0fc1435242a699749fdd6ba3995239648c02242e]
  *   - rendering a row table scans widths iteratively, so the row count is not
  *     constrained by V8's function-argument ceiling [tested: "formats more
- *     rows than V8 accepts as function arguments"; commit=WORKTREE]
+ *     rows than V8 accepts as function arguments"; commit=d3b3d62e19cd5dc941a6af8df24bc48992327236]
  * Decides: an Answers is RE-RUNNABLE. Awaiting it twice asks twice, because a
  *   lazy description that cached would be a result pretending to be a query,
  *   and a knowledge base can change between the two asks.

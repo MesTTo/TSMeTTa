@@ -36,7 +36,7 @@
  *     commit=c530ccb8fb7d0a5b2aa53df6e9f981ada9f81be8]
  *   - a numeric root cannot impersonate the worklist's expression-close marker
  *     [tested: "refuses a numeric root before it can impersonate an
- *     expression-close marker"; commit=WORKTREE]
+ *     expression-close marker"; commit=d3b3d62e19cd5dc941a6af8df24bc48992327236]
  * Owns: the live-host-value table. An object that crossed into the engine is
  *   retained until the engine is disposed, because nothing on this side can
  *   observe that the engine has dropped the id.

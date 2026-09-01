@@ -24,7 +24,7 @@
  *     [source: ai-typescript-design.md round 13, the Temporal precedent]
  *   - a registered symbol interns by its registry identity while an unregistered
  *     symbol interns by reference [tested: "interns registered symbols without
- *     treating them as weak keys"; commit=WORKTREE]
+ *     treating them as weak keys"; commit=d3b3d62e19cd5dc941a6af8df24bc48992327236]
  * Owns: the process-wide intern table. It holds every atom weakly.
  * Decides: the standard order is Prolog's, which is the order the engine's own
  *   sort uses: variable, number, symbol, string, compound. A live host value

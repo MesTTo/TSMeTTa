@@ -2,6 +2,10 @@
  * Purpose: the surface's remaining doors against a live engine: theories,
  *   racing, the coordination verbs, the typed source query, and validator
  *   interop.
+ * Guarantees: theory discovery never constructs the class or evaluates a
+ *   prototype accessor [tested: npm run build --silent && node --test
+ *   --test-name-pattern='discovers decorated theory methods without constructing|skips accessors while discovering theory methods'
+ *   build/test/extras.test.js; commit=WORKTREE].
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -13,13 +17,14 @@ import { after, before, describe, it } from "node:test";
 
 import {
   type MeTTa,
-  PettaError,
+  MettaError,
   S,
   type StandardSchemaV1,
   Superpose,
   V,
   answersOf,
   decodeWith,
+  equation,
   hostValue,
   metta,
   nearest,
@@ -56,8 +61,51 @@ describe("a theory", () => {
     class Empty {}
     assert.throws(
       () => m.theory(Empty),
-      (error: PettaError) => error.code === "ERR_METTA_NAME",
+      (error: MettaError) => error.code === "ERR_METTA_NAME",
     );
+  });
+
+  it("discovers decorated theory methods without constructing the class", async () => {
+    let constructions = 0;
+    class DecoratedTheory {
+      constructor(_dependency: string) {
+        constructions += 1;
+        throw new Error("theory discovery constructed the class");
+      }
+
+      @equation
+      safeDouble(n: number): number {
+        return n * 2;
+      }
+
+      helper(): number {
+        return 0;
+      }
+    }
+
+    const installed = m.theory(DecoratedTheory);
+    assert.equal(constructions, 0);
+    assert.deepEqual(installed.map((one) => one.head), ["safe-double"]);
+    assert.equal(String(await m.eval(S["safe-double"](21)).one()), "42");
+  });
+
+  it("skips accessors while discovering theory methods", async () => {
+    let accesses = 0;
+    class DescriptorTheory {
+      get unsafe(): number {
+        accesses += 1;
+        throw new Error("theory discovery evaluated an accessor");
+      }
+
+      descriptorDouble(n: number): number {
+        return n * 2;
+      }
+    }
+
+    const installed = m.theory(DescriptorTheory);
+    assert.equal(accesses, 0);
+    assert.deepEqual(installed.map((one) => one.head), ["descriptor-double"]);
+    assert.equal(String(await m.eval(S["descriptor-double"](21)).one()), "42");
   });
 });
 
@@ -171,7 +219,7 @@ describe("a refusal computes its remedy", () => {
         m.define(function reporting(account: number): number {
           return balanaceOf(account) as number;
         }),
-      (error: PettaError) => /nearest declared: balance-of/.test(error.message),
+      (error: MettaError) => /nearest declared: balance-of/.test(error.message),
     );
   });
 });

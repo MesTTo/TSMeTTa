@@ -9,6 +9,10 @@
  *     no decorator and works on any runtime
  *   - `@equation` and `@grounded` narrow that to the marked methods when a
  *     class also carries helpers
+ *   - discovery neither constructs the class nor evaluates accessors
+ *     [tested: npm run build --silent && node --test
+ *     --test-name-pattern='discovers decorated theory methods without constructing|skips accessors while discovering theory methods'
+ *     build/test/extras.test.js; commit=WORKTREE]
  * Decides: reflection is the floor and the decorators are the sugar above it.
  *   Stage-3 decorators reach methods and TypeScript compiles them, but V8 has
  *   not shipped them, so `node theory.ts` under type stripping rejects the
@@ -35,10 +39,11 @@ export interface Marked {
 /**
  * The marks a theory's own class carries.
  *
- * A `WeakMap` keyed by the prototype, rather than a property on it, so a
- * theory's own surface stays exactly the methods its author wrote.
+ * A `WeakMap` keyed by the decorated function, rather than a property on its
+ * prototype, so recording a decorator needs neither an instance nor a visible
+ * addition to the theory's own surface.
  */
-const marks = new WeakMap<object, Map<string, Marked>>();
+const marks = new WeakMap<Function, Marked>();
 
 /** Which door wins when two marks meet: `op` is its own, `define` is the rest. */
 function stronger(left: Door, right: Door): Door {
@@ -46,18 +51,13 @@ function stronger(left: Door, right: Door): Door {
   return "define";
 }
 
-function mark(prototype: object, method: string, marked: Marked): void {
-  let held = marks.get(prototype);
-  if (held === undefined) {
-    held = new Map<string, Marked>();
-    marks.set(prototype, held);
-  }
+function mark(method: Function, marked: Marked): void {
   // Marks COMPOSE, so `@tabled @equation fib()` is one definition the engine
   // tables rather than two definitions of one head, and an explicit name given
   // by either mark survives the other.
-  const existing = held.get(method);
+  const existing = marks.get(method);
   const name = marked.name ?? existing?.name;
-  held.set(method, {
+  marks.set(method, {
     door: existing === undefined ? marked.door : stronger(existing.door, marked.door),
     ...(name === undefined ? {} : { name }),
   });
@@ -67,21 +67,17 @@ function mark(prototype: object, method: string, marked: Marked): void {
 interface MethodContext {
   readonly kind: string;
   readonly name: string | symbol;
-  addInitializer?: (initializer: () => void) => void;
 }
 
 function decorator(door: Door, name?: string) {
-  return function decorate(
-    target: (...args: never[]) => unknown,
+  return function decorate<This, Args extends unknown[], Result>(
+    target: (this: This, ...args: Args) => Result,
     context: MethodContext,
-  ): (...args: never[]) => unknown {
+  ): (this: This, ...args: Args) => Result {
     if (context.kind !== "method") {
       throw new UnsupportedError(`only a method can be an ${door}, not a ${context.kind}`);
     }
-    context.addInitializer?.(function initialize(this: object) {
-      const prototype = Object.getPrototypeOf(this) as object;
-      mark(prototype, String(context.name), name === undefined ? { door } : { door, name });
-    });
+    mark(target, name === undefined ? { door } : { door, name });
     return target;
   };
 }
@@ -97,8 +93,11 @@ export function named(head: string, door: Door = "define"): ReturnType<typeof de
   return decorator(door, head);
 }
 
-/** A theory's constructor, as `m.theory` receives it. */
-export type TheoryClass = new () => object;
+/** A theory class, inspected by its static prototype without constructing it. */
+export interface TheoryClass {
+  readonly name: string;
+  readonly prototype: object;
+}
 
 /** What one method of a theory installs. */
 export interface TheoryMethod {
@@ -117,21 +116,21 @@ export interface TheoryMethod {
  */
 export function methodsOf(theory: TheoryClass): TheoryMethod[] {
   const prototype = theory.prototype as object;
-  // Constructing once is what runs the decorators' initializers, which is
-  // where a mark lands under the Stage-3 protocol.
-  const instance = new theory();
-  void instance;
-  const marked = marks.get(prototype);
-  const own = Object.getOwnPropertyNames(prototype).filter((name) => name !== "constructor");
-  const chosen = marked === undefined ? own : own.filter((name) => marked.has(name));
+  const own = Object.entries(Object.getOwnPropertyDescriptors(prototype)).flatMap(
+    ([method, descriptor]) =>
+      method !== "constructor" && typeof descriptor.value === "function"
+        ? [{ method, body: descriptor.value as (...args: never[]) => unknown }]
+        : [],
+  );
+  const marked = own.filter(({ body }) => marks.has(body));
+  const chosen = marked.length === 0 ? own : marked;
   if (chosen.length === 0) {
     throw new NameError(
       `${theory.name} declares no methods to install; a theory is its equations`,
     );
   }
-  return chosen.map((method) => {
-    const body = (prototype as Record<string, unknown>)[method] as (...args: never[]) => unknown;
-    const declared = marked?.get(method);
+  return chosen.map(({ method, body }) => {
+    const declared = marks.get(body);
     return {
       method,
       door: declared?.door ?? "define",

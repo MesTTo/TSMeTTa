@@ -6,7 +6,7 @@
  *   - a bounded channel makes its sender wait rather than dropping
  *   - race cancellation composes with each branch's own deadline
  *     [tested: "preserves a branch's own deadline while adding race cancellation";
- *     commit=WORKTREE]
+ *     commit=0fc1435242a699749fdd6ba3995239648c02242e]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

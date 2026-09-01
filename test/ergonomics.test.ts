@@ -8,7 +8,7 @@
  *   - successive cancellation constraints compose, so adding a signal cannot
  *     discard an ask's existing deadline
  *     [tested: "composes successive cancellation signals instead of replacing the first";
- *     commit=WORKTREE]
+ *     commit=0fc1435242a699749fdd6ba3995239648c02242e]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

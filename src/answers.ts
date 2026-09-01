@@ -25,7 +25,7 @@
  *   - successive deadlines and cancellation signals compose, so a wrapper
  *     cannot discard a bound the ask already carried
  *     [tested: "composes successive cancellation signals instead of replacing the first",
- *     "preserves a branch's own deadline while adding race cancellation"; commit=WORKTREE]
+ *     "preserves a branch's own deadline while adding race cancellation"; commit=0fc1435242a699749fdd6ba3995239648c02242e]
  * Decides: an Answers is RE-RUNNABLE. Awaiting it twice asks twice, because a
  *   lazy description that cached would be a result pretending to be a query,
  *   and a knowledge base can change between the two asks.

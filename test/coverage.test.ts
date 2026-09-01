@@ -9,7 +9,8 @@
  *   - embedding removal leaves survivor identity and stable result order
  *     intact without rewriting later index entries
  *     [tested: "removes from the ordered index without rewriting every later
- *     key", "resets its width after the last removal"; commit=WORKTREE]
+ *     key", "resets its width after the last removal";
+ *     commit=4a81aa55810a9a40bb501e77f3304d21b658279b]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

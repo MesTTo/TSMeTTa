@@ -22,7 +22,8 @@
  *   - `EmbeddingStore.remove` does not move or rewrite survivors; key order,
  *     equal-score result order and survivor identity stay intact
  *     [tested: "removes from the ordered index without rewriting every later
- *     key", "resets its width after the last removal"; commit=WORKTREE]
+ *     key", "resets its width after the last removal";
+ *     commit=4a81aa55810a9a40bb501e77f3304d21b658279b]
  *   - front-removal cost stays flat from 10,000 to 200,000 entries
  *     [measured: old median 0.137769 ms then 4.140005 ms; ordered Map median
  *     0.000330 ms then 0.000290 ms; command=node
@@ -30,7 +31,8 @@
  *     ai-tmp/state-crash-embedding-remove-bench.mjs current 10000 && node
  *     ai-tmp/state-crash-embedding-remove-bench.mjs baseline 200000 && node
  *     ai-tmp/state-crash-embedding-remove-bench.mjs current 200000;
- *     fixture=101 front removals per size on Node 22.22.1; commit=WORKTREE]
+ *     fixture=101 front removals per size on Node 22.22.1;
+ *     commit=4a81aa55810a9a40bb501e77f3304d21b658279b]
  * Decides: a MATRIX is a typed array plus a shape, held beside it rather than
  *   inside it, because a `Float64Array` has one dimension and inventing a
  *   subclass to carry another would make every library's array the wrong kind.

@@ -44,7 +44,7 @@ would carry the bridge and not the engine it drives.
 
 `dist/` is a build product, not a checked-in one: `npm run build:dist` writes
 it and npm's `prepare` hook runs that on install. Import `src/` as below while
-working in this checkout, or build first — a `dist/` older than the `src/`
+working in this checkout, or build first: a `dist/` older than the `src/`
 beside it is a copy of an older codec, and the seat's own suites never load it
 because they compile source into `build/`. `sh check.sh node-dist` builds it
 and runs a consumer through the result.
@@ -413,8 +413,8 @@ thousand items opens ten thousand host operations at once. A `Channel` bounded
 by `max` makes a sender WAIT rather than dropping, which is `queue.Queue`'s
 policy and not a ring buffer's. Every one of them takes an `AbortSignal`.
 
-Concurrency here is real wherever the work AWAITS — every host operation that
-touches a network, a file or a timer — and is interleaving rather than
+Concurrency here is real wherever the work AWAITS (every host operation that
+touches a network, a file or a timer), and is interleaving rather than
 parallelism for pure reduction, which is what one engine can honestly offer.
 
 ## Live queries
@@ -451,8 +451,8 @@ alarms.count(S.alarm(S.fire));  // multiplicity, because a space is a multiset
 
 ## Spaces implemented in TypeScript
 
-A space's atoms can live wherever you keep them — a `Map`, an array, a SQL
-table, an HTTP service — and the engine queries it like any other space.
+A space's atoms can live wherever you keep them: a `Map`, an array, a SQL
+table, an HTTP service. The engine queries it like any other space.
 
 ```ts
 const rows = new Map([["ada", 3]]);
@@ -521,8 +521,8 @@ console.log(String(proof));
 ```
 
 `m.derivation(target)` answers every proof and `m.why(target)` the first. Each
-node is a discriminated union on `kind` — `step`, `fact`, `builtin`,
-`truncated` — so a `switch` over one is exhaustive and TypeScript proves it.
+node is a discriminated union on `kind` (`step`, `fact`, `builtin`,
+`truncated`), so a `switch` over one is exhaustive and TypeScript proves it.
 `proof.rules` and `proof.facts` are what a reader usually wants first, and
 `complete` is false exactly when a depth budget cut the walk short, so an empty
 answer set and a truncated proof never read alike.
@@ -756,7 +756,7 @@ filesystem of its own and cannot see this process's.
 
 `kb.transaction(term)` runs one term atomically: every engine write commits or
 rolls back together, and an EMPTY answer set is the rollback. The body is a
-TERM rather than a callable, and the reason is architectural — this seat
+TERM rather than a callable, and the reason is architectural: this seat
 reaches JavaScript by suspending the engine, and the engine says exactly why
 that cannot happen inside a transaction: `engine_yield/1 cannot unwind through
 either`. Build the work as a term and this door runs it atomically.
@@ -829,7 +829,7 @@ that did not happen. `rollback` PREFLIGHTS every receipt against a declared
 compensation before undoing anything, because discovering a missing one half
 way through leaves the world in neither state. And a compensation that throws
 keeps its receipt and every receipt before it, so a retry resumes rather than
-restarts — which is why a compensator must be idempotent.
+restarts. A compensator must therefore be idempotent.
 
 The step is not itself atomic here, and that is the one place this seat differs
 from the Python one. Python runs each step inside an engine transaction; this
@@ -896,7 +896,7 @@ await checkSpaceProvider(kb, provider, [], {
 
 `plan` and `pushdown` are different capabilities: `pushdown` classifies how
 exactly you filter ONE pattern, which is what licenses a bound reaching you,
-and `plan` is this. `rules` is a third, declared rather than derived — it says
+and `plan` is this. `rules` is a third, declared rather than derived: it says
 this space's atoms include EQUATIONS, which in MeTTa is the difference between
 a data source and a place a program lives, and no method list can derive a
 promise about content.
@@ -956,7 +956,7 @@ all, so this is the same answer the equations were built from.
 `unresolved` is what keeps it honest: the engine declares an effect for a
 registered operation and a builtin, and none for a head defined by equations,
 whose effect is its own body's. `pure` is a claim rather than a measurement, so
-it is conservative — a body reaching an unresolved head is never called pure
+it is conservative: a body reaching an unresolved head is never called pure
 however pure the rest of it reads.
 
 ## Collections over atoms, before there is an engine
@@ -973,7 +973,7 @@ inbox.matches(S.order(7, S.express));              // sublinear over many patter
 automated theorem provers use at millions-of-terms scale: the tree answers
 candidates and a one-way match confirms, which is what keeps a nonlinear
 pattern such as `(f $x $x)` exact. `PatternMap` keeps the `Map` protocol EXACT
-— `get(k)` answers what was stored under that very key — and puts the dispatch
+(`get(k)` answers what was stored under that very key) and puts the dispatch
 question on its own door.
 
 `metta-node/matching` is what they are built on, and it is useful by itself:
@@ -1076,8 +1076,8 @@ spelling and this host has nothing to hold it in
 
 As deep as the ENGINE can hold one. Nothing on this side recurses per nesting
 level: the wire is a flat preorder token list rather than a nested term, and
-every walk over a term — the codec, `String(atom)`, `mapTerm`, `toAtom`, the
-standard order, the renamers — carries its depth on a worklist. Measured on
+every walk over a term (the codec, `String(atom)`, `mapTerm`, `toAtom`, the
+standard order, the renamers) carries its depth on a worklist. Measured on
 this build, `m.parse` of `(f (f ... 1 ...))` answers at 200,000 deep in 1.2
 seconds and at 500,000 in 2.7, and the term it answers renders, round trips and
 sorts.
@@ -1161,8 +1161,8 @@ catch (error) {
 `CapabilityError`, `CompileError`, `ClosedError`, `UnsupportedError`,
 `StrictError`, `NotReducibleError`, `CastError`, `AssertionError`,
 `SourceNotFoundError`, `InferenceLimitError`, `TimeLimitError`,
-`StackLimitError`, `ProviderError`, `SubscriberError`, `TransportError` — all
-under `MettaError`, all with `cause` and `toJSON`, and every one of them is
+`StackLimitError`, `ProviderError`, `SubscriberError`, `TransportError`. All
+sit under `MettaError` with `cause` and `toJSON`, and every one of them is
 raised by something: a class nobody produces is a `catch` branch a caller
 cannot take, so there is no such class here.
 
@@ -1232,11 +1232,11 @@ counterpart here yet, each for a stated reason rather than by oversight:
 
 | absent | why |
 |---|---|
-| `algebra` — the counting, tropical, probability, provenance and ranking carriers, and `under` | annotated matching is an engine capability this transport has not been wired to; the `semiring` vocabulary is here, so the words a program would use already are |
-| `arrays` — numeric-array interop | the Python side images numpy; TypeScript's counterpart is a typed array over a provider, which `m.attach` already supports without a module of its own |
-| `remote` — a space over a network | a `SpaceProvider` whose methods `fetch` IS this, and it needs no engine support; what is absent is a packaged client |
-| `lint` — static analysis of definitions | a linter is a program over `m.forms`, which is here; the analysis is not |
-| `manifest` / `boot` — assembling an app from a `(boot ...)` manifest | no counterpart |
+| `algebra`: the counting, tropical, probability, provenance and ranking carriers, and `under` | annotated matching is an engine capability this transport has not been wired to; the `semiring` vocabulary is here, so the words a program would use already are |
+| `arrays`: numeric-array interop | the Python side images numpy; TypeScript's counterpart is a typed array over a provider, which `m.attach` already supports without a module of its own |
+| `remote`: a space over a network | a `SpaceProvider` whose methods `fetch` IS this, and it needs no engine support; what is absent is a packaged client |
+| `lint`: static analysis of definitions | a linter is a program over `m.forms`, which is here; the analysis is not |
+| `manifest` / `boot`: assembling an app from a `(boot ...)` manifest | no counterpart |
 | `tables`, `convert`, `integrate` | no counterpart |
 | `TabledMap` | it reads the engine's table statistics, which this bridge does not expose |
 | a pattern-position lazy path | Python lifts the marker out of the pattern before matching; this surface evaluates `(match ...)` as an ordinary term, so `metta-node/paths` does the same job as an OPERATION the engine calls, which is a door TypeScript has and Python does not |

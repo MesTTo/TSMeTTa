@@ -127,7 +127,7 @@ await using view = await LiveView.open(kb, S.alarm(V.what));
 
 ## Coordination
 
-`race`, `merge`, `parMap`, `every`, `Channel`, `spawn` — the platform's own
+`race`, `merge`, `parMap`, `every`, `Channel`, `spawn`: the platform's own
 concurrency, each taking an `AbortSignal`. The engine's `library(thread)` is
 absent from a WebAssembly build, so this is where concurrency lives.
 

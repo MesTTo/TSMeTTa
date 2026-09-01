@@ -25,6 +25,9 @@
  *     protocol says to spell it as a removal instead
  *   - a bearer token is compared in CONSTANT TIME and checked before the body
  *     is read [tested: "refuses a wrong token before reading the body"]
+ *   - operation refusals use the protocol's single 4xx error shape, whatever
+ *     local class produced them [tested: "uses one protocol error status for every refusal";
+ *     commit=WORKTREE]
  * Owns: on the server side, one cursor per open stream, each released by
  *   `/stop`, by an idle deadline, or by the gateway closing.
  * Open Obligations:
@@ -37,7 +40,7 @@ import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import { Atom } from "./atom.ts";
-import { CapabilityError, MettaError, TransportError } from "./errors.ts";
+import { MettaError, TransportError } from "./errors.ts";
 import { showsAs } from "./present.ts";
 import type { DeliveryPromise, ProviderCapability, SpaceProvider } from "./provider.ts";
 import type { Space } from "./space.ts";
@@ -484,8 +487,7 @@ async function handle(
     const body = await readBody(request);
     reply(200, await perform(path, body, spaces, cursors, limit));
   } catch (error) {
-    const status = error instanceof CapabilityError ? 400 : 400;
-    reply(status, { error: String(error instanceof Error ? error.message : error) });
+    reply(400, { error: String(error instanceof Error ? error.message : error) });
   }
 }
 

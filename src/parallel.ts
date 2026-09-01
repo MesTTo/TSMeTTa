@@ -20,6 +20,9 @@
  *     finished in, which is what makes it a map rather than a gather
  *   - a `Channel` bounded by `max` makes a sender WAIT rather than dropping,
  *     which is `queue.Queue`'s policy and not `deque(maxlen=)`'s
+ *   - `Channel.size` is the one queued-value count; the surface carries no
+ *     synonymous alias [tested: "keeps one name for the queued count";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -264,11 +267,6 @@ export class Channel<T> implements AsyncIterable<T> {
     // the waiting path releases it.
     this.#waitingSenders.shift()?.();
     return held;
-  }
-
-  /** How many values are queued and not yet taken. */
-  get queued(): number {
-    return this.#queued.length;
   }
 
   async #next(): Promise<IteratorResult<T>> {

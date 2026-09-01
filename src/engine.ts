@@ -28,6 +28,9 @@
  *     transport callback for an attached-space write", "records the settled
  *     result of an asynchronous effect";
  *     commit=b37169f308aded23c8bde973eb5ed2f327720c65]
+ *   - a job exposes complete collection, not a partial uniqueness helper that
+ *     can return before proving uniqueness [tested: "does not expose the partial Job.only helper";
+ *     commit=WORKTREE]
  * Owns: one WebAssembly instance per boot(), one Prolog engine per open job,
  *   and the live-host-value table, all released by dispose().
  * Decides: a job is addressed by integer because the WebAssembly value
@@ -56,7 +59,6 @@ import {
   EngineError,
   MettaError,
   NameError,
-  ResultError,
   SourceNotFoundError,
   TransportError,
   UnsupportedError,
@@ -489,17 +491,6 @@ export class Job {
       if (event === null) return events;
       events.push(event);
     }
-  }
-
-  /** The one event this job produces, or a refusal naming what it got instead. */
-  async only(): Promise<JobEvent> {
-    const event = await this.next();
-    if (event === null) {
-      throw new ResultError("the engine answered nothing where one answer was required");
-    }
-    // Drain, so the job's inference spend is recorded and its engine released.
-    await this.next();
-    return event;
   }
 
   /** Release the engine. Idempotent. */

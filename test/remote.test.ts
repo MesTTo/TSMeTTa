@@ -8,6 +8,9 @@
  *   - the lazy lifecycle really is lazy: two answers of a larger set cost two
  *     answers on the serving side
  *   - a credential is checked before the body is read
+ *   - every operation refusal uses the protocol's one 4xx error shape without
+ *     a dead classification branch [tested: "uses one protocol error status for every refusal";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -15,9 +18,11 @@
  */
 
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { type MeTTa, S, V, metta } from "../src/index.ts";
+import { CapabilityError, type MeTTa, type Space, S, V, metta, packageRoot } from "../src/index.ts";
 import {
   BODY_LIMIT,
   type Gateway,
@@ -201,6 +206,36 @@ describe("the remote protocol", () => {
 
     const wrongMethod = await fetch(`${gateway.url}/match`, { method: "PUT" });
     assert.equal(wrongMethod.status, 405);
+  });
+
+  it("uses one protocol error status for every refusal", async () => {
+    const failures: readonly Error[] = [
+      new CapabilityError("the space lacks enumeration"),
+      new Error("the provider failed unexpectedly"),
+    ];
+    for (const [at, failure] of failures.entries()) {
+      const name = `&failing-${String(at)}`;
+      const space = {
+        name,
+        get size(): number {
+          return 0;
+        },
+        atoms(): never {
+          throw failure;
+        },
+      } as unknown as Space;
+      await using failed = await serve({ spaces: [space], port: 0 });
+      const response = await fetch(`${failed.url}/atoms`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ space: name }),
+      });
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { error: failure.message });
+    }
+
+    const source = readFileSync(join(packageRoot, "src", "remote.ts"), "utf8");
+    assert.doesNotMatch(source, /instanceof CapabilityError\s*\?\s*400\s*:\s*400/);
   });
 
   it("passes the gateway conformance suite it ships", async () => {

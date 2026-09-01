@@ -7,6 +7,9 @@
  *   - race cancellation composes with each branch's own deadline
  *     [tested: "preserves a branch's own deadline while adding race cancellation";
  *     commit=0fc1435242a699749fdd6ba3995239648c02242e]
+ *   - `Channel.size` is the sole queued-value count instead of carrying a
+ *     synonymous second property [tested: "keeps one name for the queued count";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -179,10 +182,10 @@ describe("taking from a channel without waiting", () => {
   it("answers what is queued, and nothing when nothing is", async () => {
     const channel = new Channel<number>();
     assert.equal(channel.tryReceive(), undefined, "nothing queued yet");
-    assert.equal(channel.queued, 0);
+    assert.equal(channel.size, 0);
     await channel.send(1);
     await channel.send(2);
-    assert.equal(channel.queued, 2);
+    assert.equal(channel.size, 2);
     assert.equal(channel.tryReceive(), 1);
     assert.equal(channel.tryReceive(), 2);
     assert.equal(channel.tryReceive(), undefined, "drained");
@@ -191,6 +194,12 @@ describe("taking from a channel without waiting", () => {
     channel.close();
     assert.equal(channel.tryReceive(), undefined);
     assert.ok(channel.closed);
+  });
+
+  it("keeps one name for the queued count", () => {
+    const channel = new Channel<number>();
+    assert.equal(channel.size, 0);
+    assert.ok(!("queued" in channel));
   });
 
   it("releases a sender that a full channel had blocked", async () => {

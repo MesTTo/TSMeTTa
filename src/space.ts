@@ -21,6 +21,10 @@
  *   - `runOne` enforces exact cardinality instead of selecting one answer from
  *     a nondeterministic result [tested: "runOne refuses a term with more than
  *     one answer"; commit=12defbe4bc38e57030705bc131e54f138bbf2b15]
+ *   - `solve` walks each side's variables once, and `readsThrough` consumes
+ *     each public parent identity directly [tested: "walks solve's left
+ *     variables once"; "reads through each parent identity without a name
+ *     adapter"; commit=WORKTREE]
  *   - a ground expression remains a structured space identity across every
  *     collection, query, reflection, and lifecycle door [tested: "keeps
  *     parametric space identities structured and collision-free";
@@ -790,7 +794,12 @@ export class Space {
   solve(pattern: Term, subject: Term, options: AskOptions = {}): Answers<Row> {
     const left = toAtom(pattern);
     const right = toAtom(subject);
-    const columns = [...termVars(left), ...termVars(right).filter((v) => !termVars(left).includes(v))];
+    const leftVars = termVars(left);
+    const leftNames = new Set(leftVars.map((variable) => variable.name));
+    const columns = [
+      ...leftVars,
+      ...termVars(right).filter((variable) => !leftNames.has(variable.name)),
+    ];
     if (columns.length === 0) {
       throw new MettaError("solve needs at least one variable in its pattern or its subject");
     }
@@ -1056,10 +1065,4 @@ function isTrue(atom: Atom): boolean {
   if (typeof value === "boolean") return value;
   // Either spelling reads to the one constant, so both are accepted here.
   return atom instanceof Sym && (atom.name === "true" || atom.name === "True");
-}
-
-/** The engine name behind whatever names a space. */
-export function nameOf(space: Space | SpaceHandle | string): string {
-  if (typeof space === "string") return space;
-  return space instanceof Space ? space.name : space.name;
 }

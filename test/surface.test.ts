@@ -9,6 +9,10 @@
  *   - `runOne` refuses nondeterministic terms instead of silently returning
  *     their final answer [tested: "runOne refuses a term with more than one
  *     answer"; commit=12defbe4bc38e57030705bc131e54f138bbf2b15]
+ *   - solving walks each side's variables once, and parent-space composition
+ *     accepts each public identity directly [tested: "walks solve's left
+ *     variables once"; "reads through each parent identity without a name
+ *     adapter"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -19,6 +23,7 @@ import { strict as assert } from "node:assert";
 import { after, before, describe, it } from "node:test";
 
 import {
+  type Atom,
   type Library,
   type MeTTa,
   MettaError,
@@ -192,6 +197,28 @@ describe("one synchronous answer", () => {
   });
 });
 
+describe("solving backwards", () => {
+  it("walks solve's left variables once", () => {
+    const left = expr(S.left.atom, V.x);
+    const itemReadsFor = (right: Atom): number => {
+      let itemReads = 0;
+      const observed = new Proxy(left, {
+        get(target, key) {
+          if (key === "items") itemReads += 1;
+          return Reflect.get(target, key, target) as unknown;
+        },
+      });
+      void m.solve(observed, right);
+      return itemReads;
+    };
+
+    assert.equal(
+      itemReadsFor(expr(S.right.atom, V.a, V.b, V.c)),
+      itemReadsFor(expr(S.right.atom, V.a)),
+    );
+  });
+});
+
 describe("scopes", () => {
   it("counts what a block cost, and freezes the count when it ends", async () => {
     let frozen = 0;
@@ -268,6 +295,20 @@ describe("a child space", () => {
     assert.equal((await child.match(S.fromParent(V.n))).length, 1, "the child cannot see the parent");
     assert.equal((await child.match(S.fromChild(V.n))).length, 1);
     assert.equal((await parent.match(S.fromChild(V.n))).length, 0, "a local write reached the parent");
+  });
+
+  it("reads through each parent identity without a name adapter", async () => {
+    const atomic = fresh();
+    atomic.add(S.inherited(S.atomic));
+    assert.equal((await fresh().readsThrough(atomic.name).match(S.inherited(S.atomic))).length, 1);
+    assert.equal((await fresh().readsThrough(atomic.handle).match(S.inherited(S.atomic))).length, 1);
+
+    const parametric = m.space(S.parent(S.structured, counter));
+    parametric.add(S.inherited(S.parametric));
+    assert.equal(
+      (await fresh().readsThrough(parametric.handle).match(S.inherited(S.parametric))).length,
+      1,
+    );
   });
 });
 

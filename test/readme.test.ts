@@ -8,7 +8,7 @@
  *   - every counterpart repaired in finding N25 names a public Node subpath,
  *     and the stale absence table cannot return unnoticed
  *     [tested: "ties every documented Python counterpart to an exported Node subpath";
- *     commit=WORKTREE]
+ *     commit=d4625c3919a1c40af96479c9d365084cd79ea255]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

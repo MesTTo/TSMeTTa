@@ -14,6 +14,10 @@
  *   - each subclass carries its own default code, so `throw new CastError(...)`
  *     needs no options bag and a `catch` can narrow by class instead of by
  *     string comparison [tested: "each error subclass carries its own code"]
+ *   - every concrete exported condition has a source producer; retired strict
+ *     scope conditions are absent rather than reserving unreachable catch arms
+ *     [tested: "discovers every published condition and its producer";
+ *     "contains no retired strict-scope conditions"; commit=WORKTREE]
  *   - a reduction that failed across several nondeterministic branches raises
  *     the platform's own `AggregateError` with one `cause`-chained entry per
  *     branch, rather than an error shape invented here
@@ -53,10 +57,6 @@ export type Code =
   | "ERR_METTA_CLOSED"
   /** The surface was asked for something it does not carry. */
   | "ERR_METTA_UNSUPPORTED"
-  /** A directive answered itself, where a strict scope required a reduction. */
-  | "ERR_METTA_STRICT"
-  /** A term the engine has no equation for, where one was required. */
-  | "ERR_METTA_NOT_REDUCIBLE"
   /** A value the engine's type discipline will not accept as the target type. */
   | "ERR_METTA_CAST"
   /** The engine's own inference budget ran out inside a reduction. */

@@ -4,6 +4,10 @@
  * Guarantees:
  *   - catching `MettaError` catches every refusal this package raises
  *   - a caller may narrow by class or by code, and the two agree
+ *   - every exported concrete condition has a source producer and obsolete
+ *     strict-scope conditions cannot return to the types or documentation
+ *     [tested: "discovers every published condition and its producer";
+ *     "contains no retired strict-scope conditions"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -11,7 +15,11 @@
  */
 
 import { strict as assert } from "node:assert";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
+
+import * as errors from "../src/errors.ts";
 
 import {
   AssertionError,
@@ -40,29 +48,64 @@ import {
   nearest,
   unknownName,
 } from "../src/index.ts";
+import { packageRoot } from "../src/engine.ts";
 
-const FAMILY: readonly [new (message: string) => MettaError, Code][] = [
-  [EngineError, "ERR_METTA_ENGINE"],
-  [MettaSyntaxError, "ERR_METTA_SYNTAX"],
-  [WireError, "ERR_METTA_WIRE"],
-  [ResultError, "ERR_METTA_ABSENT"],
-  [NameError, "ERR_METTA_NAME"],
-  [CapabilityError, "ERR_METTA_CAPABILITY"],
-  [CompileError, "ERR_METTA_LOWER"],
-  [ClosedError, "ERR_METTA_CLOSED"],
-  [UnsupportedError, "ERR_METTA_UNSUPPORTED"],
-  [CastError, "ERR_METTA_CAST"],
-  [ProviderError, "ERR_METTA_PROVIDER"],
-  [SubscriberError, "ERR_METTA_SUBSCRIBER"],
-  [TransportError, "ERR_METTA_TRANSPORT"],
-  [AssertionError, "ERR_METTA_ASSERTION"],
-  [SourceNotFoundError, "ERR_METTA_SOURCE"],
-];
+const EXPECTED_CODES: Readonly<Record<string, Code>> = {
+  AssertionError: "ERR_METTA_ASSERTION",
+  CapabilityError: "ERR_METTA_CAPABILITY",
+  CastError: "ERR_METTA_CAST",
+  ClosedError: "ERR_METTA_CLOSED",
+  CompileError: "ERR_METTA_LOWER",
+  EngineError: "ERR_METTA_ENGINE",
+  InferenceLimitError: "ERR_METTA_INFERENCES",
+  MettaSyntaxError: "ERR_METTA_SYNTAX",
+  NameError: "ERR_METTA_NAME",
+  ProviderError: "ERR_METTA_PROVIDER",
+  ResultError: "ERR_METTA_ABSENT",
+  SourceNotFoundError: "ERR_METTA_SOURCE",
+  StackLimitError: "ERR_METTA_STACK",
+  SubscriberError: "ERR_METTA_SUBSCRIBER",
+  TimeLimitError: "ERR_METTA_TIME",
+  TransportError: "ERR_METTA_TRANSPORT",
+  UnsupportedError: "ERR_METTA_UNSUPPORTED",
+  WireError: "ERR_METTA_WIRE",
+};
+
+type ErrorKind = typeof MettaError;
+
+const isErrorKind = (value: unknown): value is ErrorKind =>
+  typeof value === "function" && value.prototype instanceof MettaError;
+
+const CONDITIONS = Object.values(errors)
+  .filter(isErrorKind)
+  .filter((Kind) => Kind !== ResourceLimitError)
+  .sort((left, right) => left.name.localeCompare(right.name));
+
+const SOURCE = join(packageRoot, "src");
+
+function sourceText(): string {
+  const texts: string[] = [];
+  const walk = (at: string): void => {
+    for (const entry of readdirSync(at)) {
+      const full = join(at, entry);
+      if (statSync(full).isDirectory()) walk(full);
+      else if (entry.endsWith(".ts")) texts.push(readFileSync(full, "utf8"));
+    }
+  };
+  walk(SOURCE);
+  return texts.join("\n");
+}
 
 describe("the error family", () => {
   it("each error subclass carries its own code", () => {
-    for (const [Kind, code] of FAMILY) {
-      const raised = new Kind("something");
+    assert.deepEqual(
+      CONDITIONS.map((Kind) => Kind.name),
+      Object.keys(EXPECTED_CODES).sort(),
+    );
+    for (const Kind of CONDITIONS) {
+      const code = EXPECTED_CODES[Kind.name] as Code;
+      const args = Kind.prototype instanceof ResourceLimitError ? ["something", 1] : ["something"];
+      const raised = Reflect.construct(Kind, args) as MettaError;
       assert.equal(raised.code, code, Kind.name);
       assert.equal(raised.name, Kind.name);
       assert.ok(raised instanceof MettaError, `${Kind.name} is in the family`);
@@ -81,20 +124,17 @@ describe("the error family", () => {
     assert.ok(new StackLimitError("too deep", 1024) instanceof ResourceLimitError);
   });
 
-  it("gives every published class a producer, so no catch branch is unreachable", () => {
-    // A class nobody raises is a branch a caller cannot take. NotReducibleError
-    // and StrictError became exactly that when the strict scope was removed
-    // (user, 2026-08-31), so both are gone rather than left unreachable.
-    const raised = new Set([
-      ...["AssertionError", "StackLimitError", "SourceNotFoundError"],
-    ]);
-    for (const name of raised) {
-      assert.ok(
-        FAMILY.some(([Kind]) => Kind.name === name) ||
-          ["StackLimitError"].includes(name),
-        `${name} is not in the family table`,
-      );
+  it("discovers every published condition and its producer", () => {
+    const sources = sourceText();
+    for (const Kind of CONDITIONS) {
+      assert.match(sources, new RegExp(`\\bnew\\s+${Kind.name}\\s*\\(`), `${Kind.name} has no producer`);
     }
+  });
+
+  it("contains no retired strict-scope conditions", () => {
+    const retired = /StrictError|NotReducibleError|ERR_METTA_STRICT|ERR_METTA_NOT_REDUCIBLE/;
+    assert.doesNotMatch(readFileSync(join(SOURCE, "errors.ts"), "utf8"), retired);
+    assert.doesNotMatch(readFileSync(join(packageRoot, "README.md"), "utf8"), retired);
   });
 
   it("keeps a cause, so the data behind a refusal is never lost", () => {

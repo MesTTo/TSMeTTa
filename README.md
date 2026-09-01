@@ -1152,19 +1152,18 @@ the code and the two agree:
 catch (error) {
   if (error instanceof ResultError) ...            // not exactly one answer
   else if (error instanceof CapabilityError) ...   // this build, or this space, lacks it
-  else if (MettaError.is(error, "ERR_METTA_STRICT")) ...
+  else if (MettaError.is(error, "ERR_METTA_UNSUPPORTED")) ...
   else throw error;
 }
 ```
 
 `EngineError`, `MettaSyntaxError`, `WireError`, `ResultError`, `NameError`,
 `CapabilityError`, `CompileError`, `ClosedError`, `UnsupportedError`,
-`StrictError`, `NotReducibleError`, `CastError`, `AssertionError`,
-`SourceNotFoundError`, `InferenceLimitError`, `TimeLimitError`,
-`StackLimitError`, `ProviderError`, `SubscriberError`, `TransportError`. All
-sit under `MettaError` with `cause` and `toJSON`, and every one of them is
-raised by something: a class nobody produces is a `catch` branch a caller
-cannot take, so there is no such class here.
+`CastError`, `AssertionError`, `SourceNotFoundError`, `InferenceLimitError`,
+`TimeLimitError`, `StackLimitError`, `ProviderError`, `SubscriberError`,
+`TransportError`. All sit under `MettaError` with `cause` and `toJSON`, and
+every one of them is raised by something: a class nobody produces is a `catch`
+branch a caller cannot take, so there is no such class here.
 
 A deadline is NOT one of them: `AbortSignal.timeout` aborts with the platform's
 own `TimeoutError`, which is what every other async API raises, and inventing a
@@ -1183,12 +1182,16 @@ That took work rather than being free: swipl-wasm writes every Prolog
 exception to the console before handing it back, and offers no switch, so
 `bridge.pl` catches inside the engine and the outcome crosses as data.
 
-Every refusal carries a stable `code`, so a test or a tool matches the code
-and the prose stays free to improve: `ERR_METTA_ENGINE`, `ERR_METTA_WIRE`,
+Every refusal carries one of the stable codes below, so a test or a tool
+matches the code and the prose stays free to improve:
+
+`ERR_METTA_ENGINE`, `ERR_METTA_SYNTAX`, `ERR_METTA_WIRE`,
 `ERR_METTA_ABSENT`, `ERR_METTA_AMBIGUOUS`, `ERR_METTA_NAME`,
 `ERR_METTA_CAPABILITY`, `ERR_METTA_TRACE`, `ERR_METTA_LOWER`,
-`ERR_METTA_CLOSED`, `ERR_METTA_UNSUPPORTED`, `ERR_METTA_NOT_REDUCIBLE`,
-`ERR_METTA_ASSERTION`, `ERR_METTA_SOURCE`, `ERR_METTA_STACK`.
+`ERR_METTA_CLOSED`, `ERR_METTA_UNSUPPORTED`, `ERR_METTA_CAST`,
+`ERR_METTA_INFERENCES`, `ERR_METTA_TIME`, `ERR_METTA_STACK`,
+`ERR_METTA_PROVIDER`, `ERR_METTA_SUBSCRIBER`, `ERR_METTA_TRANSPORT`,
+`ERR_METTA_ASSERTION`, `ERR_METTA_SOURCE`.
 
 ## How a host operation reaches JavaScript
 

@@ -561,7 +561,7 @@ export class Job {
     const wires = event[2] as readonly unknown[];
     // The engine sends the space it is reducing in, so an operation may ask
     // where it is without the space being one of its arguments.
-    const where = event[3] === undefined ? undefined : hostText(event[3]);
+    const where = event[3] === undefined ? undefined : this.#engine.decodeAtom(event[3]);
     let op: HostOp;
     try {
       op = this.#engine.operation(name, wires.length);
@@ -951,7 +951,7 @@ export class Engine {
    * back through a new job, because a new job has its own module and would
    * answer the default however the caller had switched it.
    */
-  callingSpace: string | undefined = undefined;
+  callingSpace: Atom | undefined = undefined;
 
   /** A watch id no other watch is using. */
   nextWatchId(): number {

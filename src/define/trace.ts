@@ -27,7 +27,7 @@
  *   Future Enhancements: None
  */
 
-import { type Atom, type Term, expr, fresh, space, sym, toAtom } from "../atom.ts";
+import { type Atom, type Term, expr, fresh, sym, toAtom } from "../atom.ts";
 import { type Plan, type Row, isGoalRequest } from "../answers.ts";
 import { CompileError, MettaError } from "../errors.ts";
 
@@ -122,7 +122,7 @@ export function nest(clause: Clause): Atom {
   for (let index = clause.goals.length - 1; index >= 0; index -= 1) {
     const goal = clause.goals[index] as TracedGoal;
     if (goal.plan.kind === "match") {
-      body = expr(sym("match"), space(goal.plan.space), goal.plan.pattern, body);
+      body = expr(sym("match"), goal.plan.space, goal.plan.pattern, body);
     } else {
       body = expr(sym("let"), goal.bound ?? fresh("ask"), goal.plan.term, body);
     }

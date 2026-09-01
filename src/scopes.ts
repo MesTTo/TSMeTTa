@@ -263,7 +263,10 @@ export class World implements Disposable {
       this.#engine.encodeAtom(atom),
     );
     this.#engine
-      .start(["commit", this.#draft.name, this.#parent.name, removals], [["transaction"]] as Scope[])
+      .start(
+        ["commit", this.#draft.reference, this.#parent.reference, removals],
+        [["transaction"]] as Scope[],
+      )
       .sync();
     this.#drop();
   }

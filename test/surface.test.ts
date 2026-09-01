@@ -25,6 +25,7 @@ import {
   Sym,
   V,
   arrow,
+  expr,
   hostValue,
   metta,
   space,
@@ -78,11 +79,47 @@ describe("a space is a collection", () => {
     assert.equal(String(S.holds(kb.handle)), `(holds ${kb.name})`);
   });
 
-  it("names a parametric space by a whole atom", () => {
-    const one = m.space(S.cache(S.primary, 100));
-    const two = m.space(S.cache(S.primary, 200));
-    assert.notEqual(one.name, two.name);
-    assert.equal(m.space(S.cache(S.primary, 100)), one, "one name is one space");
+  it("keeps parametric space identities structured and collision-free", async () => {
+    const identity = S.cache(S.primary, 100);
+    const one = m.space(identity);
+    const flat = m.space(S["cache-primary-100"]);
+    const spaced = m.space(S.cache(S["primary 100"]));
+
+    assert.equal(one.handle, identity);
+    assert.equal(one.name, "(cache primary 100)");
+    assert.notEqual(one, flat);
+    assert.notEqual(one, spaced);
+    assert.notEqual(flat, spaced);
+    assert.equal(m.space(S.cache(S.primary, 100)), one, "one atom identity is one space");
+
+    one.add(S.entry(S.structured));
+    flat.add(S.entry(S.flat));
+    spaced.add(S.entry(S.spaced));
+    assert.deepEqual((await one.match(S.entry(V.which))).map((row) => String(row["which"])), [
+      "structured",
+    ]);
+    assert.deepEqual((await flat.match(S.entry(V.which))).map((row) => String(row["which"])), [
+      "flat",
+    ]);
+    assert.deepEqual((await spaced.match(S.entry(V.which))).map((row) => String(row["which"])), [
+      "spaced",
+    ]);
+    assert.equal(one.size, 1);
+    assert.ok(one.has(S.entry(S.structured)));
+    assert.deepEqual((await one.atoms()).map(String), ["(entry structured)"]);
+
+    const here = m.op(function parametricSpaceHere() {
+      return m.currentSpace().handle;
+    });
+    assert.equal(await one.eval(expr(here.atom)).one(), identity);
+    assert.deepEqual(m.run("!(match (cache primary 100) (entry $which) $which)")[0]?.texts, [
+      "structured",
+    ]);
+    assert.ok(m.spaces().includes(identity));
+
+    assert.throws(() => m.space(S.cache(V.open, 100)), /must be ground/);
+    assert.throws(() => m.space(expr()), /nonempty ground expression/);
+    assert.throws(() => m.attach(identity, new Map()), /needs an atomic space identity/);
   });
 });
 

@@ -75,8 +75,8 @@ export function errorOf(atom: Expression): MettaError {
 export type Plan =
   | {
       readonly kind: "match";
-      /** The space to search, by engine name. */
-      readonly space: string;
+      /** The space to search, by its complete engine identity. */
+      readonly space: Atom;
       /** The pattern, as written. */
       readonly pattern: Atom;
       /** Its variables, in first-seen order: the row's columns. */
@@ -84,8 +84,8 @@ export type Plan =
     }
   | {
       readonly kind: "eval";
-      /** The space to reduce in, by engine name. */
-      readonly space: string;
+      /** The space to reduce in, by its complete engine identity. */
+      readonly space: Atom;
       /** The term to reduce. */
       readonly term: Atom;
     };

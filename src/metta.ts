@@ -12,6 +12,9 @@
  *   - `evalStatus` reports every answer of a nondeterministic term
  *     [tested: "reports every status row of a nondeterministic term";
  *     commit=6b117a66f6d1028496594942d4b4bdb4cc2b14fe]
+ *   - parametric spaces retain their ground expression identity instead of a
+ *     flattened display-name approximation [tested: "keeps parametric space
+ *     identities structured and collision-free"; commit=WORKTREE]
  *   - nothing this surface does writes to the host's console
  * Owns: one engine, its spaces, its registered operations, and its scopes.
  * Open Obligations:
@@ -63,6 +66,7 @@ import {
   type Admission,
   type DerivationOptions,
   Space,
+  type SpaceIdentity,
   type SpaceOptions,
   type WatchOptions,
   answerIterator,
@@ -152,7 +156,7 @@ export interface ReconcileReport {
  */
 export class MeTTa implements Disposable {
   #engine: Engine;
-  #spaces = new Map<string, Space>();
+  #spaces = new Map<SpaceIdentity, Space>();
   #known = new Set<string>();
   #scopes: Scope[] = [];
 
@@ -204,11 +208,14 @@ export class MeTTa implements Disposable {
    * the name.
    */
   space(name: Term, options: SpaceOptions = {}): Space {
-    const engineName = spaceNameOf(name);
-    let held = this.#spaces.get(engineName);
+    const identity = spaceIdentityOf(name);
+    let held = this.#spaces.get(identity);
     if (held === undefined) {
-      held = new Space(this.#engine, spaceAtom(engineName));
-      this.#spaces.set(engineName, held);
+      if (identity instanceof Expression) {
+        this.#engine.start(["parametric", this.#engine.encodeAtom(identity)]).sync();
+      }
+      held = new Space(this.#engine, identity);
+      this.#spaces.set(identity, held);
     }
     if (options.parent !== undefined) held.readsThrough(options.parent);
     if (options.grants !== undefined) held.restrict(options.grants);
@@ -216,12 +223,14 @@ export class MeTTa implements Disposable {
   }
 
   /** Every space this engine has registered. */
-  spaces(): SpaceHandle[] {
+  spaces(): SpaceIdentity[] {
     const event = this.#engine.start(["spacenames"]).sync();
     if (event === null || event.kind !== "value") return [];
     const listed = event.atom;
     if (!(listed instanceof Expression)) return [];
-    return listed.items.filter((item): item is SpaceHandle => item instanceof SpaceHandle);
+    return listed.items.filter(
+      (item): item is SpaceIdentity => item instanceof SpaceHandle || item instanceof Expression,
+    );
   }
 
   /** Admit atoms into the engine's own space. */
@@ -271,12 +280,12 @@ export class MeTTa implements Disposable {
   ask(term: Atom, space: Space, options: AskOptions = {}): Answers<Atom> {
     const engine = this.#engine;
     const wire = engine.encodeAtom(term);
-    const name = space.name;
+    const reference = space.reference;
     return new Answers<Atom>(
       term.text,
-      () => answerIterator(engine.start(["eval", wire, name])),
+      () => answerIterator(engine.start(["eval", wire, reference])),
       options.signal,
-      { kind: "eval", space: name, term },
+      { kind: "eval", space: space.handle, term },
     );
   }
 
@@ -298,7 +307,7 @@ export class MeTTa implements Disposable {
    * `empty` for a pruned branch.
    */
   runStatus(source: string, space: Space = this.self): StatusGroup[] {
-    const event = this.#engine.start(["runstatus", source, space.name]).sync();
+    const event = this.#engine.start(["runstatus", source, space.reference]).sync();
     if (event === null || event.kind !== "value") return [];
     const groups = event.atom;
     if (!(groups instanceof Expression)) return [];
@@ -322,7 +331,7 @@ export class MeTTa implements Disposable {
    */
   reducible(term: Term, space: Space = this.self): boolean {
     const event = this.#engine
-      .start(["reducible", space.name, this.#engine.encodeAtom(toAtom(term))])
+      .start(["reducible", space.reference, this.#engine.encodeAtom(toAtom(term))])
       .sync();
     return event !== null && event.kind === "value" && hostValue(event.atom) === true;
   }
@@ -346,7 +355,7 @@ export class MeTTa implements Disposable {
   evalStatus(term: Term, space: Space = this.self): StatusGroup {
     const atom = toAtom(term);
     const status: DirectiveStatus = this.reducible(atom, space) ? "value" : "not-reducible";
-    const job = this.#engine.start(["eval", this.#engine.encodeAtom(atom), space.name]);
+    const job = this.#engine.start(["eval", this.#engine.encodeAtom(atom), space.reference]);
     const rows = job
       .syncAll()
       .filter((event): event is JobEvent & { readonly kind: "answer" } => event.kind === "answer")
@@ -583,10 +592,10 @@ export class MeTTa implements Disposable {
     const engine = this.#engine;
     const built = toAtom(term);
     const wire = engine.encodeAtom(built);
-    const name = this.self.name;
+    const reference = this.self.reference;
     return new Answers<Atom>(
       `speculate(${built.text})`,
-      () => answerIterator(engine.start(["eval", wire, name], [["speculate"]])),
+      () => answerIterator(engine.start(["eval", wire, reference], [["speculate"]])),
       options.signal,
     );
   }
@@ -606,14 +615,24 @@ export class MeTTa implements Disposable {
    * ```
    */
   attach(name: Term, backing: SpaceProvider | object): Space {
-    const engineName = spaceNameOf(name);
-    registerProvider(this.#engine, engineName, asProvider(backing));
-    return this.space(engineName);
+    const identity = spaceIdentityOf(name);
+    if (!(identity instanceof SpaceHandle)) {
+      throw new NameError(
+        "an attached Node provider currently needs an atomic space identity; " +
+          "ground expression identities are native engine spaces",
+      );
+    }
+    registerProvider(this.#engine, identity.name, asProvider(backing));
+    return this.space(identity);
   }
 
   /** Stop backing a space with TypeScript; the name is free again afterwards. */
   detach(name: Term): void {
-    unregisterProvider(this.#engine, spaceNameOf(name));
+    const identity = spaceIdentityOf(name);
+    if (!(identity instanceof SpaceHandle)) {
+      throw new NameError("an attached Node provider has an atomic space identity");
+    }
+    unregisterProvider(this.#engine, identity.name);
   }
 
   /** The engine's structured documentation for one subject. */
@@ -683,7 +702,7 @@ export class MeTTa implements Disposable {
   trace(source: string, options: TraceOptions = {}): TraceEvent[] {
     const space = options.space ?? this.self;
     const max = options.maxEvents ?? 10_000;
-    const event = this.#engine.start(["trace", source, space.name, max]).sync();
+    const event = this.#engine.start(["trace", source, space.reference, max]).sync();
     if (event === null || event.kind !== "value") return [];
     const rows = event.atom;
     if (!(rows instanceof Expression)) return [];
@@ -706,7 +725,7 @@ export class MeTTa implements Disposable {
    */
   disassemble(name: string | Sym | Defined, space: Space = this.self): string {
     const head = headOf(name);
-    const event = this.#engine.start(["disassemble", space.name, head]).sync();
+    const event = this.#engine.start(["disassemble", space.reference, head]).sync();
     if (event === null || event.kind !== "value") {
       throw new NameError(`${head} has no compiled clauses in ${space.name}`);
     }
@@ -853,15 +872,43 @@ export async function metta(options: BootOptions = {}): Promise<MeTTa> {
   return MeTTa.boot(options);
 }
 
-/** The engine name a term names a space by. */
-function spaceNameOf(name: Term): string {
-  if (typeof name === "string") return name.startsWith("&") ? name : `&${name}`;
+/** The complete atomic or parametric identity a term names a space by. */
+function spaceIdentityOf(name: Term): SpaceIdentity {
+  if (typeof name === "string") return spaceAtom(name.startsWith("&") ? name : `&${name}`);
   const atom = toAtom(name);
-  if (atom instanceof SpaceHandle) return atom.name;
-  if (atom instanceof Sym) return atom.name.startsWith("&") ? atom.name : `&${atom.name}`;
-  // A parametric space is named by a whole ATOM, so two instances of one shape
-  // are two spaces and each reads its own parameters back from its name.
-  return `&${atom.text.replace(/\s+/g, "-").replace(/[()]/g, "")}`;
+  if (atom instanceof SpaceHandle) return atom;
+  if (atom instanceof Sym) {
+    return spaceAtom(atom.name.startsWith("&") ? atom.name : `&${atom.name}`);
+  }
+  if (!(atom instanceof Expression)) {
+    throw new NameError(
+      `a space identity is a name or a nonempty ground expression, not ${atom.text}`,
+    );
+  }
+  if (containsVariable(atom)) {
+    throw new NameError(`a parametric space identity must be ground, not ${atom.text}`);
+  }
+  if (atom.items.length === 0 || !(atom.items[0] instanceof Sym)) {
+    throw new NameError(
+      `a parametric space identity is a nonempty ground expression headed by a symbol, not ${atom.text}`,
+    );
+  }
+  return atom;
+}
+
+/** Whether an identity contains any variable, including the anonymous one. */
+function containsVariable(identity: Expression): boolean {
+  const work: Atom[] = [identity];
+  while (work.length > 0) {
+    const atom = work.pop() as Atom;
+    if (atom.kind === "variable") return true;
+    if (atom instanceof Expression) {
+      for (let at = atom.items.length - 1; at >= 0; at -= 1) {
+        work.push(atom.items[at] as Atom);
+      }
+    }
+  }
+  return false;
 }
 
 /** The engine head behind a name, a symbol or a defined callable. */

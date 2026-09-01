@@ -1204,7 +1204,7 @@ async function contextCapabilities(
   for await (const atom of catalog.atoms()) {
     if (!headed(atom, "annotations")) continue;
     if (atom.items.length !== 3 && atom.items.length !== 4) continue;
-    if (String(atom.items[1]) !== space.name || String(atom.items[2]) !== algebra) continue;
+    if (atom.items[1] !== space.handle || String(atom.items[2]) !== algebra) continue;
     return new Set(namesIn(atom.items[3], "capabilities"));
   }
   return new Set();
@@ -1224,10 +1224,10 @@ export function annotate(
 ): Atom {
   const row =
     capabilities.length === 0
-      ? expr(sym("annotations"), sym(space.name), sym(carrierName(algebra)))
+      ? expr(sym("annotations"), space.handle, sym(carrierName(algebra)))
       : expr(
           sym("annotations"),
-          sym(space.name),
+          space.handle,
           sym(carrierName(algebra)),
           expr(sym("capabilities"), ...capabilities.map((each) => sym(each))),
         );

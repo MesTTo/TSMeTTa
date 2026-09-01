@@ -136,6 +136,7 @@ export {
   type DerivationOptions,
   Space,
   type WaitOptions,
+  type SpaceIdentity,
   type SpaceOptions,
   type WatchOptions,
   hostValue,

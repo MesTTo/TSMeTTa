@@ -502,7 +502,7 @@ metta_node_scoped([Scope|Rest], Command, Event) :-
 metta_node_scope(stack, [Bytes], Goal) :- !,
     metta_host_with_stack_limit(Bytes, Goal).
 metta_node_scope(module, [Space0], Goal) :- !,
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     space_module(Space, Module),
     with_metta_module(Module, Goal).
 metta_node_scope(transaction, [], Goal) :- !,
@@ -567,6 +567,7 @@ metta_node_perform(Command, Event) :-
 
 metta_node_verb(Verb) :- memberchk(Verb, [eval, source, run, load, add, remove,
                                           atoms, count, has, clear, spacenames,
+                                          parametric,
                                           child, restrict, releasable, release,
                                           explain, effect, registerop, dropop,
                                           watch, unwatch, drain, watchpending,
@@ -590,7 +591,7 @@ metta_node_remove_one(Space, Pattern) :-
 % Evaluate a term already built on the host side. This is the primary door:
 % going through text would lose a live host reference, which has no spelling.
 metta_node_command(eval, [Wire, Space0], [answer, Out, Text]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_node_decode(Wire, Term),
     space_module(Space, Module),
     with_metta_module(Module, eval(Term, Result)),
@@ -598,7 +599,7 @@ metta_node_command(eval, [Wire, Space0], [answer, Out, Text]) :-
 
 % Evaluate MeTTa source text, through the engine's own reader.
 metta_node_command(source, [Src, Space0], [answer, Out, Text]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_node_text(Src, S),
     sread_with_names(S, Term, _Names),
     space_module(Space, Module),
@@ -623,29 +624,29 @@ metta_node_command(load, [File0], [groups, Groups]) :-
     maplist(metta_node_group, TermGroups, Groups).
 
 metta_node_command(add, [Space0, Wires], [value, [s, "ok"]]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     maplist(metta_node_decode, Wires, Terms),
     metta_add_atoms(Space, Terms).
 
 metta_node_command(remove, [Space0, Wire], [value, [b, Verdict]]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_node_decode(Wire, Term),
     metta_host_remove_reported(Space, Term, Verdict).
 
 metta_node_command(atoms, [Space0], [answer, Out, Text]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_host_stored(Space, Term),
     metta_node_answer(Term, [Out, Text]).
 
 metta_node_command(count, [Space0], [value, [n, Text]]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     aggregate_all(count, metta_host_stored(Space, _), N),
     metta_node_number_text(N, Text).
 
 % Existence is asked against a COPY, so the probe's own bindings cannot
 % narrow the question the caller asked.
 metta_node_command(has, [Space0, Wire], [value, [b, Verdict]]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_node_decode(Wire, Term),
     (   \+ \+ ( metta_host_stored(Space, Stored), Stored = Term )
     ->  Verdict = true
@@ -653,13 +654,19 @@ metta_node_command(has, [Space0, Wire], [value, [b, Verdict]]) :-
     ).
 
 metta_node_command(clear, [Space0], [value, [s, "ok"]]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_host_clear_space(Space).
 
 metta_node_command(spacenames, [], [value, Wire]) :-
     metta_space_names(Names),
     maplist(metta_node_space_wire, Names, Wires),
     metta_node_expr_wire(Wires, Wire).
+
+% Register one structured space identity before any command tries to use it.
+% The engine owns validation and makes repeated declarations idempotent.
+metta_node_command(parametric, [Wire], [value, [s, "ok"]]) :-
+    metta_node_decode(Wire, Space),
+    metta_declare_parametric_space(Space).
 
 % The engine's own platform census, which this host READS rather than
 % recovering by regex over SWI's stderr. A WebAssembly build has no threads,
@@ -681,28 +688,28 @@ metta_node_command(platform, [], [value, Wire]) :-
     metta_node_expr_wire(Rows, Wire).
 
 metta_node_command(child, [Child0, Parent0], [value, [s, "ok"]]) :-
-    metta_node_atom(Child0, Child),
-    metta_node_atom(Parent0, Parent),
+    metta_node_space(Child0, Child),
+    metta_node_space(Parent0, Parent),
     metta_declare_space_parent(Child, Parent).
 
 metta_node_command(restrict, [Space0, Grants0], [value, [s, "ok"]]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     maplist(metta_node_atom, Grants0, Grants),
     metta_declare_restricted_space(Space, Grants).
 
 metta_node_command(releasable, [Space0], [value, [s, "ok"]]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_assert_space_releasable(Space).
 
 metta_node_command(release, [Space0], [value, [s, "ok"]]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_release_space(Space).
 
 % The engine's own account of how a match will be answered: which conjuncts a
 % provider claimed, which the engine joins itself, and why one was refused.
 % Prose is the host's own presentation, so the report crosses as its term.
 metta_node_command(explain, [Space0, Wires], [value, [g, Text]]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     maplist(metta_node_decode, Wires, Patterns),
     metta_host_explain_match(Space, Patterns, Report),
     term_string(Report, Text).
@@ -725,7 +732,7 @@ metta_node_command(dropop, [Name0, Arity], [value, [s, "ok"]]) :-
     metta_node_drop_op(Name, Arity).
 
 metta_node_command(watch, [WatchId, Space0, Wire, Edges0], [value, [s, "ok"]]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_node_decode(Wire, Pattern),
     maplist(metta_node_atom, Edges0, Edges),
     retractall(metta_node_watch(WatchId, _, _, _)),
@@ -758,8 +765,8 @@ metta_node_command(drain, [WatchId], [admission, Edge, Wire, Text]) :-
 % runs the delta is pure data, so the transaction scope around it is safe:
 % nothing left in it needs to yield to the host.
 metta_node_command(commit, [Child0, Parent0, RemoveWires], [value, [s, "ok"]]) :-
-    metta_node_atom(Child0, Child),
-    metta_node_atom(Parent0, Parent),
+    metta_node_space(Child0, Child),
+    metta_node_space(Parent0, Parent),
     maplist(metta_node_decode, RemoveWires, Removals),
     findall(A, metta_host_stored(Child, A), Added),
     forall(member(R, Removals), metta_node_remove_one(Parent, R)),
@@ -770,9 +777,9 @@ metta_node_command(commit, [Child0, Parent0, RemoveWires], [value, [s, "ok"]]) :
 % operation it answers the space of the program that called it, because the
 % operation runs inside that program's own module; asked from outside any
 % evaluation it answers the default.
-metta_node_command(currentspace, [], [value, [p, Text]]) :-
+metta_node_command(currentspace, [], [value, Wire]) :-
     current_metta_space(Space),
-    atom_string(Space, Text).
+    metta_node_space_wire(Space, Wire).
 
 % Run source and report, per directive, whether the engine REDUCED it. The
 % status words are the engine's own: value for a directive that reduced,
@@ -782,7 +789,7 @@ metta_node_command(currentspace, [], [value, [p, Text]]) :-
 % keep it.
 metta_node_command(runstatus, [Src0, Space0], [value, Wire]) :-
     metta_node_text(Src0, Src),
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_host_run_source_status(Src, Space, Raw),
     maplist(metta_node_status_group, Raw, Groups),
     metta_node_expr_wire(Groups, Wire).
@@ -796,7 +803,7 @@ metta_node_command(runstatus, [Src0, Space0], [value, Wire]) :-
 % the SOURCE door from disagreeing about the word; a host-side rule such as
 % "the answer equals the question" would also refuse a genuine fixpoint.
 metta_node_command(reducible, [Space0, Wire], [value, [b, Verdict]]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_node_decode(Wire, Term),
     (   space_module(Space, Module)
     ->  true
@@ -814,7 +821,7 @@ metta_node_command(reducible, [Space0, Wire], [value, [b, Verdict]]) :-
 % hand-written encoder is a second thing to keep right.
 metta_node_command(trace, [Src0, Space0, Max0], [value, Wire]) :-
     metta_node_text(Src0, Src),
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_node_number_arg(Max0, Max),
     metta_trace_source(Src, Space, Max, Events),
     maplist(metta_node_trace_row, Events, Rows),
@@ -835,7 +842,7 @@ metta_node_command(forms, [Src0], [value, Wire]) :-
 % system has no declaration for, which is what makes a cast to Number succeed
 % on 3 without anybody having declared it.
 metta_node_command(cast, [Space0, ValueW, TypeW], [value, Verdict]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_node_decode(ValueW, Value),
     metta_node_decode(TypeW, Type),
     space_module(Space, Module),
@@ -852,7 +859,7 @@ metta_node_command(cast, [Space0, ValueW, TypeW], [value, Verdict]) :-
 % surface promises. The listing is a READ, so a deferred function would show
 % nothing and register no arity: the disassembly IS the demand.
 metta_node_command(disassemble, [Space0, Name0], [value, [g, Text]]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_node_atom(Name0, Name),
     spaces:metta_ensure_compiled(Name),
     findall(A, arity(Name, A), Arities0),
@@ -898,7 +905,7 @@ metta_node_command(unprovider, [Space0], [value, [s, "ok"]]) :-
 % prints by address, so a space holding one is refused by name rather than
 % given a hash that means nothing outside this process.
 metta_node_command(digest, [Space0], [value, [s, Hash]]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_host_digest(Space, Outcome),
     metta_node_digest_result(Outcome, Space, Hash).
 
@@ -929,7 +936,7 @@ metta_node_command(custommatch, [On0], [value, [s, "ok"]]) :-
 % Every proof of one answer, as a tree in MeTTa terms. One answer per proof,
 % so a host that wants the first stops pulling and the rest are never walked.
 metta_node_command(derivation, [Space0, Wire, Depth0], [answer, Out, Text]) :-
-    metta_node_atom(Space0, Space),
+    metta_node_space(Space0, Space),
     metta_node_number_arg(Depth0, Depth),
     metta_node_derivation(Space, Wire, Depth, Tree),
     metta_node_encode(Tree, Out),
@@ -971,7 +978,13 @@ metta_node_atom_text(In, Out) :- metta_node_text(In, Out).
 metta_node_number_arg(In, Out) :- number(In), !, Out = In.
 metta_node_number_arg(In, Out) :- metta_node_atom(In, A), atom_number(A, Out).
 
-metta_node_space_wire(Name, [p, Text]) :- atom_string(Name, Text).
+% A command may carry a legacy atomic space name as text or a structured space
+% identity as the ordinary atom wire. The two forms stay distinct on the host.
+metta_node_space(Wire, Space) :- is_list(Wire), !, metta_node_decode(Wire, Space).
+metta_node_space(Name, Space) :- metta_node_atom(Name, Space).
+
+metta_node_space_wire(Name, [p, Text]) :- atom(Name), !, atom_string(Name, Text).
+metta_node_space_wire(Space, Wire) :- metta_node_encode(Space, Wire).
 
 %%%%%%%%%% Host operations %%%%%%%%%%
 %
@@ -1126,7 +1139,7 @@ metta_node_call_event(Name, Wires, [call, Name, Wires, Where]) :-
     current_metta_space(Space),
     Space \== '&self',
     !,
-    atom_string(Space, Where).
+    metta_node_space_wire(Space, Where).
 metta_node_call_event(Name, Wires, [call, Name, Wires]).
 
 % SWI's own diagnostic for a yield outside an engine names a virtual machine

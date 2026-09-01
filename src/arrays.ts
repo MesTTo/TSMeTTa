@@ -15,6 +15,10 @@
  *     being queried [tested: "never writes into an array it was given"]
  *   - `shape`, `dtype` and `size` answer without touching the elements, so
  *     asking about a large array costs nothing
+ *   - `topIndices` retains only k candidates in a stable bounded heap, then
+ *     sorts that prefix once: O(n log k + k log k) time and O(k) space
+ *     [tested: "matches a full stable top-k order across bounds and non-finite scores",
+ *     "sorts only the retained top-k prefix after one streaming pass"; commit=WORKTREE]
  * Decides: a MATRIX is a typed array plus a shape, held beside it rather than
  *   inside it, because a `Float64Array` has one dimension and inventing a
  *   subclass to carry another would make every library's array the wrong kind.
@@ -251,27 +255,69 @@ export function installArrays(surface: MeTTa): Defined[] {
 /**
  * The k largest elements' indices, best first, ties by position.
  *
- * A partial selection rather than a sort: it keeps k candidates and walks the
- * array once, which is what makes taking the best ten of a hundred thousand
- * cost the hundred thousand rather than their logarithm times themselves.
+ * A WORST-at-root bounded heap: each finite score takes at most log k work,
+ * and only the retained prefix is sorted best-first at the end. Ties keep the
+ * earlier position, so the result is stable without sorting all n scores.
  */
 export function topIndices(array: NumericArray, k: number): number[] {
   if (k <= 0) return [];
-  const best: { at: number; value: number }[] = [];
+  const best: RankedIndex[] = [];
   for (let at = 0; at < array.length; at += 1) {
     const value = Number(array[at]);
     if (!Number.isFinite(value)) continue;
+    const candidate = { at, value };
     if (best.length < k) {
-      best.push({ at, value });
-      best.sort((left, right) => right.value - left.value || left.at - right.at);
+      pushWorstHeap(best, candidate);
       continue;
     }
-    const worst = best[best.length - 1] as { at: number; value: number };
-    if (value <= worst.value) continue;
-    best[best.length - 1] = { at, value };
-    best.sort((left, right) => right.value - left.value || left.at - right.at);
+    const worst = best[0] as RankedIndex;
+    if (bestFirst(candidate, worst) >= 0) continue;
+    replaceWorst(best, candidate);
   }
-  return best.map((each) => each.at);
+  return best.sort(bestFirst).map((each) => each.at);
+}
+
+interface RankedIndex {
+  readonly at: number;
+  readonly value: number;
+}
+
+/** Best score first, preserving the earlier input position on a tie. */
+function bestFirst(left: RankedIndex, right: RankedIndex): number {
+  return right.value - left.value || left.at - right.at;
+}
+
+/** Add one candidate while keeping the heap's worst candidate at its root. */
+function pushWorstHeap(heap: RankedIndex[], candidate: RankedIndex): void {
+  let at = heap.length;
+  heap.push(candidate);
+  while (at > 0) {
+    const parent = Math.floor((at - 1) / 2);
+    const held = heap[parent] as RankedIndex;
+    if (bestFirst(candidate, held) <= 0) break;
+    heap[at] = held;
+    at = parent;
+  }
+  heap[at] = candidate;
+}
+
+/** Replace the root with a better candidate and restore the worst-root invariant. */
+function replaceWorst(heap: RankedIndex[], candidate: RankedIndex): void {
+  let at = 0;
+  for (;;) {
+    const left = at * 2 + 1;
+    if (left >= heap.length) break;
+    const right = left + 1;
+    const worse =
+      right < heap.length && bestFirst(heap[right] as RankedIndex, heap[left] as RankedIndex) > 0
+        ? right
+        : left;
+    const child = heap[worse] as RankedIndex;
+    if (bestFirst(child, candidate) <= 0) break;
+    heap[at] = child;
+    at = worse;
+  }
+  heap[at] = candidate;
 }
 
 /** One hit of a nearest-neighbour search. */

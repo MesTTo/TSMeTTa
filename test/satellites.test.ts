@@ -5,6 +5,10 @@
  * Guarantees:
  *   - each one is exercised against a live engine where it needs one, and
  *     without one where it does not
+ *   - top-k selection agrees with a full stable order while sorting only the
+ *     retained prefix after its streaming pass
+ *     [tested: "matches a full stable top-k order across bounds and non-finite scores",
+ *     "sorts only the retained top-k prefix after one streaming pass"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -302,12 +306,45 @@ describe("numeric arrays", () => {
     assert.throws(() => new Tensor(new Float64Array(5), [2, 3]));
   });
 
-  it("takes the k best without sorting everything", () => {
-    const scores = new Float64Array([3, 9, 1, 9, 7]);
-    // Best first, ties by position.
-    assert.deepEqual(topIndices(scores, 3), [1, 3, 4]);
-    assert.deepEqual(topIndices(scores, 0), []);
-    assert.equal(topIndices(scores, 99).length, 5);
+  it("matches a full stable top-k order across bounds and non-finite scores", () => {
+    const scores = new Float64Array(4_096);
+    for (let at = 0; at < scores.length; at += 1) {
+      scores[at] = ((at * 1_103 + 97) % 41) - 20;
+    }
+    scores[3] = Number.NaN;
+    scores[101] = Number.POSITIVE_INFINITY;
+    scores[1_005] = Number.NEGATIVE_INFINITY;
+    const expected = [...scores]
+      .map((value, at) => ({ at, value }))
+      .filter(({ value }) => Number.isFinite(value))
+      .sort((left, right) => right.value - left.value || left.at - right.at)
+      .map(({ at }) => at);
+
+    for (const k of [0, 1, 17, scores.length, scores.length + 10]) {
+      assert.deepEqual(topIndices(scores, k), expected.slice(0, k), `k=${String(k)}`);
+    }
+  });
+
+  it("sorts only the retained top-k prefix after one streaming pass", () => {
+    const scores = Float64Array.from(
+      { length: 8_192 },
+      (_, at) => ((at * 4_099 + 17) % 251) - 125,
+    );
+    const original = Array.prototype.sort;
+    let calls = 0;
+    Array.prototype.sort = function counted<T>(
+      this: T[],
+      compare?: (left: T, right: T) => number,
+    ): T[] {
+      calls += 1;
+      return original.call(this, compare) as T[];
+    } as typeof Array.prototype.sort;
+    try {
+      assert.equal(topIndices(scores, 23).length, 23);
+    } finally {
+      Array.prototype.sort = original;
+    }
+    assert.equal(calls, 1, "topIndices sorted during its streaming pass");
   });
 });
 

@@ -12,7 +12,7 @@
  *     while variables and opaque values retain one host-stable order across
  *     engine sessions [tested: "sorts the portable ground image exactly as the
  *     engine's msort", "keeps host-only order stable across reverse engine
- *     allocation"; commit=WORKTREE]
+ *     allocation"; commit=74e1edc753da5aae13d8dcf128ea6a51545e06db]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

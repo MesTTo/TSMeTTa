@@ -34,7 +34,7 @@
  *     engine's numeric, atomic and list order at every edge", "is a total order
  *     across every host atom distinction", "sorts the portable ground image
  *     exactly as the engine's msort", "keeps host-only order stable across
- *     reverse engine allocation"; commit=WORKTREE]
+ *     reverse engine allocation"; commit=74e1edc753da5aae13d8dcf128ea6a51545e06db]
  *   - `exprOf` interns through weak structural-hash buckets, verifies every
  *     collision by child identity and never materialises all child ids as text
  *     [tested: "interns a wide expression without joining every child id into

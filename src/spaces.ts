@@ -25,6 +25,10 @@
  *     cancels by multiplicity while distinct live host values never collapse
  *     through a shared rendering [tested: "distinguishes live host values by
  *     identity when diffing"; commit=WORKTREE]
+ *   - a Set view retains MeTTa symbols as atoms while ordinary host strings
+ *     stay grounded strings, so both values can coexist and round trip
+ *     [tested: "round-trips symbols written through a Set view";
+ *     commit=WORKTREE]
  * Decides: a combinator takes a live `Space` handle or a provider, never a
  *   NAME. A name alone carries no engine, and a combinator that accepted one
  *   would have to guess which engine it meant.
@@ -358,6 +362,7 @@ export function view(data: object): SpaceProvider {
   };
   const keyAtom = (key: Term): Atom => (typeof key === "string" ? sym(key) : toAtom(key));
   if (data instanceof Set) {
+    const memberOf = (atom: Atom): unknown => atom instanceof Sym ? atom : hostOf(atom);
     return {
       *atoms(): Generator<Atom> {
         for (const member of data) yield toAtom(member as Term);
@@ -374,10 +379,10 @@ export function view(data: object): SpaceProvider {
         for (const member of data) yield toAtom(member as Term);
       },
       add(atom: Atom): void {
-        data.add(hostOf(atom));
+        data.add(memberOf(atom));
       },
       remove(atom: Atom): boolean {
-        return data.delete(hostOf(atom));
+        return data.delete(memberOf(atom));
       },
       clear(): void {
         data.clear();

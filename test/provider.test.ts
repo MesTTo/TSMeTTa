@@ -8,6 +8,9 @@
  *   - a multiset difference compares live host values by identity rather than
  *     by their shared rendering [tested: "distinguishes live host values by
  *     identity when diffing"; commit=WORKTREE]
+ *   - a Set view preserves the distinction between a MeTTa symbol and a
+ *     grounded host string [tested: "round-trips symbols written through a Set
+ *     view"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -191,6 +194,29 @@ describe("the space combinators", () => {
     assert.deepEqual((await bySet.atoms()).map(String), ['"a"', '"b"']);
     m.detach(listName);
     m.detach(setName);
+  });
+
+  it("round-trips symbols written through a Set view", async () => {
+    const members = new Set<unknown>();
+    const name = freshName();
+    const bySet = m.attach(name, members);
+    try {
+      bySet.add(S.ada, G("ada"));
+      assert.equal(members.size, 2);
+      assert.ok(members.has(S.ada.atom));
+      assert.ok(members.has("ada"));
+      assert.ok(bySet.has(S.ada));
+      assert.ok(bySet.has(G("ada")));
+      assert.deepEqual(
+        (await bySet.atoms()).map((atom) => [atom.kind, atom.text]).sort(),
+        [["grounded", '"ada"'], ["symbol", "ada"]],
+      );
+
+      assert.ok(bySet.delete(S.ada));
+      assert.deepEqual((await bySet.atoms()).map(String), ['"ada"']);
+    } finally {
+      m.detach(name);
+    }
   });
 
   it("refuses a write through the engine's own capability rule", async () => {

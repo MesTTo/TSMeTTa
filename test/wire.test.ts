@@ -12,7 +12,7 @@
  *     after equal-length shapes diverge while scalar leaf changes preserve
  *     later sibling paths [tested: "does not align provenance across a shape change",
  *     "keeps later provenance aligned when only a leaf type changes";
- *     commit=WORKTREE]
+ *     commit=2da346c3fa02a9baedb6168e6b3f6e0756bd6c91]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

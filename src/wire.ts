@@ -44,7 +44,7 @@
  *     token streams have the same structural path; a scalar leaf change keeps
  *     later siblings aligned [tested: "does not align provenance across a shape change",
  *     "keeps later provenance aligned when only a leaf type changes";
- *     commit=WORKTREE]
+ *     commit=2da346c3fa02a9baedb6168e6b3f6e0756bd6c91]
  * Owns: the live-host-value table. A value that crossed into the engine is
  *   retained until the engine is disposed, because nothing on this side can
  *   observe that the engine has dropped the id.

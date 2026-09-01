@@ -20,7 +20,7 @@
  *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
  *   - `runOne` enforces exact cardinality instead of selecting one answer from
  *     a nondeterministic result [tested: "runOne refuses a term with more than
- *     one answer"; commit=WORKTREE]
+ *     one answer"; commit=12defbe4bc38e57030705bc131e54f138bbf2b15]
  *   - a ground expression remains a structured space identity across every
  *     collection, query, reflection, and lifecycle door [tested: "keeps
  *     parametric space identities structured and collision-free";

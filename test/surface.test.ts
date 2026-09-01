@@ -8,7 +8,7 @@
  *   - a world's restore leaves its parent exactly as it was
  *   - `runOne` refuses nondeterministic terms instead of silently returning
  *     their final answer [tested: "runOne refuses a term with more than one
- *     answer"; commit=WORKTREE]
+ *     answer"; commit=12defbe4bc38e57030705bc131e54f138bbf2b15]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

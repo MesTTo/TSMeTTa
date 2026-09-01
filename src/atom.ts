@@ -30,7 +30,8 @@
  *     lexicography ordered, then breaks engine-equal host representations by
  *     identity [tested: "matches the engine's numeric, atomic and list order at
  *     every edge", "is a total order across every host atom distinction",
- *     "sorts the shared atom image exactly as the engine's msort"; commit=WORKTREE]
+ *     "sorts the shared atom image exactly as the engine's msort";
+ *     commit=42b179f086ff544128ae9f95872ae00644c85f81]
  * Owns: the process-wide intern table. It holds every atom weakly.
  * Decides: the standard order refines SWI's wire order: variable, number,
  *   string, empty list, atom, nonempty list. Where two distinct host atoms have

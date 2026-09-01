@@ -10,7 +10,7 @@
  *   - nothing the engine says reaches the host's console
  *   - `byStandardOrder` sorts the shared atom image exactly as SWI `msort`
  *     [tested: "sorts the shared atom image exactly as the engine's msort";
- *     commit=WORKTREE]
+ *     commit=42b179f086ff544128ae9f95872ae00644c85f81]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

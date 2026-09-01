@@ -7,14 +7,15 @@
  * Guarantees:
  *   - unary minus over number and bigint literals remains literal data after
  *     lowering [tested: "folds unary minus over number and bigint literals into literal atoms";
- *     commit=WORKTREE]
+ *     commit=cb81a53d7e040cea283df784b097f95f2868a866]
  *   - decorator composition, each manifest directive family, and Map, array
  *     and plain-object writes are driven through the same exported doors a
  *     package consumer uses [tested: npm run build --silent && node --test
- *     build/test/coverage-gaps.test.js; commit=WORKTREE]
+ *     build/test/coverage-gaps.test.js;
+ *     commit=cb81a53d7e040cea283df784b097f95f2868a866]
  *   - the README names only the three theory marks this package exports
  *     [tested: "documents the three theory marks the package exports";
- *     commit=WORKTREE]
+ *     commit=cb81a53d7e040cea283df784b097f95f2868a866]
  * Owns resources: the suite disposes its engine after the file, closes the
  *   manifest gateway with `Symbol.asyncDispose`, and removes its manifest-file
  *   fixture in a `finally` block.

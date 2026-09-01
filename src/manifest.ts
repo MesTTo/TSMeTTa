@@ -16,7 +16,8 @@
  *     [tested: "records every form it performed"]
  *   - bridge forms sharing one name compose every declared shape while keeping
  *     uniquely routed writes [tested: "performs attachments and repeated
- *     bridge declarations in source order"; commit=WORKTREE]
+ *     bridge declarations in source order";
+ *     commit=cb81a53d7e040cea283df784b097f95f2868a866]
  *   - a manifest DECLARES; a `!` directive in one is a refusal naming the
  *     remedy, because a deployment that runs arbitrary code is not a
  *     deployment description

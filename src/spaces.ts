@@ -25,7 +25,8 @@
  *     through its one admitting shape; an ambiguous write refuses rather than
  *     inventing an occurrence [tested: "performs attachments and repeated
  *     bridge declarations in source order", "refuses a bridge write admitted
- *     by more than one declaration"; commit=WORKTREE]
+ *     by more than one declaration";
+ *     commit=cb81a53d7e040cea283df784b097f95f2868a866]
  *   - `diff` compares alpha-canonical atoms themselves, so equal structure
  *     cancels by multiplicity while distinct live host values never collapse
  *     through a shared rendering [tested: "distinguishes live host values by

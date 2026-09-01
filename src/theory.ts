@@ -11,7 +11,7 @@
  *     class also carries helpers
  *   - marks compose on one method: `op` wins and an explicit name survives
  *     [tested: "composes equation, grounded, and named marks on one method";
- *     commit=WORKTREE]
+ *     commit=cb81a53d7e040cea283df784b097f95f2868a866]
  *   - discovery neither constructs the class nor evaluates accessors
  *     [tested: npm run build --silent && node --test
  *     --test-name-pattern='discovers decorated theory methods without constructing|skips accessors while discovering theory methods'

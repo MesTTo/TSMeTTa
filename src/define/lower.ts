@@ -29,7 +29,7 @@
  *   - unary minus over a number or bigint literal remains one literal atom,
  *     so data position does not depend on a later reduction [tested: "folds
  *     unary minus over number and bigint literals into literal atoms";
- *     commit=WORKTREE]
+ *     commit=cb81a53d7e040cea283df784b097f95f2868a866]
  * Decides: the lowering is a TRANSLATION, not an interpretation. `===` becomes
  *   the engine's `==`, `%` becomes the engine's `%`, and a call becomes an
  *   expression, so what runs is MeTTa and the TypeScript was only notation.
@@ -378,7 +378,7 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
       // [source: Acorn@5bd50cd72dc9ddb1856ed13cfa8a1c4884be917a
       // acorn/src/expression.js:611-619 and
       // ESLint@2417cad57d7d1bc4cf3ecf0f0575cfb10ff2011c
-      // lib/rules/radix.js:47-62; commit=WORKTREE]
+      // lib/rules/radix.js:47-62; commit=cb81a53d7e040cea283df784b097f95f2868a866]
       if (unary.operator === "-" && unary.argument.type === "Literal") {
         const value = (unary.argument as { value: unknown }).value;
         if (typeof value === "number") return toAtom(-value);

@@ -36,7 +36,7 @@
  *     collision by child identity and never materialises all child ids as text
  *     [tested: "interns a wide expression without joining every child id into
  *     text", "keeps structurally different expressions separate inside one
- *     hash bucket"; commit=WORKTREE]
+ *     hash bucket"; commit=1e76fd97936f0672eda20a7905d2590cdf7a0022]
  * Owns: the process-wide intern table. It holds every atom weakly.
  * Decides: the standard order refines SWI's wire order: variable, number,
  *   string, empty list, atom, nonempty list. Where two distinct host atoms have

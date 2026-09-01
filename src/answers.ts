@@ -32,11 +32,12 @@
  *   - existence is decided by iterator completion rather than the answer's
  *     value, and invalid chunk sizes raise the matching `UnsupportedError`
  *     [tested: "finds an undefined answer by iterator completion";
- *     "classifies invalid chunk sizes as unsupported"; commit=WORKTREE]
+ *     "classifies invalid chunk sizes as unsupported";
+ *     commit=db25ab2390c2b20fea7201f085fbf2d4e5e9f235]
  *   - negative positions retain a circular tail with constant work per answer
  *     and use `Array.prototype.at`'s numeric-index coercion
  *     [tested: "keeps a circular tail with Array.at index coercion";
- *     commit=WORKTREE]
+ *     commit=db25ab2390c2b20fea7201f085fbf2d4e5e9f235]
  * Decides: an Answers is RE-RUNNABLE. Awaiting it twice asks twice, because a
  *   lazy description that cached would be a result pretending to be a query,
  *   and a knowledge base can change between the two asks.

@@ -11,12 +11,13 @@
  *     commit=0fc1435242a699749fdd6ba3995239648c02242e]
  *   - negative answer positions use a circular tail and every position follows
  *     `Array.prototype.at` coercion [tested: "keeps a circular tail with Array.at index coercion";
- *     commit=WORKTREE]
+ *     commit=db25ab2390c2b20fea7201f085fbf2d4e5e9f235]
  *   - an `undefined` answer still exists, unsupported chunk sizes narrow by
  *     `UnsupportedError`, and the documented helper family executes
  *     [tested: "finds an undefined answer by iterator completion";
  *     "classifies invalid chunk sizes as unsupported";
- *     "drops, flat-maps, and reduces answers"; commit=WORKTREE]
+ *     "drops, flat-maps, and reduces answers";
+ *     commit=db25ab2390c2b20fea7201f085fbf2d4e5e9f235]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

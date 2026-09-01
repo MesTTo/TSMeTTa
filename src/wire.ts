@@ -43,7 +43,7 @@
  *   - round-trip space provenance is restored only while the sent and received
  *     token streams have the same structural path
  *     [tested: "does not align provenance across a shape change";
- *     commit=WORKTREE]
+ *     commit=c78c764f8a67039ee7086b436601ff7453baafbc]
  * Owns: the live-host-value table. A value that crossed into the engine is
  *   retained until the engine is disposed, because nothing on this side can
  *   observe that the engine has dropped the id.

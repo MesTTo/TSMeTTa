@@ -10,7 +10,7 @@
  *     handle"; commit=e4367498bed06c34f25aff75335e7b25f28b3b73]
  *   - round-trip space provenance follows structural positions and is disabled
  *     after equal-length shapes diverge [tested: "does not align provenance across a shape change";
- *     commit=WORKTREE]
+ *     commit=c78c764f8a67039ee7086b436601ff7453baafbc]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

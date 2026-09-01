@@ -29,6 +29,14 @@
  *   - rendering a row table scans widths iteratively, so the row count is not
  *     constrained by V8's function-argument ceiling [tested: "formats more
  *     rows than V8 accepts as function arguments"; commit=d3b3d62e19cd5dc941a6af8df24bc48992327236]
+ *   - existence is decided by iterator completion rather than the answer's
+ *     value, and invalid chunk sizes raise the matching `UnsupportedError`
+ *     [tested: "finds an undefined answer by iterator completion";
+ *     "classifies invalid chunk sizes as unsupported"; commit=WORKTREE]
+ *   - negative positions retain a circular tail with constant work per answer
+ *     and use `Array.prototype.at`'s numeric-index coercion
+ *     [tested: "keeps a circular tail with Array.at index coercion";
+ *     commit=WORKTREE]
  * Decides: an Answers is RE-RUNNABLE. Awaiting it twice asks twice, because a
  *   lazy description that cached would be a result pretending to be a query,
  *   and a knowledge base can change between the two asks.
@@ -40,7 +48,7 @@
 
 import { Atom, Expression, Sym } from "./atom.ts";
 import type { Var } from "./atom.ts";
-import { MettaError, ResultError, branchFailure } from "./errors.ts";
+import { MettaError, ResultError, UnsupportedError, branchFailure } from "./errors.ts";
 import { showsAs } from "./present.ts";
 
 /**
@@ -304,7 +312,11 @@ export class Answers<T> implements AsyncIterable<T>, PromiseLike<T[]> {
 
   /** Whether there is any answer at all. Stops at the first one. */
   async exists(): Promise<boolean> {
-    return (await this.find()) !== undefined;
+    const iterator = this[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    if (first.done === true) return false;
+    await iterator.return?.(undefined);
+    return true;
   }
 
   /**
@@ -456,23 +468,29 @@ export class Answers<T> implements AsyncIterable<T>, PromiseLike<T[]> {
    * pulling as soon as it is reached, so `ans.at(0)` costs one answer.
    */
   async at(index: number): Promise<T | undefined> {
-    if (index >= 0) {
+    const position = Number.isNaN(index) ? 0 : Math.trunc(index);
+    if (position >= 0) {
       let seen = 0;
       for await (const answer of this) {
-        if (seen === index) return answer;
+        if (seen === position) return answer;
         seen += 1;
       }
       return undefined;
     }
+    if (position === Number.NEGATIVE_INFINITY) return undefined;
     // From the end: keep the last |index| answers in a ring rather than the
     // whole set, so `at(-1)` over a million answers holds one.
-    const wanted = -index;
+    const wanted = -position;
     const ring: T[] = [];
+    let write = 0;
     for await (const answer of this) {
-      ring.push(answer);
-      if (ring.length > wanted) ring.shift();
+      if (ring.length < wanted) ring.push(answer);
+      else {
+        ring[write] = answer;
+        write = (write + 1) % wanted;
+      }
     }
-    return ring.length === wanted ? ring[0] : undefined;
+    return ring.length === wanted ? ring[write] : undefined;
   }
 
   /** The last answer, or undefined. Pulls the whole set, holding one answer. */
@@ -502,10 +520,8 @@ export class Answers<T> implements AsyncIterable<T>, PromiseLike<T[]> {
    * than one per answer.
    */
   chunk(size: number): Answers<T[]> {
-    if (size <= 0) {
-      throw new MettaError(`a chunk needs a positive size, not ${String(size)}`, {
-        code: "ERR_METTA_UNSUPPORTED",
-      });
+    if (!Number.isSafeInteger(size) || size <= 0) {
+      throw new UnsupportedError(`a chunk needs a positive whole-number size, not ${String(size)}`);
     }
     return this.#derive<T[]>(`${this.description}.chunk(${String(size)})`, (source) =>
       chunking(source, size),

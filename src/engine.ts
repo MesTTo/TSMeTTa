@@ -18,6 +18,10 @@
  *     an engine error is raised here and a program's output is buffered
  *   - every number crosses exactly: a Prolog integer arrives as a bigint and
  *     a Prolog float as a number
+ *   - synchronous collection preserves every event in engine order, and host
+ *     operation dispatch selects the registered name AND arity
+ *     [tested: "keeps every answer of a nondeterministic transaction",
+ *     "dispatches the currently registered arity at a shared name"; commit=WORKTREE]
  * Owns: one WebAssembly instance per boot(), one Prolog engine per open job,
  *   and the live-host-value table, all released by dispose().
  * Decides: a job is addressed by integer because the WebAssembly value
@@ -445,15 +449,21 @@ export class Job {
    * the awaiting form and saying so is more use than a hang.
    */
   sync(): JobEvent | null {
-    let seen: JobEvent | null = null;
-    if (this.#id === null) return null;
+    const events = this.syncAll();
+    return events.length === 0 ? null : (events[events.length - 1] as JobEvent);
+  }
+
+  /** Every remaining event, collected without awaiting. */
+  syncAll(): JobEvent[] {
+    const events: JobEvent[] = [];
+    if (this.#id === null) return events;
     let raw = this.#engine.rawStep(this.#id);
     for (;;) {
       const settled = this.#settle(raw);
       if (settled.done) {
-        if (settled.event === null) return seen;
-        seen = settled.event;
-        if (this.#id === null) return seen;
+        if (settled.event === null) return events;
+        events.push(settled.event);
+        if (this.#id === null) return events;
         raw = this.#engine.rawStep(this.#id);
         continue;
       }
@@ -553,7 +563,7 @@ export class Job {
     const where = event[3] === undefined ? undefined : hostText(event[3]);
     let op: HostOp;
     try {
-      op = this.#engine.operation(name);
+      op = this.#engine.operation(name, wires.length);
     } catch (error) {
       return ["error", messageOf(error)];
     }
@@ -701,6 +711,7 @@ export class Engine {
   #output: string[];
   #stderr: string[];
   #ops = new Map<string, HostOp>();
+  #transportOps = new Map<string, HostOp>();
   #watches = 0;
 
   /** The values this host has handed the engine a reference to. */
@@ -929,7 +940,7 @@ export class Engine {
    * function would put a name in the catalog that nothing may call.
    */
   provide(op: HostOp): void {
-    this.#ops.set(`${op.name}/${String(op.arity)}`, op);
+    this.#transportOps.set(op.name, op);
   }
 
   /**
@@ -960,13 +971,16 @@ export class Engine {
    * registered, so removal names exactly what installation added.
    */
   operations(): readonly HostOp[] {
-    return [...this.#ops.values()];
+    return [...this.#ops.values(), ...this.#transportOps.values()];
   }
 
-  /** @internal The operation behind a dispatch, or a refusal naming it. */
-  operation(name: string): HostOp {
-    for (const op of this.#ops.values()) if (op.name === name) return op;
-    throw new NameError(`the engine called ${name}, which this host has not registered`);
+  /** @internal The operation behind an exact dispatch, or a refusal naming it. */
+  operation(name: string, arity: number): HostOp {
+    const found = this.#ops.get(`${name}/${String(arity)}`) ?? this.#transportOps.get(name);
+    if (found !== undefined) return found;
+    throw new NameError(
+      `the engine called ${name}/${String(arity)}, which this host has not registered`,
+    );
   }
 
   // --- the codec doors, which need no engine --------------------------------

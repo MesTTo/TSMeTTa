@@ -158,6 +158,19 @@ describe("a lowered body", () => {
     );
   });
 
+  it("does not resolve inherited names from an explicit lowering scope", () => {
+    assert.throws(
+      () =>
+        m.define(
+          function inheritedScopeName(n: number): unknown {
+            return toString(n);
+          },
+          { scope: {} },
+        ),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /toString/.test(error.message),
+    );
+  });
+
   it("refuses a body with no name at all, naming both ways to give it one", () => {
     assert.throws(
       () => m.define((n: number): number => n),
@@ -167,6 +180,7 @@ describe("a lowered body", () => {
 });
 
 declare function somethingUndeclared(n: number): unknown;
+declare function toString(n: number): unknown;
 
 describe("a traced body", () => {
   it("becomes a nest of goals, which is what a conjunction is in MeTTa", async () => {
@@ -244,6 +258,19 @@ describe("a traced body", () => {
 });
 
 describe("a host operation", () => {
+  it("dispatches the currently registered arity at a shared name", async () => {
+    const first = m.op(function pickByArity(_value: number): string {
+      return "one";
+    }, { name: "pick-by-arity", effect: "pureStructural" });
+    const second = m.op(function pickByArity(_left: number, _right: number): string {
+      return "two";
+    }, { name: "pick-by-arity", effect: "pureStructural" });
+
+    assert.equal(String(await second(1, 2).one()), '"two"');
+    first.forget();
+    assert.equal(String(await second(1, 2).one()), '"two"', "a stale handle removed its replacement");
+  });
+
   it("answers once, and its arguments are ordinary host values", async () => {
     const doubled = m.op(function doubled(n: number): number {
       assert.equal(typeof n, "number", "an op received something other than a number");

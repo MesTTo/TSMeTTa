@@ -21,6 +21,9 @@
  *     asking again"]
  *   - `Amplitude` is EXACT: rational components over bigint, so interference
  *     is not floating-point noise
+ *   - preset and law names resolve only through their tables' own entries
+ *     [tested: "ships the carriers a program reaches for", "refuses inherited
+ *     object names as algebra law aliases"; commit=WORKTREE]
  * Decides: the reads are asynchronous where the Python original is
  *   synchronous, because reading a space's atoms is asynchronous on this
  *   transport and pretending otherwise would mean draining a cursor behind the
@@ -253,7 +256,9 @@ const SEMIRING: readonly Law[] = [
 function canonicalLaws(laws: Iterable<string>): Set<Law> {
   const out = new Set<Law>();
   for (const law of laws) {
-    const expanded = LAW_ALIASES[law] ?? [law as Law];
+    const expanded = Object.hasOwn(LAW_ALIASES, law)
+      ? (LAW_ALIASES[law] as readonly Law[])
+      : [law as Law];
     for (const each of expanded) {
       if (!KNOWN.has(each)) {
         throw new AlgebraDeclarationError(`algebra_law_unknown(${JSON.stringify(each)})`);
@@ -497,7 +502,7 @@ function carrierName(carrier: Carrier): string {
 
 /** The algebra one name resolves to here, or nothing. */
 export async function algebraOf(catalog: Space, name: string): Promise<Algebra | undefined> {
-  const shipped = PRESETS[name];
+  const shipped = Object.hasOwn(PRESETS, name) ? PRESETS[name] : undefined;
   if (shipped !== undefined) return shipped;
   return catalogDeclaration(catalog, name);
 }

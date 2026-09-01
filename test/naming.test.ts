@@ -95,6 +95,15 @@ describe("the variable door", () => {
 });
 
 describe("the word door", () => {
+  it("treats inherited object names as ordinary MeTTa names", () => {
+    for (const name of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+      assert.equal(String(fn[name]), mettaName(name));
+    }
+    assert.equal(String(fn), "fn");
+    assert.equal(String(S), "S");
+    assert.equal(String(V), "V");
+  });
+
   it("reaches an operator's punctuation head, which no casing map could", () => {
     assert.equal(String(fn.add(1, 2)), "(+ 1 2)");
     assert.equal(String(fn.gte(1, 2)), "(>= 1 2)");

@@ -111,6 +111,23 @@ describe("declaring an algebra", () => {
     assert.equal(counting.combine, "+");
     assert.equal(prov.combine, "plus");
     await assert.rejects(() => requireAlgebra(m.catalog, "nothing-declares-this"), AlgebraDeclarationError);
+    for (const inherited of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+      await assert.rejects(() => requireAlgebra(m.catalog, inherited), AlgebraDeclarationError);
+    }
+  });
+
+  it("refuses inherited object names as algebra law aliases", () => {
+    assert.throws(
+      () =>
+        new Algebra("bad-law-alias", {
+          combine: "+",
+          extend: "*",
+          zero: 0,
+          one: 1,
+          laws: ["constructor"],
+        }),
+      AlgebraDeclarationError,
+    );
   });
 
   it("checks a claimed law by exhaustion, and refuses the counterexample", async () => {

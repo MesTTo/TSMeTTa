@@ -716,6 +716,11 @@ describe("a notation of the host's own", () => {
 });
 
 describe("a transaction", () => {
+  it("keeps every answer of a nondeterministic transaction", () => {
+    const kb = m.space("&txanswers");
+    assert.deepEqual(kb.transaction(S.superpose([1, 2, 3])).map(String), ["1", "2", "3"]);
+  });
+
   it("commits every write together, and rolls them back on an empty answer", async () => {
     const kb = m.space("&txtest");
     assert.deepEqual(kb.transaction(S["add-atom"](kb.handle, S.kept(1))).map(String), ["true"]);

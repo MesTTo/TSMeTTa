@@ -63,6 +63,14 @@ describe("the host-side matcher", () => {
     assert.equal(matchTerms(S.parent(S.tom, V.y), S.parent(V.a, S.bob)), undefined);
   });
 
+  it("binds variable names inherited by Object.prototype", () => {
+    for (const name of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+      const bindings = matchTerms(S.f(variable(name)), S.f(S.a));
+      assert.ok(bindings !== undefined && Object.hasOwn(bindings, name), `did not bind ${name}`);
+      assert.equal(bindings[name], S.a.atom);
+    }
+  });
+
   it("unifies a term ten thousand deep", () => {
     // The ceiling C26 and C27 found in the pump and in `expr` must not be
     // reintroduced here: both walks are iterative.

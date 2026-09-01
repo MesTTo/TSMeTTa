@@ -19,6 +19,8 @@
  *     [tested: "unifies a term ten thousand deep"]
  *   - `alphaKey` is equal for two terms that differ only in variable
  *     SPELLING, so an ordinary `Map` keyed by it is an alpha-invariant index
+ *   - every legal variable name binds independently of Object.prototype
+ *     [tested: "binds variable names inherited by Object.prototype"; commit=WORKTREE]
  * Decides: no occurs check, which is the engine's own behaviour and the Python
  *   host matcher's. A cyclic binding is therefore reachable, and the
  *   normalisation walk is written to stay finite when it meets one rather than
@@ -114,14 +116,14 @@ export function unifyTerms(a: Term, b: Term): Bindings | undefined {
  * ```
  */
 export function matchTerms(pattern: Term, subject: Term): Bindings | undefined {
-  const bindings: Record<string, Atom> = {};
+  const bindings = new Map<string, Atom>();
   const work: [Atom, Atom][] = [[toAtom(pattern), toAtom(subject)]];
   while (work.length > 0) {
     const [left, right] = work.pop() as [Atom, Atom];
     if (left instanceof Var) {
       if (left.name === ANONYMOUS) continue;
-      const held = bindings[left.name];
-      if (held === undefined) bindings[left.name] = right;
+      const held = bindings.get(left.name);
+      if (held === undefined) bindings.set(left.name, right);
       else if (held !== right) return undefined;
       continue;
     }
@@ -131,7 +133,7 @@ export function matchTerms(pattern: Term, subject: Term): Bindings | undefined {
     }
     if (left !== right) return undefined;
   }
-  return bindings;
+  return Object.fromEntries(bindings);
 }
 
 /**

@@ -15,6 +15,9 @@
  *     first-seen order, and values are ATOMS, so an answer composes straight
  *     back into the next term
  *   - `atoms()` walks stored atoms without evaluating any of them
+ *   - a transaction returns every answer in engine order rather than only the
+ *     last [tested: "keeps every answer of a nondeterministic transaction";
+ *     commit=WORKTREE]
  * Decides: the collection verbs are SYNCHRONOUS. The transport is in process,
  *   so a synchronous twin genuinely exists, and the async-primary law asks for
  *   an async surface where the transport needs one rather than everywhere. The
@@ -541,13 +544,10 @@ export class Space {
       this.#wire(expr(sym("transaction"), toAtom(target))),
       this.name,
     ]);
-    const answers: Atom[] = [];
-    for (;;) {
-      const event = held.sync();
-      if (event === null) break;
-      if (event.kind === "answer") answers.push(event.atom);
-    }
-    return answers;
+    return held
+      .syncAll()
+      .filter((event): event is JobEvent & { readonly kind: "answer" } => event.kind === "answer")
+      .map((event) => event.atom);
   }
 
   /** Whether an atom unifying with this pattern is stored. */

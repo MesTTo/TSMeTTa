@@ -13,6 +13,10 @@
  *   - `S.then` is undefined and nothing else is, because a namespace that
  *     answers `then` is thenable and anything that resolves it would await it
  *   - a name minted here is interned, so `S.tom === S.tom` by construction
+ *   - inherited Object.prototype names remain ordinary MeTTa vocabulary while
+ *     primitive coercion of a factory stays valid JavaScript
+ *     [tested: "treats inherited object names as ordinary MeTTa names";
+ *     commit=WORKTREE]
  * Decides: `S` and `fn` both apply the map, and `V` does not. A symbol and an
  *   operation are shared VOCABULARY, so each host reaches them through its own
  *   casing and `S["car-atom"]`, `S.carAtom` and `fn.carAtom` are one atom said
@@ -103,11 +107,12 @@ export type SymbolsOf<Ns extends string> = SymFactory & { readonly [K in Ns]: Na
 /** The variable factory, narrowed the same way. */
 export type VarsOf<Ns extends string> = VarFactory & { readonly [K in Ns]: Var<K> };
 
-function factory<T>(mint: (spelling: string) => T, map: (key: string) => string): T &
+function factory<T>(mint: (spelling: string) => T, map: (key: string) => string, label: string): T &
   ((spelling: string) => T) {
   const of = (spelling: string): T => mint(spelling);
   return new Proxy(of, {
-    get(_target, key): T | undefined {
+    get(_target, key): unknown {
+      if (key === Symbol.toPrimitive) return (): string => label;
       // A non-string key is never a MeTTa name, and `then` would make the
       // factory thenable, so anything that resolved it would await it.
       return typeof key === "string" && key !== "then" ? of(map(key)) : undefined;
@@ -131,7 +136,7 @@ const exact = (key: string): string => key;
  * bracket door meet at one atom wherever both can spell a name, and the
  * bracket door alone reaches the rest.
  */
-export const S: SymFactory = factory(makeName, mettaName) as unknown as SymFactory;
+export const S: SymFactory = factory(makeName, mettaName, "S") as unknown as SymFactory;
 
 /**
  * The ambient variable factory. Spellings are EXACT.
@@ -144,6 +149,7 @@ export const S: SymFactory = factory(makeName, mettaName) as unknown as SymFacto
 export const V: VarFactory = factory(
   (spelling: string) => variable(spelling),
   exact,
+  "V",
 ) as unknown as VarFactory;
 
 /**
@@ -161,7 +167,8 @@ export const V: VarFactory = factory(
  */
 export const fn: SymFactory = factory(
   makeName,
-  (key) => OPERATOR_HEADS[key] ?? mettaName(key),
+  (key) => (Object.hasOwn(OPERATOR_HEADS, key) ? (OPERATOR_HEADS[key] as string) : mettaName(key)),
+  "fn",
 ) as unknown as SymFactory;
 
 /**

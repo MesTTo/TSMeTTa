@@ -20,6 +20,9 @@
  *     names already registered with this engine, and an explicitly supplied
  *     scope; anything else refuses, which is what makes a minified build fail
  *     loudly instead of silently building the wrong term
+ *   - an explicit scope contributes only its own properties
+ *     [tested: "does not resolve inherited names from an explicit lowering scope";
+ *     commit=WORKTREE]
  * Decides: the lowering is a TRANSLATION, not an interpretation. `===` becomes
  *   the engine's `==`, `%` becomes the engine's `%`, and a call becomes an
  *   expression, so what runs is MeTTa and the TypeScript was only notation.
@@ -442,8 +445,9 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
 function resolve(name: string, scope: LowerScope, position: string): Atom {
   if (name === scope.selfIdentifier || name === scope.selfName) return sym(scope.selfName);
   scope.free?.add(name);
-  const supplied = scope.scope?.[name];
-  if (supplied !== undefined) return toAtom(supplied);
+  if (scope.scope !== undefined && Object.hasOwn(scope.scope, name)) {
+    return toAtom(scope.scope[name] as Term);
+  }
   const mapped = mettaName(name);
   if (scope.knows(mapped)) return sym(mapped);
   if (scope.knows(name)) return sym(name);

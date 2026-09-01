@@ -4,6 +4,9 @@
  * Guarantees:
  *   - cancelling one cancels the work under it
  *   - a bounded channel makes its sender wait rather than dropping
+ *   - race cancellation composes with each branch's own deadline
+ *     [tested: "preserves a branch's own deadline while adding race cancellation";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -59,6 +62,18 @@ describe("coordination", () => {
 
   it("refuses a race with nothing in it", async () => {
     await assert.rejects(() => race([]), MettaError);
+  });
+
+  it("preserves a branch's own deadline while adding race cancellation", async () => {
+    const deadline = new AbortController();
+    const reason = new MettaError("this branch's deadline elapsed");
+    deadline.abort(reason);
+    const expired = answersOf("expired", ["too late"]).until(deadline.signal);
+
+    await assert.rejects(
+      () => race([expired, answersOf<string>("empty", [])]),
+      (error: unknown) => error instanceof AggregateError && error.errors.includes(reason),
+    );
   });
 
   it("merges several asks, ending when every branch has", async () => {

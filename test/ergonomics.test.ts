@@ -5,6 +5,10 @@
  * Guarantees:
  *   - every helper on an ask stays LAZY, so a `take` never computes the rest
  *   - importing the module tier boots nothing
+ *   - successive cancellation constraints compose, so adding a signal cannot
+ *     discard an ask's existing deadline
+ *     [tested: "composes successive cancellation signals instead of replacing the first";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -95,6 +99,18 @@ describe("the lazy answer helpers", () => {
   it("bounds an ask with a deadline in milliseconds", async () => {
     const bounded = m.match(S.n(V.x)).timeout(5_000);
     assert.equal((await bounded).length, 5);
+  });
+
+  it("composes successive cancellation signals instead of replacing the first", async () => {
+    const first = new AbortController();
+    const second = new AbortController();
+    const reason = new Error("the first deadline elapsed");
+    first.abort(reason);
+
+    await assert.rejects(
+      () => answersOf("bounded", [1]).until(first.signal).until(second.signal).toArray(),
+      (error: unknown) => error === reason,
+    );
   });
 });
 

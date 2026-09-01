@@ -22,6 +22,10 @@
  *   - an `AbortSignal` stops the pull at the next answer boundary, which is
  *     best-effort in exactly the way `fetch` states, because the engine polls
  *     at answer boundaries and nowhere finer
+ *   - successive deadlines and cancellation signals compose, so a wrapper
+ *     cannot discard a bound the ask already carried
+ *     [tested: "composes successive cancellation signals instead of replacing the first",
+ *     "preserves a branch's own deadline while adding race cancellation"; commit=WORKTREE]
  * Decides: an Answers is RE-RUNNABLE. Awaiting it twice asks twice, because a
  *   lazy description that cached would be a result pretending to be a query,
  *   and a knowledge base can change between the two asks.
@@ -426,7 +430,9 @@ export class Answers<T> implements AsyncIterable<T>, PromiseLike<T[]> {
 
   /** The same ask under a deadline or a cancellation. */
   until(signal: AbortSignal): Answers<T> {
-    return new Answers<T>(this.description, this.#open, signal, this.plan);
+    const combined =
+      this.#signal === undefined ? signal : AbortSignal.any([this.#signal, signal]);
+    return new Answers<T>(this.description, this.#open, combined, this.plan);
   }
 
   /**

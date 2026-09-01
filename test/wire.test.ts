@@ -9,8 +9,10 @@
  *     primitive value"; "clears primitive ids without recycling a released
  *     handle"; commit=e4367498bed06c34f25aff75335e7b25f28b3b73]
  *   - round-trip space provenance follows structural positions and is disabled
- *     after equal-length shapes diverge [tested: "does not align provenance across a shape change";
- *     commit=c78c764f8a67039ee7086b436601ff7453baafbc]
+ *     after equal-length shapes diverge while scalar leaf changes preserve
+ *     later sibling paths [tested: "does not align provenance across a shape change",
+ *     "keeps later provenance aligned when only a leaf type changes";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -300,6 +302,12 @@ describe("the engine transport, which is flat", () => {
     const sent = ["e", 3, "s", "f", "s", "a", "p", "&kb"];
     const reshaped = ["e", 2, "s", "f", "e", 1, "s", "&kb"];
     assert.equal(fromRoundTrip(sent, reshaped), expr(sym("f"), expr(sym("&kb"))));
+  });
+
+  it("keeps later provenance aligned when only a leaf type changes", () => {
+    const sent = ["e", 3, "s", "f", "s", "a", "p", "&kb"];
+    const changed = ["e", 3, "s", "f", "n", "1", "s", "&kb"];
+    assert.equal(fromRoundTrip(sent, changed), expr(sym("f"), G(1), space("&kb")));
   });
 });
 

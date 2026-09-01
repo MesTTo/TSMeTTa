@@ -41,9 +41,10 @@
  *     [tested: "reuses one host id for each primitive value";
  *     commit=e4367498bed06c34f25aff75335e7b25f28b3b73]
  *   - round-trip space provenance is restored only while the sent and received
- *     token streams have the same structural path
- *     [tested: "does not align provenance across a shape change";
- *     commit=c78c764f8a67039ee7086b436601ff7453baafbc]
+ *     token streams have the same structural path; a scalar leaf change keeps
+ *     later siblings aligned [tested: "does not align provenance across a shape change",
+ *     "keeps later provenance aligned when only a leaf type changes";
+ *     commit=WORKTREE]
  * Owns: the live-host-value table. A value that crossed into the engine is
  *   retained until the engine is disposed, because nothing on this side can
  *   observe that the engine has dropped the id.
@@ -603,11 +604,10 @@ export function decodeEngine(tokens: unknown, context: DecodeContext, provenance
       }
       value = exprOf([]);
     } else {
-      if (
-        aligned &&
-        provenance?.[tagAt] !== tag &&
-        !(tag === "s" && provenance?.[tagAt] === "p")
-      ) {
+      // Every leaf occupies two tokens whatever its scalar tag. A changed leaf
+      // type therefore keeps later sibling paths aligned; only expression vs
+      // leaf changes the tree shape and invalidates the remaining positions.
+      if (aligned && provenance?.[tagAt] === "e") {
         aligned = false;
       }
       value = atomOfToken(tag, stream[at], context);

@@ -90,6 +90,16 @@ describe("the settings and the version", () => {
 });
 
 describe("the row table", () => {
+  it("formats more rows than V8 accepts as function arguments", () => {
+    const count = 200_000;
+    const repeated = { n: G(1) };
+    const rows = new Rows(["n"], Array.from({ length: count }, () => repeated));
+    const table = rows.toTable();
+    assert.equal(table.length, count * 2 + 3);
+    assert.ok(table.startsWith("n\n-\n1\n1\n"));
+    assert.ok(table.endsWith("\n1"));
+  });
+
   it("knows its own columns, and shows them", async () => {
     m.add(S.parent(S.tom, S.bob), S.parent(S.bob, S.ann));
     const rows = await m.match(S.parent(V.parent, V.child)).rows();

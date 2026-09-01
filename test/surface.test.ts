@@ -40,6 +40,10 @@ const fresh = (): Space => {
   return m.space(`&t${String(counter)}`);
 };
 
+/** How many bridge jobs still own an SWI engine. */
+const liveJobs = (): number =>
+  Number(m.engine.once("aggregate_all(count, metta_node_job(_,_), N)")["N"]);
+
 before(async () => {
   m = await metta();
 });
@@ -375,6 +379,23 @@ describe("a state cell", () => {
 });
 
 describe("watching a space", () => {
+  it("releases each drain job after delivering an admission", async () => {
+    const kb = fresh();
+    const baseline = liveJobs();
+    const watcher = kb.watch(S.tick(V.n), { pollMs: 1 })[Symbol.asyncIterator]();
+    kb.add(S.tick(1), S.tick(2), S.tick(3), S.tick(4), S.tick(5));
+    try {
+      for (let at = 0; at < 5; at += 1) {
+        const admission = await watcher.next();
+        assert.equal(admission.done, false);
+      }
+      assert.equal(liveJobs(), baseline, "each delivered admission released its drain job");
+    } finally {
+      await watcher.return?.();
+    }
+    assert.equal(liveJobs(), baseline, "closing the watch left no drain job behind");
+  });
+
   it("answers admissions as they happen", async () => {
     const kb = fresh();
     const seen: string[] = [];

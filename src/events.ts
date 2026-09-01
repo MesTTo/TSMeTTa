@@ -11,6 +11,9 @@
  *   - a step that throws does not lose the fold: the error reaches `onError`
  *     and the state is what it was before the step
  *     [tested: "keeps its state when a step throws"]
+ *   - without an `onError`, `settled()` re-raises the step's `SubscriberError`
+ *     with its cause intact [tested: "re-raises an unhandled step failure from
+ *     settled()"; commit=WORKTREE]
  *   - `publish` is the write door that a fold and an ordinary query see
  *     identically, because it IS an ordinary write
  * Decides: a fold holds its state HERE rather than in the space. A fold whose
@@ -123,6 +126,7 @@ export class Fold<T> implements Disposable {
   /** Wait until every write made so far has stepped it. */
   async settled(): Promise<void> {
     await this.#subscription.settled();
+    this.#subscription.drain();
   }
 
   /** Stop folding. Idempotent. */

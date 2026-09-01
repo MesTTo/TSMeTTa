@@ -26,6 +26,9 @@
  *     cannot discard a bound the ask already carried
  *     [tested: "composes successive cancellation signals instead of replacing the first",
  *     "preserves a branch's own deadline while adding race cancellation"; commit=0fc1435242a699749fdd6ba3995239648c02242e]
+ *   - rendering a row table scans widths iteratively, so the row count is not
+ *     constrained by V8's function-argument ceiling [tested: "formats more
+ *     rows than V8 accepts as function arguments"; commit=WORKTREE]
  * Decides: an Answers is RE-RUNNABLE. Awaiting it twice asks twice, because a
  *   lazy description that cached would be a result pretending to be a query,
  *   and a knowledge base can change between the two asks.
@@ -753,16 +756,26 @@ export class Rows extends Array<Row> {
 
   /** Every row as plain text, which is what a log or a CSV wants. */
   toTable(): string {
-    const widths = this.columns.map((name) =>
-      Math.max(name.length, ...this.map((row) => String(row[name] ?? "").length), 0),
-    );
+    const widths = this.columns.map((name) => name.length);
+    const rendered: string[][] = [];
+    for (const row of this) {
+      const cells: string[] = [];
+      for (let at = 0; at < this.columns.length; at += 1) {
+        const name = this.columns[at] as string;
+        const cell = String(row[name] ?? "");
+        cells.push(cell);
+        widths[at] = Math.max(widths[at] ?? 0, cell.length);
+      }
+      rendered.push(cells);
+    }
     const line = (cells: readonly string[]): string =>
       cells.map((cell, at) => cell.padEnd(widths[at] ?? 0)).join("  ").trimEnd();
-    return [
+    const lines = [
       line(this.columns),
       line(this.columns.map((_, at) => "-".repeat(widths[at] ?? 0))),
-      ...this.map((row) => line(this.columns.map((name) => String(row[name] ?? "")))),
-    ].join("\n");
+    ];
+    for (const cells of rendered) lines.push(line(cells));
+    return lines.join("\n");
   }
 
   override toString(): string {

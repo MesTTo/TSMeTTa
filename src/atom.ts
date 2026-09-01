@@ -22,6 +22,9 @@
  *     is cleanup only, and a live atom keeps its own entry alive, so identity
  *     never depends on when a collection happened
  *     [source: ai-typescript-design.md round 13, the Temporal precedent]
+ *   - a registered symbol interns by its registry identity while an unregistered
+ *     symbol interns by reference [tested: "interns registered symbols without
+ *     treating them as weak keys"; commit=WORKTREE]
  * Owns: the process-wide intern table. It holds every atom weakly.
  * Decides: the standard order is Prolog's, which is the order the engine's own
  *   sort uses: variable, number, symbol, string, compound. A live host value
@@ -357,6 +360,10 @@ function primitiveKey(value: unknown): string | undefined {
       return `g t ${value}`;
     case "boolean":
       return `g b ${String(value)}`;
+    case "symbol": {
+      const registered = Symbol.keyFor(value);
+      return registered === undefined ? undefined : `g y ${registered}`;
+    }
     default:
       return undefined;
   }

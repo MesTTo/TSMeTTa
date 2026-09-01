@@ -21,6 +21,7 @@ import {
   Grounded,
   HostValues,
   SpaceHandle,
+  WireError,
   type Wire,
   atomFromWire,
   decodeEngine,
@@ -83,6 +84,15 @@ describe("numbers", () => {
 });
 
 describe("the strict wire", () => {
+  it("refuses a numeric root before it can impersonate an expression-close marker", () => {
+    for (const read of [fromTransport, toTransport]) {
+      assert.throws(
+        () => read(3),
+        (error: unknown) => error instanceof WireError && error.code === "ERR_METTA_WIRE",
+      );
+    }
+  });
+
   it("decodes every leaf tag", () => {
     assert.deepEqual(fromTransport(["s", "foo"]), ["s", "foo"]);
     assert.deepEqual(fromTransport(["v", "x"]), ["v", "x"]);

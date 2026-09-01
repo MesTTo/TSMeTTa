@@ -16,6 +16,7 @@ import {
   Fold,
   type MeTTa,
   S,
+  SubscriberError,
   type Space,
   type SpaceProvider,
   V,
@@ -78,6 +79,27 @@ describe("a fold over writes", () => {
     assert.equal(counted.state, 1, "the failing step left the state alone");
     assert.equal(counted.steps, 1);
     assert.equal(failures.length, 1);
+  });
+
+  it("re-raises an unhandled step failure from settled()", async () => {
+    const kb = fresh();
+    const failure = new Error("step blew up");
+    using counted = fold(
+      kb,
+      S.risky(V.n),
+      () => {
+        throw failure;
+      },
+      { initial: 0 },
+    );
+    publish(kb, S.risky(1));
+    await assert.rejects(
+      () => counted.settled(),
+      (error: unknown) => error instanceof SubscriberError && error.cause === failure,
+    );
+    assert.equal(counted.state, 0);
+    assert.equal(counted.steps, 0);
+    assert.ok(counted.active);
   });
 
   it("narrows to one edge, and counts a removal when asked", async () => {

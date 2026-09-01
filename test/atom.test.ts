@@ -62,6 +62,18 @@ describe("interning", () => {
     assert.notEqual(G({ hello: "world" }), G({ hello: "world" }));
   });
 
+  it("interns registered symbols without treating them as weak keys", () => {
+    const key = "metta-node.atom.test.registered";
+    const shared = Symbol.for(key);
+    assert.equal(G(shared), G(Symbol.for(key)));
+    assert.equal(G(shared).value, shared);
+
+    const first = Symbol("private");
+    const second = Symbol("private");
+    assert.equal(G(first), G(first));
+    assert.notEqual(G(first), G(second));
+  });
+
   it("keeps a fresh variable out of every source name's way", () => {
     const one = fresh();
     const two = fresh();

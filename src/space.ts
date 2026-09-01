@@ -22,6 +22,9 @@
  *     collection, query, reflection, and lifecycle door [tested: "keeps
  *     parametric space identities structured and collision-free";
  *     commit=e112cbc47bf8f77f002a8edf5c2668aa5f337c5f]
+ *   - each delivered watch admission releases the one-shot bridge job that
+ *     drained it [tested: "releases each drain job after delivering an
+ *     admission"; commit=WORKTREE]
  * Decides: the collection verbs are SYNCHRONOUS. The transport is in process,
  *   so a synchronous twin genuinely exists, and the async-primary law asks for
  *   an async surface where the transport needs one rather than everywhere. The
@@ -726,7 +729,13 @@ export class Space {
                 close();
                 throw signal.reason as Error;
               }
-              const event = await engine.start(["drain", id]).next();
+              const job = engine.start(["drain", id]);
+              let event: JobEvent | null;
+              try {
+                event = await job.next();
+              } finally {
+                job.close();
+              }
               if (event !== null && event.kind === "admission") {
                 return {
                   done: false,

@@ -34,6 +34,9 @@
  *     atoms straight into tokens
  *     [tested: spells an expression as its tag, its child count and its children;
  *     commit=c530ccb8fb7d0a5b2aa53df6e9f981ada9f81be8]
+ *   - a numeric root cannot impersonate the worklist's expression-close marker
+ *     [tested: "refuses a numeric root before it can impersonate an
+ *     expression-close marker"; commit=WORKTREE]
  * Owns: the live-host-value table. An object that crossed into the engine is
  *   retained until the engine is disposed, because nothing on this side can
  *   observe that the engine has dropped the id.
@@ -475,7 +478,7 @@ function encodeLeaf(tag: unknown, payload: unknown, context: EncodeContext): Tra
  */
 export function fromTransport(term: unknown): Wire {
   const built: Wire[] = [];
-  const work: unknown[] = [term];
+  const work: unknown[] = [childOf(term)];
   while (work.length > 0) {
     const step = work.pop();
     if (typeof step === "number") {
@@ -497,7 +500,7 @@ export function fromTransport(term: unknown): Wire {
 /** A wire atom as the portable transport term, nested one pair per atom. */
 export function toTransport(wire: unknown, context: EncodeContext = {}): Transport {
   const built: Transport[] = [];
-  const work: unknown[] = [wire];
+  const work: unknown[] = [childOf(wire)];
   while (work.length > 0) {
     const step = work.pop();
     if (typeof step === "number") {

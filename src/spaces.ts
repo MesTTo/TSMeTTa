@@ -31,7 +31,8 @@
  *     commit=ed4a5431b5725fd19fea8d09f1228e857aa40865]
  *   - a ground Set member or keyed collection position is pushed into the
  *     collection's native lookup instead of scanning its entries [tested:
- *     "uses native keyed lookups for bound collection probes"; commit=WORKTREE]
+ *     "uses native keyed lookups for bound collection probes";
+ *     commit=77e1f3501647d5d70cbe10aa868135d2069bc178]
  * Decides: a combinator takes a live `Space` handle or a provider, never a
  *   NAME. A name alone carries no engine, and a combinator that accepted one
  *   would have to guess which engine it meant.

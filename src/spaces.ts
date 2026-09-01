@@ -24,11 +24,11 @@
  *   - `diff` compares alpha-canonical atoms themselves, so equal structure
  *     cancels by multiplicity while distinct live host values never collapse
  *     through a shared rendering [tested: "distinguishes live host values by
- *     identity when diffing"; commit=WORKTREE]
+ *     identity when diffing"; commit=ed4a5431b5725fd19fea8d09f1228e857aa40865]
  *   - a Set view retains MeTTa symbols as atoms while ordinary host strings
  *     stay grounded strings, so both values can coexist and round trip
  *     [tested: "round-trips symbols written through a Set view";
- *     commit=WORKTREE]
+ *     commit=ed4a5431b5725fd19fea8d09f1228e857aa40865]
  * Decides: a combinator takes a live `Space` handle or a provider, never a
  *   NAME. A name alone carries no engine, and a combinator that accepted one
  *   would have to guess which engine it meant.

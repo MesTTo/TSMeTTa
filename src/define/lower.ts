@@ -25,7 +25,7 @@
  *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
  *   - a null literal is MeTTa's empty expression, not a symbol whose text only
  *     resembles it [tested: "lowers null to the empty expression";
- *     commit=WORKTREE]
+ *     commit=191f969429df26e26769391d44234f20af481fff]
  * Decides: the lowering is a TRANSLATION, not an interpretation. `===` becomes
  *   the engine's `==`, `%` becomes the engine's `%`, and a call becomes an
  *   expression, so what runs is MeTTa and the TypeScript was only notation.

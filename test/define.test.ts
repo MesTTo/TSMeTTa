@@ -9,7 +9,7 @@
  *     both the construct and the remedy
  *   - a null literal lowers to MeTTa's empty expression rather than a symbol
  *     that only renders the same way [tested: "lowers null to the empty
- *     expression"; commit=WORKTREE]
+ *     expression"; commit=191f969429df26e26769391d44234f20af481fff]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

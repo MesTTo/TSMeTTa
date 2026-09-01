@@ -57,7 +57,7 @@
 %     the text"]
 %   - a world's journal removes one matching parent occurrence per entry,
 %     including when the entry contains variables [tested: "spends one removal
-%     budget for a nonground journal entry"; commit=WORKTREE]
+%     budget for a nonground journal entry"; commit=6b117a66f6d1028496594942d4b4bdb4cc2b14fe]
 % Owns: one SWI engine per open job, released by metta_node_stop/1, which the
 %   JavaScript iterator calls from its own return() so an abandoned for-await
 %   releases it; the watch queues; the registered-operation table.

@@ -11,7 +11,7 @@
  *     restores itself
  *   - `evalStatus` reports every answer of a nondeterministic term
  *     [tested: "reports every status row of a nondeterministic term";
- *     commit=WORKTREE]
+ *     commit=6b117a66f6d1028496594942d4b4bdb4cc2b14fe]
  *   - nothing this surface does writes to the host's console
  * Owns: one engine, its spaces, its registered operations, and its scopes.
  * Open Obligations:

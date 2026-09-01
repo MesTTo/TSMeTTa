@@ -17,7 +17,7 @@
  *     that collapsed duplicates would be answering a different question
  *   - `LiveView.open` seeds from stored atoms, so its snapshot and later
  *     admission events carry the same values [tested: "seeds with stored atoms
- *     rather than reductions of the pattern"; commit=WORKTREE]
+ *     rather than reductions of the pattern"; commit=6b117a66f6d1028496594942d4b4bdb4cc2b14fe]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

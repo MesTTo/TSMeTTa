@@ -19,7 +19,7 @@
  *   - a world's reads consume each journalled removal once and include its
  *     inherited rows [tested: "has sees inherited rows and honours journalled
  *     removals", "keeps one visible copy after removing one duplicate in a
- *     world"; commit=WORKTREE]
+ *     world"; commit=6b117a66f6d1028496594942d4b4bdb4cc2b14fe]
  * Decides: a world is a DRAFT, not a suspended transaction. Adds go into a
  *   child space, which the engine's own parent declaration makes read through
  *   the parent and write locally; removals are journalled here and applied at

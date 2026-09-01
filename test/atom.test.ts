@@ -25,6 +25,7 @@ import {
   Var,
   byStandardOrder,
   expr,
+  exprOf,
   float,
   fresh,
   mapTerm,
@@ -53,6 +54,58 @@ describe("interning", () => {
     held.add(expr(sym("f"), G(1)));
     assert.equal(held.size, 1);
     assert.ok([sym("a"), sym("b")].includes(sym("b")));
+  });
+
+  it("interns a wide expression without joining every child id into text", () => {
+    const items = Array.from({ length: 20_000 }, (_, at) => G(at));
+    const original = Array.prototype.join;
+    let joinedIds = false;
+    Array.prototype.join = function guarded<T>(this: T[], separator?: string): string {
+      if (this.length === items.length + 1 && this[0] === "e") {
+        joinedIds = true;
+        throw new Error("exprOf materialised one string field per child");
+      }
+      return original.call(this, separator);
+    } as typeof Array.prototype.join;
+    try {
+      const first = exprOf(items);
+      assert.equal(exprOf(items), first, "the structural expression stopped interning");
+    } finally {
+      Array.prototype.join = original;
+    }
+    assert.equal(joinedIds, false);
+  });
+
+  it("keeps structurally different expressions separate inside one hash bucket", () => {
+    class FixedIdAtom extends Atom {
+      override readonly kind = "symbol" as const;
+      readonly label: string;
+      constructor(id: number, label: string) {
+        super();
+        Object.defineProperty(this, "id", { value: id });
+        this.label = label;
+        Object.freeze(this);
+      }
+      override get text(): string {
+        return this.label;
+      }
+    }
+
+    // These two id sequences collide under the FNV-1a bucket hash. Exact child
+    // identity, not the hash, remains the equality decision.
+    const leftItems = [
+      new FixedIdAtom(1_048_577, "left-a"),
+      new FixedIdAtom(3_145_735, "left-b"),
+    ];
+    const rightItems = [
+      new FixedIdAtom(2_097_155, "right-a"),
+      new FixedIdAtom(1_922_775_893, "right-b"),
+    ];
+    const left = exprOf(leftItems);
+    const right = exprOf(rightItems);
+    assert.notEqual(left, right, "a hash collision became structural equality");
+    assert.equal(exprOf(leftItems), left);
+    assert.equal(exprOf(rightItems), right);
   });
 
   it("gives a host value one atom per object", () => {

@@ -32,6 +32,11 @@
  *     every edge", "is a total order across every host atom distinction",
  *     "sorts the shared atom image exactly as the engine's msort";
  *     commit=42b179f086ff544128ae9f95872ae00644c85f81]
+ *   - `exprOf` interns through weak structural-hash buckets, verifies every
+ *     collision by child identity and never materialises all child ids as text
+ *     [tested: "interns a wide expression without joining every child id into
+ *     text", "keeps structurally different expressions separate inside one
+ *     hash bucket"; commit=WORKTREE]
  * Owns: the process-wide intern table. It holds every atom weakly.
  * Decides: the standard order refines SWI's wire order: variable, number,
  *   string, empty list, atom, nonempty list. Where two distinct host atoms have
@@ -48,7 +53,7 @@ import { showsAs } from "./present.ts";
 /** Which of the five shapes an atom is. Narrows a union in `switch`. */
 export type Kind = "symbol" | "variable" | "grounded" | "expression" | "space";
 
-/** The intern table's key space, one string per structurally distinct atom. */
+/** The primitive intern table's key space, one string per non-expression atom. */
 type InternKey = string;
 
 /**
@@ -64,6 +69,8 @@ const table = new Map<InternKey, WeakRef<Atom>>();
 const reaper = new FinalizationRegistry<{ key: InternKey; ref: WeakRef<Atom> }>(({ key, ref }) => {
   if (table.get(key) === ref) table.delete(key);
 });
+
+let expressionCount = 0;
 
 let nextId = 1;
 
@@ -101,7 +108,7 @@ function interned<A extends Atom>(key: InternKey, make: () => A): A {
 
 /** How many atoms the intern table currently holds. Diagnostics, never semantics. */
 export function internedCount(): number {
-  return table.size;
+  return table.size + expressionCount;
 }
 
 const REFUSE_COERCION =
@@ -292,6 +299,21 @@ export class Expression extends Atom {
   }
 }
 
+/** Expressions with one 32-bit structural hash, collision-checked by child identity. */
+const expressionBuckets = new Map<number, WeakRef<Expression>[]>();
+const expressionReaper = new FinalizationRegistry<{
+  hash: number;
+  ref: WeakRef<Expression>;
+}>(({ hash, ref }) => {
+  const bucket = expressionBuckets.get(hash);
+  if (bucket === undefined) return;
+  const at = bucket.indexOf(ref);
+  if (at < 0) return;
+  bucket.splice(at, 1);
+  expressionCount -= 1;
+  if (bucket.length === 0) expressionBuckets.delete(hash);
+});
+
 /**
  * A named engine space, by reference.
  *
@@ -406,6 +428,45 @@ export function G<T>(value: T): Grounded<T> {
   return made;
 }
 
+// FNV-1a's xor-then-imul loop follows lib0's compact JavaScript implementation:
+// https://github.com/dmonad/lib0/blob/3a69a335c86c458bec73f1805551868b08ea001d/src/hash/fnv1a.js
+function expressionHash(items: readonly Atom[]): number {
+  let hash = Math.imul(0x811c9dc5 ^ items.length, 0x01000193);
+  for (const item of items) {
+    hash = Math.imul(hash ^ (item.id >>> 0), 0x01000193);
+    hash = Math.imul(hash ^ (Math.floor(item.id / 0x1_0000_0000) >>> 0), 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+/** Exact structural equality inside one hash bucket. */
+function sameItems(left: readonly Atom[], right: readonly Atom[]): boolean {
+  if (left.length !== right.length) return false;
+  for (let at = 0; at < left.length; at += 1) {
+    if (left[at] !== right[at]) return false;
+  }
+  return true;
+}
+
+/** Intern one expression without materialising its child ids as decimal text. */
+function internExpression(items: readonly Atom[]): Expression {
+  const hash = expressionHash(items);
+  const bucket = expressionBuckets.get(hash);
+  if (bucket !== undefined) {
+    for (const ref of bucket) {
+      const held = ref.deref();
+      if (held !== undefined && sameItems(held.items, items)) return held;
+    }
+  }
+  const made = new Expression(items);
+  const ref = new WeakRef(made);
+  if (bucket === undefined) expressionBuckets.set(hash, [ref]);
+  else bucket.push(ref);
+  expressionCount += 1;
+  expressionReaper.register(made, { hash, ref });
+  return made;
+}
+
 /**
  * The expression of an ARRAY of atoms.
  *
@@ -417,9 +478,7 @@ export function G<T>(value: T): Grounded<T> {
  * long generator produces exactly that.
  */
 export function exprOf(items: readonly Atom[]): Expression {
-  const key: string[] = ["e"];
-  for (const item of items) key.push(String(item.id));
-  return interned(key.join(","), () => new Expression(items));
+  return internExpression(items);
 }
 
 /** The expression of these atoms. `expr()` is `()`. */

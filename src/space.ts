@@ -20,7 +20,7 @@
  *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
  *   - `runOne` enforces exact cardinality instead of selecting one answer from
  *     a nondeterministic result [tested: "runOne refuses a term with more than
- *     one answer"; commit=WORKTREE]
+ *     one answer"; commit=90e3efc3f3723d9f87928755a9dea84d5002305a]
  *   - `solve` walks each side's variables once, and `readsThrough` consumes
  *     each public parent identity directly [tested: "walks solve's left
  *     variables once"; "reads through each parent identity without a name

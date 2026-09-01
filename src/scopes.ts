@@ -22,7 +22,7 @@
  *     world"; commit=6b117a66f6d1028496594942d4b4bdb4cc2b14fe]
  *   - settling a world releases its draft from both engine and surface
  *     ownership [tested: "evicts committed and restored world drafts from both
- *     host caches"; commit=WORKTREE]
+ *     host caches"; commit=62369c406ca1afee026539a825fa2469c768d957]
  * Decides: a world is a DRAFT, not a suspended transaction. Adds go into a
  *   child space, which the engine's own parent declaration makes read through
  *   the parent and write locally; removals are journalled here and applied at

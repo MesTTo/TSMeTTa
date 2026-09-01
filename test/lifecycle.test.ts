@@ -3,8 +3,14 @@
  *   concurrent coordination keep one coherent host-side lifecycle.
  * Guarantees:
  *   - every space resolves the surface's canonical reflection space
+ *     [tested: "resolves one canonical catalog from every space";
+ *     commit=62369c406ca1afee026539a825fa2469c768d957]
  *   - settling a world evicts its released draft from both host caches
+ *     [tested: "evicts committed and restored world drafts from both host caches";
+ *     commit=62369c406ca1afee026539a825fa2469c768d957]
  *   - concurrent takes arbitrate through deletion and consume distinct atoms
+ *     [tested: "lets concurrent takes consume distinct matching atoms";
+ *     commit=62369c406ca1afee026539a825fa2469c768d957]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

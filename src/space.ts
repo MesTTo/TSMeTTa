@@ -33,10 +33,11 @@
  *     drained it [tested: "releases each drain job after delivering an
  *     admission"; commit=d3b3d62e19cd5dc941a6af8df24bc48992327236]
  *   - every space resolves the engine's canonical reflection-space object
- *     [tested: "resolves one canonical catalog from every space"; commit=WORKTREE]
+ *     [tested: "resolves one canonical catalog from every space";
+ *     commit=62369c406ca1afee026539a825fa2469c768d957]
  *   - concurrent takes return only after deleting an exact candidate; a loser
  *     retries [tested: "lets concurrent takes consume distinct matching atoms";
- *     commit=WORKTREE]
+ *     commit=62369c406ca1afee026539a825fa2469c768d957]
  * Decides: the collection verbs are SYNCHRONOUS. The transport is in process,
  *   so a synchronous twin genuinely exists, and the async-primary law asks for
  *   an async surface where the transport needs one rather than everywhere. The

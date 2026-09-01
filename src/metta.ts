@@ -17,7 +17,7 @@
  *     identities structured and collision-free"; commit=e112cbc47bf8f77f002a8edf5c2668aa5f337c5f]
  *   - settling a world removes its released draft from the surface cache and
  *     decoder-name set [tested: "evicts committed and restored world drafts
- *     from both host caches"; commit=WORKTREE]
+ *     from both host caches"; commit=62369c406ca1afee026539a825fa2469c768d957]
  *   - nothing this surface does writes to the host's console
  * Owns: one engine, its spaces, its registered operations, and its scopes.
  * Open Obligations:

@@ -1,7 +1,8 @@
 /**
  * Purpose: the atom algebra this surface speaks: one interned, immutable
  *   value per MeTTa atom, narrowing by `instanceof`, printing as MeTTa text,
- *   and ordering by the engine's own standard order of terms.
+ *   and ordering by a deterministic host refinement of the engine's standard
+ *   order of terms.
  * Assumes:
  *   - fork 2 of `ai-typescript-design.md` is ruled YES: atoms are hash-consed,
  *     so `===`, `Set`, `Map` and `Array.prototype.includes` are STRUCTURAL for
@@ -25,22 +26,26 @@
  *   - a registered symbol interns by its registry identity while an unregistered
  *     symbol interns by reference [tested: "interns registered symbols without
  *     treating them as weak keys"; commit=d3b3d62e19cd5dc941a6af8df24bc48992327236]
- *   - `byStandardOrder` is a total refinement of the engine's order: it keeps
- *     exact mixed numeric values, NaN, signed zero, Unicode text and proper-list
- *     lexicography ordered, then breaks engine-equal host representations by
- *     identity [tested: "matches the engine's numeric, atomic and list order at
- *     every edge", "is a total order across every host atom distinction",
- *     "sorts the shared atom image exactly as the engine's msort";
- *     commit=42b179f086ff544128ae9f95872ae00644c85f81]
+ *   - `byStandardOrder` is a total host refinement of the engine's portable
+ *     ground-image order: it keeps exact mixed numeric values, NaN, signed zero,
+ *     Unicode text and proper-list lexicography ordered, then gives variables
+ *     and live values stable host identities instead of pretending to recover
+ *     SWI's per-term and per-session allocation order [tested: "matches the
+ *     engine's numeric, atomic and list order at every edge", "is a total order
+ *     across every host atom distinction", "sorts the portable ground image
+ *     exactly as the engine's msort", "keeps host-only order stable across
+ *     reverse engine allocation"; commit=WORKTREE]
  *   - `exprOf` interns through weak structural-hash buckets, verifies every
  *     collision by child identity and never materialises all child ids as text
  *     [tested: "interns a wide expression without joining every child id into
  *     text", "keeps structurally different expressions separate inside one
  *     hash bucket"; commit=1e76fd97936f0672eda20a7905d2590cdf7a0022]
  * Owns: the process-wide intern table. It holds every atom weakly.
- * Decides: the standard order refines SWI's wire order: variable, number,
- *   string, empty list, atom, nonempty list. Where two distinct host atoms have
- *   one engine image, process identity breaks the tie so zero means `===`.
+ * Decides: the standard order refines SWI's wire categories: variable, number,
+ *   string, empty list, atom, nonempty list. SWI orders variables by allocation
+ *   inside one term and live handles by an engine session's first crossing;
+ *   neither fact belongs to two standalone `Atom` arguments, so variable names
+ *   and process identity break those ties and zero means `===`.
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -734,24 +739,28 @@ function compareNumbers(
   return compareIdentity(left, right);
 }
 
-/** The SWI atom spelling a non-number, non-string host atom has. */
+/** A stable host spelling for a non-number, non-string atom. */
 function atomicName(atom: Atom): string {
   if (atom instanceof Sym || atom instanceof SpaceHandle) return atom.name;
   if (atom instanceof Grounded && typeof atom.value === "boolean") return String(atom.value);
-  // The bridge gives an opaque host value this prefix plus a session id. The
-  // atom id supplies the same stable distinction before any engine crossing.
+  // The bridge suffix is allocated when one ENGINE first sees the value. Atom
+  // identity is the context-free ordering key available before and across
+  // sessions; using a session suffix here would make one comparator stateful.
   return `$metta_node_object#${String(atom.id)}`;
 }
 
 /**
- * The engine's own order over atoms, as a comparator.
+ * A deterministic host refinement of the engine's standard order.
  *
  * `atoms.sort(byStandardOrder)` where Python writes `sorted(atoms)`: one
  * argument where Python had none, because `Array.prototype.sort` wants a
  * comparator and inventing a default that is not the engine's would be worse.
- * The shared image follows SWI's standard order, with identity tie-breakers
- * for distinctions the crossing erases. The numeric `<`/`>` below is exact
- * across Number and BigInt by ECMAScript's mixed relational comparison.
+ * Portable ground-term images follow SWI exactly. SWI variables are ordered by
+ * their allocation within one encoded term, and opaque handles by the order one
+ * engine session first saw them; neither ordering exists in two standalone
+ * atoms. Variable names and process identity make those cases total and stable.
+ * The numeric `<`/`>` below is exact across Number and BigInt by ECMAScript's
+ * mixed relational comparison.
  */
 export function byStandardOrder(left: Atom, right: Atom): number {
   // A worklist of PAIRS still to compare, deepest-first, so a term that is

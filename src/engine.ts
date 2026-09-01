@@ -932,9 +932,11 @@ export class Engine {
   /**
    * Register a host operation, or replace one at the same name and arity.
    *
-   * The table is keyed by name and arity, and the dispatch lookup is by name
-   * alone, because the engine calls a name at whatever arity its own clause
-   * carries and this side has one implementation per name.
+   * The user-operation table and dispatch are both keyed by exact name and
+   * arity, so two clauses sharing a name keep distinct host bodies. Transport
+   * callbacks use their separate name-keyed table because each callback is an
+   * internal protocol door with one implementation rather than a MeTTa
+   * overload.
    */
   register(op: HostOp): void {
     this.start(["registerop", op.name, op.arity, op.kind, op.effect]).sync();

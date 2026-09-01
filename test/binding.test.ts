@@ -8,9 +8,11 @@
  *   - Number and BigInt cross the signed-i64 boundary without losing a digit
  *   - an abandoned stream leaves the rest of an unbounded generator uncomputed
  *   - nothing the engine says reaches the host's console
- *   - `byStandardOrder` sorts the shared atom image exactly as SWI `msort`
- *     [tested: "sorts the shared atom image exactly as the engine's msort";
- *     commit=42b179f086ff544128ae9f95872ae00644c85f81]
+ *   - `byStandardOrder` sorts the portable ground image exactly as SWI `msort`
+ *     while variables and opaque values retain one host-stable order across
+ *     engine sessions [tested: "sorts the portable ground image exactly as the
+ *     engine's msort", "keeps host-only order stable across reverse engine
+ *     allocation"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -24,7 +26,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  Atom,
   Expression,
   G,
   Grounded,
@@ -45,7 +46,6 @@ import {
   packageRoot,
   space,
   sym,
-  variable,
   wireFromAtom,
 } from "../src/index.ts";
 
@@ -314,15 +314,7 @@ describe("running a program", () => {
 });
 
 describe("the codec, through the engine", () => {
-  it("sorts the shared atom image exactly as the engine's msort", async () => {
-    const first = {};
-    const second = {};
-    const firstAtom = G(first);
-    const secondAtom = G(second);
-    // Fix the engine's opaque-handle ids before permuting the atoms. The host
-    // uses the corresponding atom identities for the part SWI cannot name.
-    await m.eval(firstAtom).toArray();
-    await m.eval(secondAtom).toArray();
+  it("sorts the portable ground image exactly as the engine's msort", async () => {
     const atoms = [
       expr(sym("z")),
       expr(sym("a"), sym("b")),
@@ -334,8 +326,6 @@ describe("the codec, through the engine", () => {
       G(false),
       G(true),
       space("&space"),
-      firstAtom,
-      secondAtom,
       G(Number.NaN),
       G(Number.NEGATIVE_INFINITY),
       G(-0),
@@ -344,17 +334,27 @@ describe("the codec, through the engine", () => {
       G(0n),
       G(2n ** 60n),
       G(2n ** 60n + 1n),
-      variable("order"),
     ];
     const [answer] = await m.eval(S.msort(exprOf(atoms))).toArray();
     assert.ok(answer instanceof Expression);
-    const label = (atom: Atom): string => {
-      if (atom instanceof Grounded && atom.value === first) return "opaque:first";
-      if (atom instanceof Grounded && atom.value === second) return "opaque:second";
-      if (atom.kind === "variable") return "variable";
-      return atom.text;
-    };
-    assert.deepEqual(answer.items.map(label), [...atoms].sort(byStandardOrder).map(label));
+    assert.deepEqual(answer.items.map(String), [...atoms].sort(byStandardOrder).map(String));
+  });
+
+  it("keeps host-only order stable across reverse engine allocation", async () => {
+    const first = G({});
+    const second = G({});
+    const order = (): string[] =>
+      [first, second]
+        .sort(byStandardOrder)
+        .map((atom) => (atom === first ? "first" : "second"));
+    const before = order();
+
+    // SWI sees these in the opposite order. That session-local handle order
+    // cannot change a context-free comparator over host atoms.
+    await m.eval(second).toArray();
+    await m.eval(first).toArray();
+
+    assert.deepEqual(order(), before);
   });
 
   it("tells a MeTTa integer from a MeTTa float", () => {

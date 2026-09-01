@@ -12,7 +12,7 @@
  *   - discovery neither constructs the class nor evaluates accessors
  *     [tested: npm run build --silent && node --test
  *     --test-name-pattern='discovers decorated theory methods without constructing|skips accessors while discovering theory methods'
- *     build/test/extras.test.js; commit=WORKTREE]
+ *     build/test/extras.test.js; commit=fa5fec84a65958ff71483442cc76590b88cf1572]
  * Decides: reflection is the floor and the decorators are the sugar above it.
  *   Stage-3 decorators reach methods and TypeScript compiles them, but V8 has
  *   not shipped them, so `node theory.ts` under type stripping rejects the

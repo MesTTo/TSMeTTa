@@ -5,7 +5,7 @@
  * Guarantees: theory discovery never constructs the class or evaluates a
  *   prototype accessor [tested: npm run build --silent && node --test
  *   --test-name-pattern='discovers decorated theory methods without constructing|skips accessors while discovering theory methods'
- *   build/test/extras.test.js; commit=WORKTREE].
+ *   build/test/extras.test.js; commit=fa5fec84a65958ff71483442cc76590b88cf1572].
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

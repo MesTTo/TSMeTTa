@@ -25,7 +25,7 @@
  *     key", "resets its width after the last removal";
  *     commit=4a81aa55810a9a40bb501e77f3304d21b658279b]
  *   - front-removal cost stays flat from 10,000 to 200,000 entries
- *     [measured: old median 0.137769 ms then 4.140005 ms; ordered Map median
+ *     [measured 2026-09-01: old median 0.137769 ms then 4.140005 ms; ordered Map median
  *     0.000330 ms then 0.000290 ms; command=node
  *     ai-tmp/state-crash-embedding-remove-bench.mjs baseline 10000 && node
  *     ai-tmp/state-crash-embedding-remove-bench.mjs current 10000 && node

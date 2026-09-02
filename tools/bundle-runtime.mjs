@@ -8,7 +8,7 @@
  * which src/engine.ts prefers whenever it exists. Without it a published
  * package holds the bridge and not the engine: measured 2026-08-29, a fresh
  * `npm install` on a machine outside any checkout booted into
- * `scandir 'C:\Users\ahmad\nodetest\engine'`, because two levels above an
+ * `scandir '<consumer project>\engine'`, because two levels above an
  * installed package is the consumer's own project.
  *
  * Written in Node rather than as a shell line because `npm pack` runs on

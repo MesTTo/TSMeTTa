@@ -117,7 +117,8 @@ const PACKAGE_ROOT = packageRoot;
  * levels up. Installed, it sits at `node_modules/metta-node/`, where two levels
  * up is the CONSUMER'S OWN project: measured 2026-08-29 on a fresh
  * `npm install` outside any checkout, that resolved to
- * `C:\Users\ahmad\nodetest\engine` and the boot died on `scandir`. So a
+ * `<consumer project>\engine`, which does not exist, and the boot died on
+ * `scandir`. So a
  * published tarball carries its own copy at `_runtime/`, written by the
  * `prepack` script and preferred here whenever it is present, the way the
  * Python seat carries `metta/_runtime/`.

@@ -6,7 +6,7 @@ behind a socket, over [swipl-wasm](https://github.com/SWI-Prolog/npm-swipl-wasm)
 10.1.13. There is nothing to install besides npm packages: no SWI on the
 machine, no compiler, no shared library.
 
-TypeScript is the notation and MeTTa is the meaning. Every door here either
+TypeScript is the notation and MeTTa is the meaning. Every call here either
 builds a term or asks the engine one, and nothing on this side re-implements
 matching, rewriting or nondeterminism.
 
@@ -31,7 +31,7 @@ is the same refusal in a form that can be run on demand, and it keys off the
 same flag, so removing that one line lifts both.
 
 Until then the package installs from a tarball, which is a supported path and
-the one this seat's tutorial documents:
+the one this extension's tutorial documents:
 
 ```sh
 cd extensions/node && npm pack      # writes metta-node-<version>.tgz
@@ -45,7 +45,7 @@ would carry the bridge and not the engine it drives.
 `dist/` is a build product, not a checked-in one: `npm run build:dist` writes
 it and npm's `prepare` hook runs that on install. Import `src/` as below while
 working in this checkout, or build first: a `dist/` older than the `src/`
-beside it is a copy of an older codec, and the seat's own suites never load it
+beside it is a copy of an older codec, and the extension's own suites never load it
 because they compile source into `build/`. `sh check.sh node-dist` builds it
 and runs a consumer through the result.
 
@@ -164,7 +164,7 @@ for await (const atom of kb) { ... } // its stored atoms, unevaluated
 
 The language-level `remove-atom` drains every unifying occurrence and answers
 `true` even when none existed. `delete` is deliberately the host collection
-door instead: it removes one occurrence and reports whether one was present,
+form instead: it removes one occurrence and reports whether one was present,
 which keeps its `Set.prototype.delete` contract distinct from MeTTa's coarser
 operation.
 
@@ -204,7 +204,7 @@ const reader = m.space(S.reader, { grants: ["file"] });   // and now it runs
 `kb.readsThrough(parent)` declares that a space reads its parent's atoms and
 writes its own, which is what a world rides on.
 
-## The three doors
+## The three ways to run something
 
 ### define, from a plain body
 
@@ -354,7 +354,7 @@ honour the journal.
 
 A world cannot be an SWI transaction held open across host calls, because
 `engine_yield/1` cannot unwind through the nested query frame `transaction/1`
-opens; `m.speculate(term)` is the door for the engine's own discarded
+opens; `m.speculate(term)` is for the engine's own discarded
 execution scope, for a plan the engine runs by itself.
 
 ## Theories
@@ -580,7 +580,7 @@ One engine, created by the first verb that needs it. Importing boots nothing,
 and an ask from here is as lazy as the method it stands for: the boot happens
 on the first pull. `reset()` disposes it and forgets it.
 
-The reduction door is `evaluate` here and `m.eval` on the surface: `eval`
+Reduction is `evaluate` here and `m.eval` on the surface: `eval`
 cannot be a module-level binding at all, because ECMAScript refuses it as a
 declaration name in strict mode and every module is one.
 
@@ -623,7 +623,7 @@ Python package's lazily loaded satellites.
 ## How a host type crosses
 
 A value crosses by REFERENCE unless something says how it should cross by
-SHAPE. `G(person)` is the reference; `registerType` is the other door.
+SHAPE. `G(person)` is the reference; `registerType` is the other way.
 
 ```ts
 import { IMAGES, project, registerType } from "metta-node/convert";
@@ -651,7 +651,7 @@ The `symbol` image runs backwards too. A bare symbol carries no constructor to
 look up, so every symbol registration is offered the name in turn and the first
 whose `fromAtom` answers something other than `undefined` claims it.
 
-`autoImage(value)` is the rung beneath a declared image: `"transparent"` or
+`autoImage(value)` is the step below a declared image: `"transparent"` or
 `"opaque"`, decided in constant time. A scalar and a small sized container
 cross transparent; an ITERATOR stays opaque however short it is, because
 measuring or converting one drains it, and draining is a side effect no image
@@ -715,7 +715,7 @@ await m.eval(S["emb-knn"](G(new Float64Array([1, 0])), 1)).toArray();   // dog
 in its first-seen position. The vectors are copied into one contiguous
 row-major buffer, rebuilt lazily after a write, with each row's norm beside it,
 so a query is one pass of `n * width` multiply-adds with no per-vector
-indirection. A zero or non-finite vector is refused at the door, because cosine
+indirection. A zero or non-finite vector is refused on the way in, because cosine
 similarity has no answer for either and a silently empty ranking is worse.
 
 ## What a space declares about itself
@@ -757,10 +757,10 @@ filesystem of its own and cannot see this process's.
 
 `kb.transaction(term)` runs one term atomically: every engine write commits or
 rolls back together, and an EMPTY answer set is the rollback. The body is a
-TERM rather than a callable, and the reason is architectural: this seat
+TERM rather than a callable, and the reason is architectural: this extension
 reaches JavaScript by suspending the engine, and the engine says exactly why
 that cannot happen inside a transaction: `engine_yield/1 cannot unwind through
-either`. Build the work as a term and this door runs it atomically.
+either`. Build the work as a term and this runs it atomically.
 
 ## Reactions, and which one fires first
 
@@ -832,9 +832,9 @@ way through leaves the world in neither state. And a compensation that throws
 keeps its receipt and every receipt before it, so a retry resumes rather than
 restarts. A compensator must therefore be idempotent.
 
-The step is not itself atomic here, and that is the one place this seat differs
+The step is not itself atomic here, and that is the one place this extension differs
 from the Python one. Python runs each step inside an engine transaction; this
-seat cannot, because it reaches JavaScript by SUSPENDING the engine and
+extension cannot, because it reaches JavaScript by SUSPENDING the engine and
 `engine_yield/1` cannot unwind through a transaction. What is left is the
 classical saga, which is the mechanism people reach for sagas to get.
 
@@ -931,7 +931,7 @@ Either operand order consults the same logic, and a variable still binds the
 value WHOLE without consulting it. Registration is per class and per engine,
 and it is what turns the seam on: until the first call the matcher carries no
 clause for host-owned matching at all, so a program that does not use this pays
-nothing for it. That is the difference from the Python seat, which can afford
+nothing for it. That is the difference from the Python extension, which can afford
 an always-present probe because its crossing is a function call; here it is a
 coroutine yield, and the matcher's ground-comparison path is the hottest there
 is.
@@ -975,7 +975,7 @@ automated theorem provers use at millions-of-terms scale: the tree answers
 candidates and a one-way match confirms, which is what keeps a nonlinear
 pattern such as `(f $x $x)` exact. `PatternMap` keeps the `Map` protocol EXACT
 (`get(k)` answers what was stored under that very key) and puts the dispatch
-question on its own door.
+question of its own.
 
 `metta-node/matching` is what they are built on, and it is useful by itself:
 `unifyTerms`, `matchTerms`, `unifies`, `alphaKey`, `alphaEqual`, `isGround`,
@@ -1019,10 +1019,10 @@ const kb = m.schema({
 
 One writing, three realms: the TypeScript type, the runtime term, and the
 engine-side declaration all come from the same object literal. A declared name
-takes the same casing map as every other vocabulary door, so `ageOf` installs
+takes the same casing map as every other vocabulary call, so `ageOf` installs
 `age-of`.
 
-The `decodeWith` door speaks [Standard Schema](https://standardschema.dev), so
+`decodeWith` speaks [Standard Schema](https://standardschema.dev), so
 Zod, Valibot, ArkType, TypeBox, Yup and Joi all validate an answer with no
 runtime dependency added here.
 
@@ -1105,7 +1105,7 @@ and `JSON.stringify` at 4,161.
 
 ## A surface has a lifetime
 
-`m.dispose()` releases what the surface holds, and every door refuses
+`m.dispose()` releases what the surface holds, and every call refuses
 afterwards with `ClosedError` rather than answering. That includes an ask that
 was in flight: its next pull refuses, while closing the abandoned stream is
 still allowed, because cleanup must not raise.
@@ -1132,7 +1132,7 @@ answers.filter(isError);       // one (Error (car-atom ()) "...")
 answers.filter((a) => !isError(a));   // the 2
 ```
 
-`orThrow()` is the door for a caller who would rather be interrupted. One
+`orThrow()` is for a caller who would rather be interrupted. One
 failing branch raises its own error; several raise the platform's own
 `AggregateError`, with one entry per branch, each carrying its error atom as
 `cause`, so reporting a failure never loses the data:
@@ -1363,14 +1363,14 @@ sh bench.sh --update              # re-pin, after reviewing the workload
 | `src/wire.ts` | the tagged codec, at both strictnesses |
 | `src/engine.ts` | boot, the job pump, and host-operation dispatch |
 | `src/answers.ts` | the lazy, thenable, async-iterable ask |
-| `src/space.ts` | a space as a collection, and its query doors |
-| `src/metta.ts` | the surface: the doors, the scopes, the reflection verbs |
+| `src/space.ts` | a space as a collection, and how it is queried |
+| `src/metta.ts` | the surface: the calls, the scopes, the reflection verbs |
 | `src/define/lower.ts` | a plain body, lowered from its own source |
 | `src/define/trace.ts` | a generator body, traced into clauses |
-| `src/define/define.ts` | the three definition doors |
-| `src/words.ts` | the word door, the control forms, the case tower |
+| `src/define/define.ts` | the three ways to define |
+| `src/words.ts` | the word namespace, the control forms, the case tower |
 | `src/scopes.ts` | limits, stats and worlds, through `using` |
-| `src/schema.ts` | the vocabulary door and Standard Schema interop |
+| `src/schema.ts` | vocabularies and Standard Schema interop |
 | `src/library.ts` | the extension tier |
 | `src/state.ts` | a state cell |
 | `src/errors.ts` | the error family, one subclass per condition |
@@ -1413,4 +1413,4 @@ prefers `Symbol.asyncIterator` in every engine.
 A consumer with `noUncheckedIndexedAccess` on will see `S.parent` typed as
 `Name | undefined`, because the ambient factories spell any name through an
 index signature. Declaring vocabulary with `m.schema(...)`, or using the call
-door `S("parent")`, is exact under either setting.
+form `S("parent")`, is exact under either setting.

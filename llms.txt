@@ -231,5 +231,5 @@ npx metta-node repl
 ## Where to read next
 
 - `extensions/node/README.md` is the full surface with worked examples.
-- `extensions/node/example/` are runnable programs.
+- `extensions/node/examples/` are runnable programs.
 - The site publishes the same README at `/extensions/node`.

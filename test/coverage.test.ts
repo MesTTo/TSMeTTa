@@ -455,10 +455,10 @@ describe("vectors by key", () => {
       "equal-scoring results lost insertion order",
     );
 
-    const readded = keys[100] as Atom;
-    assert.ok(store.remove(readded));
-    store.add(readded, [1, 0]);
-    assert.equal(store.keys.at(-1), readded, "a re-added key did not take a new last position");
+    const restoredKey = keys[100] as Atom;
+    assert.ok(store.remove(restoredKey));
+    store.add(restoredKey, [1, 0]);
+    assert.equal(store.keys.at(-1), restoredKey, "a re-added key did not take a new last position");
   });
 
   it("resets its width after the last removal", () => {

@@ -15,7 +15,7 @@
  *     damaging catalog, typing, or arithmetic state, while named spaces keep
  *     both lifecycle operations
  *     [tested: "refuses destructive lifecycle operations on engine-owned base spaces";
- *     commit=WORKTREE]
+ *     commit=6229e43cb68cc3685360810d462d992874992f6c]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

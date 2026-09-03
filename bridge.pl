@@ -37,7 +37,7 @@
 %     one takes constant engine inferences regardless of the live-job count
 %     [tested: "does not recycle an identifier after the job table empties",
 %     "allocates one identifier at constant inference cost across 0, 200, 400
-%     and 800 live jobs"; commit=WORKTREE]
+%     and 800 live jobs"; commit=566cc10d88e9404f9490468c9d98293cc1034d48]
 %   - a term the codec has no tag for raises rather than crossing as text
 %     [tested: "refuses a tag outside the grammar"]
 %   - metta_node_stop/1 is idempotent

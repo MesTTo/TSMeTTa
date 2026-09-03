@@ -12,7 +12,7 @@
  *     and allocating one costs the same engine inferences with 0, 200, 400 or
  *     800 jobs already live [tested: "does not recycle an identifier after the
  *     job table empties", "allocates one identifier at constant inference cost
- *     across 0, 200, 400 and 800 live jobs"; commit=WORKTREE]
+ *     across 0, 200, 400 and 800 live jobs"; commit=566cc10d88e9404f9490468c9d98293cc1034d48]
  *   - `byStandardOrder` sorts the portable ground image exactly as SWI `msort`
  *     while variables and opaque values retain one host-stable order across
  *     engine sessions [tested: "sorts the portable ground image exactly as the

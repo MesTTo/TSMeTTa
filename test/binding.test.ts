@@ -8,6 +8,12 @@
  *   - Number and BigInt cross the signed-i64 boundary without losing a digit
  *   - an abandoned stream leaves the rest of an unbounded generator uncomputed
  *   - nothing the engine says reaches the host's console
+ *   - the swipl-wasm census names crypto and redis absent, SHA-256 still
+ *     hashes through library(sha), and crypto-only operations or a Redis
+ *     import refuse by capability rather than reaching an unknown predicate
+ *     [tested: "keeps portable SHA hashing and refuses crypto-only operations",
+ *     "refuses the Redis library before consulting its missing provider";
+ *     commit=WORKTREE]
  *   - bridge job identifiers never recycle after the live-job table empties,
  *     and allocating one costs the same engine inferences with 0, 200, 400 or
  *     800 jobs already live [tested: "does not recycle an identifier after the
@@ -91,7 +97,7 @@ describe("boot", () => {
   it("reads what this build does without from the engine's own census", () => {
     assert.deepEqual(
       m.refusals.map(({ capability }) => capability).sort(),
-      ["concurrency", "deadlines", "subprocess"],
+      ["concurrency", "crypto", "deadlines", "redis", "subprocess"],
     );
   });
 
@@ -103,6 +109,39 @@ describe("boot", () => {
         `${refusal.capability} says nothing about what it costs`,
       );
     }
+  });
+
+  it("keeps portable SHA hashing and refuses crypto-only operations", () => {
+    const groups = m.run(
+      '!(import! &self (library lib_crypto))\n!(crypto-hash sha256 "hello")',
+    );
+    assert.deepEqual(groups[groups.length - 1]?.texts, [
+      '"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"',
+    ]);
+    for (const source of ['!(crypto-random-hex 16)', '!(crypto-hash md5 "hello")']) {
+      assert.throws(
+        () => m.run(source),
+        (error: unknown) => {
+          assert.ok(error instanceof MettaError);
+          assert.match(error.message, /crypto capability/);
+          assert.match(error.message, /library\(crypto\)/);
+          return true;
+        },
+      );
+    }
+  });
+
+  it("refuses the Redis library before consulting its missing provider", () => {
+    assert.throws(
+      () => m.run("!(import! &self (library lib_redis))"),
+      (error: unknown) => {
+        assert.ok(error instanceof MettaError);
+        assert.match(error.message, /lib_redis\.pl/);
+        assert.match(error.message, /redis capability/);
+        assert.match(error.message, /library\(redis\)/);
+        return true;
+      },
+    );
   });
 });
 

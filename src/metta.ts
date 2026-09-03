@@ -18,6 +18,10 @@
  *   - settling a world removes its released draft from the surface cache and
  *     decoder-name set [tested: "evicts committed and restored world drafts
  *     from both host caches"; commit=62369c406ca1afee026539a825fa2469c768d957]
+ *   - the WebAssembly refusal census names concurrency, crypto, deadlines,
+ *     redis and subprocess, including each missing library and its cost
+ *     [tested: "reads what this build does without from the engine's own census";
+ *     commit=WORKTREE]
  *   - nothing this surface does writes to the host's console
  * Owns: one engine, its spaces, its registered operations, and its scopes.
  * Open Obligations:
@@ -193,8 +197,8 @@ export class MeTTa implements Disposable {
    *
    * Read from the engine's own platform census rather than recovered by regex
    * over its boot transcript, so the costs are the engine's words and the two
-   * cannot drift. A full SWI answers nothing here; a WebAssembly build names
-   * concurrency, deadlines and subprocess.
+   * cannot drift. A full SWI answers nothing here; this WebAssembly build
+   * names concurrency, crypto, deadlines, redis and subprocess.
    */
   get refusals(): readonly Capability[] {
     return this.#engine.refusals;

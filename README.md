@@ -1215,18 +1215,22 @@ it is refused here.
 
 ## What this build does not carry
 
-Four platform libraries are absent from a WebAssembly SWI and there is no
-substitute for any of them, so the capabilities that rest on them are absent
-too. `metta()` reports them on `m.refusals`, each with what it costs, and
+Five platform capabilities are absent from this WebAssembly SWI because their
+provider libraries are missing. `library(sha)` preserves the five SHA hashes
+that `library(crypto)` also supplies; the other lost operations have no
+substitute. `metta()` reports all five capability
+losses on `m.refusals`, each with what it costs, and
 **raises on any refusal it does not name**, so an absence cannot creep in
 quietly:
 
 | missing | in | costs |
 |---|---|---|
-| `library(thread)` | `engine/metta.pl` | `concurrent_maplist`, so `jobs/2`. The build is single-threaded. |
+| `library(thread)` and `library(thread_pool)` | `engine/metta.pl`, `lib/lib_thread` | `concurrent_maplist`, futures and channels. The build is single-threaded. |
 | `library(time)` | `engine/metta.pl` | `alarm/4`, so `metta_timeout/2`. An `AbortSignal` bounds the pull from this side instead. |
 | `library(process)` | `engine/metta.pl` | subprocess operations; a WebAssembly instance has none to start. |
 | `library(process)` | `lib/lib_gitimport/lib_gitimport.pl` | `import!` from git, which shells out. |
+| `library(crypto)` | `lib/lib_crypto` | secure random bytes and non-SHA hash algorithms. SHA-1, SHA-224, SHA-256, SHA-384 and SHA-512 use `library(sha)`. |
+| `library(redis)` | `lib/lib_redis` | Redis-backed spaces and their cross-process subscriptions. Import refuses before the absent provider is consulted. |
 
 Everything else loads. Tabling is present, `library(sha)` is present, and the
 engine parses, translates and evaluates end to end.

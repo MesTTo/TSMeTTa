@@ -31,7 +31,7 @@
 # shape the C extension example takes when swipl-ld is absent.
 check_node_binding() {
     [ -d "$HERE/extensions/node" ] || return 0
-    sh "$HERE/extensions/node/test.sh"
+    bounded sh "$HERE/extensions/node/test.sh"
 }
 run GATE node-binding check_node_binding
 
@@ -50,7 +50,7 @@ run GATE node-binding check_node_binding
 # and why, per case.
 check_node_bench() {
     [ -d "$HERE/extensions/node" ] || return 0
-    sh "$HERE/extensions/node/bench.sh"
+    bounded sh "$HERE/extensions/node/bench.sh"
 }
 # The BUILT package, which no other lane loads. `npm test` compiles source into
 # build/ and runs that; the benchmarks do the same; the conformance comparison
@@ -77,8 +77,8 @@ check will not run; npm ci fetches swipl-wasm and a gate does not reach the \
 network" >&2
         return 0
     }
-    ( cd "$HERE/extensions/node" && npm run --silent build:dist &&
-      node tools/dist-consumer.mjs )
+    ( cd "$HERE/extensions/node" && bounded npm run --silent build:dist &&
+      bounded node tools/dist-consumer.mjs )
 }
 run GATE node-dist check_node_dist
 

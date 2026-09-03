@@ -33,6 +33,11 @@
 %   - metta_node_step/2 computes at most one event per call, so a host that
 %     stops pulling leaves the rest of an infinite stream uncomputed
 %     [tested: "leaves an abandoned stream's remaining answers uncomputed"]
+%   - job identifiers are monotone for this engine's lifetime and allocating
+%     one takes constant engine inferences regardless of the live-job count
+%     [tested: "does not recycle an identifier after the job table empties",
+%     "allocates one identifier at constant inference cost across 0, 200, 400
+%     and 800 live jobs"; commit=WORKTREE]
 %   - a term the codec has no tag for raises rather than crossing as text
 %     [tested: "refuses a tag outside the grammar"]
 %   - metta_node_stop/1 is idempotent
@@ -443,11 +448,14 @@ metta_node_start(Scopes, Command, Id) :-
     metta_node_fresh_id(Id),
     assertz(metta_node_job(Id, Engine)).
 
+%The job table is lifecycle state, not allocator state: emptying it must not
+%make an old integer name a new engine. The C seat solved the same problem with
+%flag/3, whose update is atomic and independent of the table's population
+%[source: extensions/cmetta/bridge.pl, metta_c_new_cursor/2;
+%commit=b5ddebe73273447caa7c57212d6ee86fc71e0d4a].
 metta_node_fresh_id(Id) :-
-    (   aggregate_all(max(N), metta_node_job(N, _), Highest)
-    ->  Id is Highest + 1
-    ;   Id = 1
-    ).
+    flag(metta_node_job_id, Previous, Previous + 1),
+    Id is Previous + 1.
 
 metta_node_engine(Id, Engine) :-
     (   metta_node_job(Id, Engine)

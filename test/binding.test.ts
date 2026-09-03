@@ -8,6 +8,11 @@
  *   - Number and BigInt cross the signed-i64 boundary without losing a digit
  *   - an abandoned stream leaves the rest of an unbounded generator uncomputed
  *   - nothing the engine says reaches the host's console
+ *   - bridge job identifiers never recycle after the live-job table empties,
+ *     and allocating one costs the same engine inferences with 0, 200, 400 or
+ *     800 jobs already live [tested: "does not recycle an identifier after the
+ *     job table empties", "allocates one identifier at constant inference cost
+ *     across 0, 200, 400 and 800 live jobs"; commit=WORKTREE]
  *   - `byStandardOrder` sorts the portable ground image exactly as SWI `msort`
  *     while variables and opaque values retain one host-stable order across
  *     engine sessions [tested: "sorts the portable ground image exactly as the
@@ -50,6 +55,28 @@ import {
 } from "../src/index.ts";
 
 let m: MeTTa;
+
+/** Open one real bridge job without pulling it, and return its public ID. */
+const openProbeJob = (): number =>
+  Number(m.engine.once("metta_node_start([], [platform], Id)")["Id"]);
+
+/** Close one bridge job through the same idempotent door the iterator uses. */
+const closeProbeJob = (id: number): void => {
+  m.engine.once("metta_node_stop(Id)", { Id: id });
+};
+
+/** How many suspended engines the bridge currently owns. */
+const liveProbeJobs = (): number =>
+  Number(m.engine.once("aggregate_all(count, metta_node_job(_,_), Count)")["Count"]);
+
+/** Price only the allocator, with the surrounding statistics calls excluded. */
+const probeJobIdCost = (): number => {
+  const answer = m.engine.once(
+    "statistics(inferences, Before), metta_node_fresh_id(_), " +
+      "statistics(inferences, After), Cost is After-Before",
+  );
+  return Number(answer["Cost"]);
+};
 
 before(async () => {
   m = await metta();
@@ -216,6 +243,47 @@ describe("the lifetime of a surface", () => {
     });
     // Closing the abandoned stream is still allowed: cleanup must not raise.
     assert.equal((await iterator.return?.())?.done, true);
+  });
+});
+
+describe("the lifetime of a bridge job identifier", () => {
+  it("does not recycle an identifier after the job table empties", () => {
+    assert.equal(liveProbeJobs(), 0, "another test leaked a bridge job into this case");
+    const first = openProbeJob();
+    closeProbeJob(first);
+    assert.equal(liveProbeJobs(), 0, "closing the first job did not empty the table");
+
+    const second = openProbeJob();
+    try {
+      assert.ok(second > first, `the emptied table recycled job identifier ${String(first)}`);
+    } finally {
+      closeProbeJob(second);
+    }
+  });
+
+  it("allocates one identifier at constant inference cost across 0, 200, 400 and 800 live jobs", () => {
+    // Warm flag/3's first lookup before measuring. The former max/2 scan has no
+    // retained allocator state, so this does not hide its population cost.
+    probeJobIdCost();
+    const populations = [0, 200, 400, 800] as const;
+    const costs: number[] = [];
+
+    for (const population of populations) {
+      const held = Array.from({ length: population }, openProbeJob);
+      try {
+        assert.equal(liveProbeJobs(), population, "the probe did not hold every job open");
+        costs.push(probeJobIdCost());
+      } finally {
+        for (const id of held) closeProbeJob(id);
+      }
+      assert.equal(liveProbeJobs(), 0, "the probe leaked a bridge job");
+    }
+
+    assert.deepEqual(
+      costs,
+      populations.map(() => costs[0]),
+      `allocation cost grew with the live-job table: ${JSON.stringify(costs)}`,
+    );
   });
 });
 

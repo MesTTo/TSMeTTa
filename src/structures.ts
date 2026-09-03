@@ -39,7 +39,8 @@
  *   - the Node table lifetime is measured rather than implied by the class
  *     name: a repeated run pays the first run's inference cost, while two
  *     forms in one run reuse the table [tested: "recomputes across Node runs
- *     and reuses within one run"; commit=WORKTREE]
+ *     and reuses within one run";
+ *     commit=42df19d71823b963fce5594a42f57fd23a89b7a9]
  * Decides: `MatchIndex` is an imperfect discrimination tree — the term-indexing
  *   structure automated theorem provers use at millions-of-terms scale. The
  *   tree answers CANDIDATES and `matchTerms` confirms, which is what makes a

@@ -12,7 +12,7 @@
  *   - the public `TabledMap` row states that swipl-wasm tables end with one
  *     run, so the class cannot drift back to promising a persistent cache
  *     [tested: "pins the Node table lifetime at the run boundary";
- *     commit=WORKTREE]
+ *     commit=42df19d71823b963fce5594a42f57fd23a89b7a9]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

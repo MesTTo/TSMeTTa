@@ -12,7 +12,7 @@
  *   - swipl-wasm tabling is query-local: separate `run()` calls recompute the
  *     same call, while two runnable forms in one call reuse its answer trie
  *     [tested: "recomputes across Node runs and reuses within one run";
- *     commit=WORKTREE]
+ *     commit=42df19d71823b963fce5594a42f57fd23a89b7a9]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

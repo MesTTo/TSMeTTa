@@ -21,7 +21,7 @@
  *   - the WebAssembly refusal census names concurrency, crypto, deadlines,
  *     redis and subprocess, including each missing library and its cost
  *     [tested: "reads what this build does without from the engine's own census";
- *     commit=WORKTREE]
+ *     commit=59792b524568755a2fbfe1c5f7cdb571bd78a3bf]
  *   - nothing this surface does writes to the host's console
  * Owns: one engine, its spaces, its registered operations, and its scopes.
  * Open Obligations:

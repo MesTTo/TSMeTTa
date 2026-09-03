@@ -13,7 +13,7 @@
  *     import refuse by capability rather than reaching an unknown predicate
  *     [tested: "keeps portable SHA hashing and refuses crypto-only operations",
  *     "refuses the Redis library before consulting its missing provider";
- *     commit=WORKTREE]
+ *     commit=59792b524568755a2fbfe1c5f7cdb571bd78a3bf]
  *   - bridge job identifiers never recycle after the live-job table empties,
  *     and allocating one costs the same engine inferences with 0, 200, 400 or
  *     800 jobs already live [tested: "does not recycle an identifier after the

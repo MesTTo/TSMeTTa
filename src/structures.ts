@@ -8,9 +8,11 @@
  *     and that is why they never parse source text: parsing needs the engine,
  *     so a caller hands them built atoms and `m.parse` is the door for text
  *   - the two VIEWS at the end are different, and say so: a closure and a
- *     computed cache are readings of a space, and both rest on the engine's
- *     own tabling, which is what makes a cyclic closure terminate and a cache
- *     stay correct when its inputs change
+ *     computed table are readings of a space, and both rest on the engine's
+ *     own tabling, which is what makes a cyclic closure terminate and a table
+ *     stay correct when its inputs change. swipl-wasm has threads disabled,
+ *     so that table is query-local: forms in one `run()` share it, while each
+ *     later `get()` or `has()` runs in a fresh engine and recomputes
  *   - atoms are interned, so a `Map` keyed by an atom is already a structural
  *     map and only the ALPHA and the UNIFICATION questions need machinery
  * Guarantees:
@@ -34,6 +36,10 @@
  *     when no tree walk is possible, and prunes dead trie paths on deletion
  *     [tested: "answers in registration order"; "walks registration order without sorting";
  *     commit=fc5eb6ec4f780dd7abab83aa753a1277feddcd47]
+ *   - the Node table lifetime is measured rather than implied by the class
+ *     name: a repeated run pays the first run's inference cost, while two
+ *     forms in one run reuse the table [tested: "recomputes across Node runs
+ *     and reuses within one run"; commit=WORKTREE]
  * Decides: `MatchIndex` is an imperfect discrimination tree — the term-indexing
  *   structure automated theorem provers use at millions-of-terms scale. The
  *   tree answers CANDIDATES and `matchTerms` confirms, which is what makes a
@@ -750,17 +756,21 @@ export interface TableStats {
 }
 
 /**
- * A computed cache that stays correct: a read-only view of a TABLED function.
+ * A read-only view of a TABLED function.
  *
  * ```ts
  * const distances = await TabledMap.open(m, kb, "distance", { arity: 2 });
- * await distances.get(S.a, S.b);      // computed once, then read from the table
- * await distances.stats();            // the engine's own counters
+ * await distances.get(S.a, S.b);
+ * await distances.stats();
  * ```
  *
- * The cache is the ENGINE's, not a `Map` kept beside it, and that is the whole
- * point: the engine invalidates a table when the atoms it was computed from
- * change, so the answer is never stale. A host-side memo would have to be told.
+ * The table is the ENGINE's, not a `Map` kept beside it. On a threaded SWI,
+ * engines share that table and invalidation keeps it fresh when source atoms
+ * change. swipl-wasm has threads disabled, so each Node job owns its table:
+ * runnable forms in one `run()` reuse it, but `get()` and `has()` each open a
+ * new job and recompute. Query-local tabling still terminates recursive cycles
+ * and preserves the function's answer set; this class does not promise a
+ * persistent host-side cache on Node.
  */
 export class TabledMap {
   readonly #space: Space;
@@ -814,7 +824,9 @@ export class TabledMap {
    * The engine's own counters for this function's tables.
    *
    * `invalidated` above `reevaluated` is the engine deciding a table is not
-   * worth rebuilding yet; both moving is the freshness machinery working.
+   * worth rebuilding yet; both moving is the freshness machinery working on
+   * a threaded host. On threads-disabled swipl-wasm this query runs in a fresh
+   * job and therefore reports zeroed table counters.
    */
   async stats(): Promise<TableStats> {
     const answered = await this.#space.eval(expr(sym("table-stats"), this.#pattern)).find();
@@ -834,7 +846,7 @@ export class TabledMap {
     };
   }
 
-  /** Drop this function's tables; the next read recomputes. */
+  /** Drop this function's tables; on Node a later job already recomputes. */
   clear(surface: ViewHost): void {
     surface.run(`!(table-clear ${this.#pattern.text})`);
   }

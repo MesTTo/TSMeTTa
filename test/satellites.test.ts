@@ -9,6 +9,10 @@
  *     retained prefix after its streaming pass
  *     [tested: "matches a full stable top-k order across bounds and non-finite scores",
  *     "sorts only the retained top-k prefix after one streaming pass"; commit=6b5caa45cc0abc8b2d396c0614e22f427678be4b]
+ *   - swipl-wasm tabling is query-local: separate `run()` calls recompute the
+ *     same call, while two runnable forms in one call reuse its answer trie
+ *     [tested: "recomputes across Node runs and reuses within one run";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -411,7 +415,7 @@ describe("the tabled views", () => {
     assert.equal((await cycle.reachable(S.a)).size, 2);
   });
 
-  it("caches a computed function in the engine's own table", async () => {
+  it("exposes a computed function through the engine's table", async () => {
     m.run("(= (square $n) (* $n $n))");
     const squares = await TabledMap.open(m, m.self, "square", { arity: 1 });
     assert.equal(String(await squares.get(7)), "49");
@@ -423,5 +427,39 @@ describe("the tabled views", () => {
     await assert.rejects(() => squares.get(1, 2), /takes 1 argument/);
     squares.clear(m);
     assert.match(String(squares), /^TabledMap\(square\/1 on /);
+  });
+
+  it("recomputes across Node runs and reuses within one run", () => {
+    m.run(`
+      (= (node-run-fib $n)
+         (if (< $n 2)
+             $n
+             (+ (node-run-fib (- $n 1))
+                (node-run-fib (- $n 2)))))
+      !(import! &self (library lib_tabling))
+      !(tabled (node-run-fib $n))
+    `);
+
+    const beforeFirst = m.engine.counters.inferences;
+    const first = m.run("!(node-run-fib 26)");
+    const firstCost = m.engine.counters.inferences - beforeFirst;
+    const beforeRepeated = m.engine.counters.inferences;
+    const repeated = m.run("!(node-run-fib 26)");
+    const repeatedCost = m.engine.counters.inferences - beforeRepeated;
+    const beforeTogether = m.engine.counters.inferences;
+    const together = m.run("!(node-run-fib 26)\n!(node-run-fib 26)");
+    const togetherCost = m.engine.counters.inferences - beforeTogether;
+
+    assert.deepEqual(first.map(({ texts }) => texts), [["121393"]]);
+    assert.deepEqual(repeated.map(({ texts }) => texts), [["121393"]]);
+    assert.deepEqual(together.map(({ texts }) => texts), [["121393"], ["121393"]]);
+    assert.ok(
+      Math.abs(firstCost - repeatedCost) <= 32,
+      `separate jobs did not both recompute: first=${String(firstCost)}, repeated=${String(repeatedCost)}`,
+    );
+    assert.ok(
+      togetherCost < firstCost + repeatedCost,
+      `forms in one job did not reuse: together=${String(togetherCost)}, separate=${String(firstCost + repeatedCost)}`,
+    );
   });
 });

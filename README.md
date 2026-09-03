@@ -1251,7 +1251,7 @@ public Node subpaths:
 | spaces over rows | `metta-node/tables` | `tableSpace`, `arrayTables`, and `bridge` |
 | host-value conversion | `metta-node/convert` | `registerType`, `project`, `build`, and `autoImage` |
 | library discovery and installation | `metta-node/integrate` | `integrate`, `discover`, `entryPoints`, and reflection helpers |
-| a tabled computed map | `metta-node/structures` | `TabledMap`, including the engine's table counters through `stats` |
+| a tabled computed map | `metta-node/structures` | `TabledMap`; tables are query-local because swipl-wasm has threads disabled, so forms within one `run()` reuse and later jobs recompute |
 | a lazy path into a host value | `metta-node/paths` | `Path`, `path`, `reach`, and `installPaths`; the engine calls a registered operation instead of lifting a marker from a pattern |
 
 ## What the binding calls

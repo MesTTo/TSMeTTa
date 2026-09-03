@@ -9,6 +9,10 @@
  *     and the stale absence table cannot return unnoticed
  *     [tested: "ties every documented Python counterpart to an exported Node subpath";
  *     commit=d4625c3919a1c40af96479c9d365084cd79ea255]
+ *   - the public `TabledMap` row states that swipl-wasm tables end with one
+ *     run, so the class cannot drift back to promising a persistent cache
+ *     [tested: "pins the Node table lifetime at the run boundary";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -64,5 +68,18 @@ describe("the README's Python package comparison", () => {
     assert.doesNotMatch(readme, /these parts of the Python package have no counterpart here yet/);
     assert.doesNotMatch(readme, /^\| absent \| why \|$/m);
     assert.doesNotMatch(compared, /what is absent is a packaged client|the analysis is not|no counterpart/);
+  });
+
+  it("pins the Node table lifetime at the run boundary", () => {
+    const readme = readFileSync(join(packageRoot, "README.md"), "utf8");
+    const compared = section(readme, "Python package counterparts");
+    const tabledMap = compared
+      .split("\n")
+      .find((line) => line.includes("`metta-node/structures`"));
+
+    assert.ok(tabledMap, "README has no TabledMap counterpart row");
+    assert.match(tabledMap, /query-local/);
+    assert.match(tabledMap, /one `run\(\)`/);
+    assert.match(tabledMap, /later jobs recompute/);
   });
 });

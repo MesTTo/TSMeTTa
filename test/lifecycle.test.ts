@@ -11,6 +11,11 @@
  *   - concurrent takes arbitrate through deletion and consume distinct atoms
  *     [tested: "lets concurrent takes consume distinct matching atoms";
  *     commit=62369c406ca1afee026539a825fa2469c768d957]
+ *   - the engine-owned &self and &metta roots refuse clear and release without
+ *     damaging catalog, typing, or arithmetic state, while named spaces keep
+ *     both lifecycle operations
+ *     [tested: "refuses destructive lifecycle operations on engine-owned base spaces";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -56,6 +61,43 @@ describe("space lifecycle", () => {
       assert.ok(!m.spaces().some((identity) => identity.text === name));
       assert.notEqual(m.space(name), draft, `${settlement} kept the released Space object`);
     }
+  });
+
+  it("refuses destructive lifecycle operations on engine-owned base spaces", () => {
+    const before = m.catalog.size;
+
+    for (const space of [m.self, m.catalog]) {
+      for (const [engineOperation, operation] of [
+        ["clear", () => space.clear()],
+        ["release", () => space.release()],
+      ] as const) {
+        assert.throws(operation, (error: unknown) => {
+          const message = String(error);
+          assert.ok(message.includes(space.name));
+          assert.ok(message.includes(engineOperation));
+          assert.match(message, /caller's own context space/);
+          assert.match(message, /named space/);
+          return true;
+        });
+      }
+    }
+
+    assert.equal(m.catalog.size, before);
+    assert.deepEqual(m.run("!(get-type 1)\n!(+ 1 2)").map((group) => group.texts), [
+      ["Number"],
+      ["3"],
+    ]);
+
+    const clearable = m.space(`&base-clear-control-${String(counter += 1)}`);
+    clearable.add(S.ordinary(S.clear));
+    clearable.clear();
+    assert.equal(clearable.size, 0);
+    clearable.release();
+
+    const releasable = m.space(`&base-release-control-${String(counter += 1)}`);
+    releasable.add(S.ordinary(S.release));
+    releasable.release();
+    assert.ok(!m.spaces().some((identity) => identity.text === releasable.name));
   });
 });
 

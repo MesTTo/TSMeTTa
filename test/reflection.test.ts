@@ -136,6 +136,21 @@ describe("asking the engine about itself", () => {
     assert.equal(last?.kind === "exit" ? last.answer.text : "", "12");
   });
 
+  it("says when the bound cut a trace short, and when it did not", () => {
+    // Reaching maxEvents used to RAISE and discard every event with it, so a
+    // caller that asked for a bounded trace of a large program got no trace at
+    // all. It answers the prefix now, and `truncated` is how a caller tells a
+    // prefix from a whole trace -- the Python seat carries the same flag.
+    const whole = m.trace("!(quad 3)", { maxEvents: 200 });
+    assert.equal(whole.truncated, false);
+
+    const cut = m.trace("!(quad 3)", { maxEvents: 2 });
+    assert.equal(cut.truncated, true);
+    assert.equal(cut.length, 2);
+    assert.equal(cut[0]?.kind, "call");
+    assert.equal(cut[0]?.term.text, "(quad 3)");
+  });
+
   it("disassembles a name into the clauses it compiled to", () => {
     const listing = m.disassemble("dbl");
     assert.match(listing, /dbl\(/);

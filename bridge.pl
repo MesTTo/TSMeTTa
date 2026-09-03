@@ -827,13 +827,21 @@ metta_node_command(reducible, [Space0, Wire], [value, [b, Verdict]]) :-
 % Each row is (Depth Kind Term) or (Depth Kind Term Answer), built as MeTTa
 % terms and encoded once, because the codec already spells a term and a second
 % hand-written encoder is a second thing to keep right.
+%
+% The value is (Truncated Rows) rather than the rows alone. Reaching the bound
+% TRUNCATES and answers the prefix, where until 2026-09-03 it raised and threw
+% the events away, and a prefix that does not say it is one is worse than the
+% raise it replaced: the caller cannot tell a complete trace from a cut one.
+% The Python seat carries the same fact as `Trace.truncated`.
 metta_node_command(trace, [Src0, Space0, Max0], [value, Wire]) :-
     metta_node_text(Src0, Src),
     metta_node_space(Space0, Space),
     metta_node_number_arg(Max0, Max),
-    metta_trace_source(Src, Space, Max, Events),
+    metta_trace_source(Src, Space, Max, Events, Truncated),
     maplist(metta_node_trace_row, Events, Rows),
-    metta_node_expr_wire(Rows, Wire).
+    metta_node_expr_wire(Rows, RowsWire),
+    format(atom(TruncatedText), "~w", [Truncated]),
+    metta_node_expr_wire([[s, TruncatedText], RowsWire], Wire).
 
 % Every top-level form of some source, read but NOT evaluated, each with the
 % kind the engine's own reader gave it. The wire carries the parsed atom

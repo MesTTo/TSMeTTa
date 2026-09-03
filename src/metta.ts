@@ -136,6 +136,18 @@ export interface TraceOptions {
   readonly maxEvents?: number;
 }
 
+/**
+ * The events, and whether the bound stopped the recording early.
+ *
+ * An array, because that is what a trace is and every caller iterates it. The
+ * one thing an array cannot say is `truncated`, and a bounded trace has to say
+ * it: reaching the bound answers the prefix, and a prefix that does not admit
+ * to being one is worse than the raise it replaced.
+ */
+export interface Trace extends ReadonlyArray<TraceEvent> {
+  readonly truncated: boolean;
+}
+
 /** One event of a reduction trace. */
 export type TraceEvent =
   | { readonly depth: number; readonly kind: "call"; readonly term: Atom }
@@ -711,21 +723,29 @@ export class MeTTa implements Disposable {
    * bound is on EVENTS rather than on time, so a runaway reduction still
    * answers what it did before the bound.
    */
-  trace(source: string, options: TraceOptions = {}): TraceEvent[] {
+  trace(source: string, options: TraceOptions = {}): Trace {
     const space = options.space ?? this.self;
     const max = options.maxEvents ?? 10_000;
+    const cut = (events: TraceEvent[], truncated: boolean): Trace =>
+      Object.assign(events, { truncated });
     const event = this.#engine.start(["trace", source, space.reference, max]).sync();
-    if (event === null || event.kind !== "value") return [];
-    const rows = event.atom;
-    if (!(rows instanceof Expression)) return [];
-    return rows.items.map((row) => {
+    if (event === null || event.kind !== "value") return cut([], false);
+    const answered = event.atom;
+    if (!(answered instanceof Expression)) return cut([], false);
+    // (Truncated Rows): the qualifier leads the data it qualifies, which is
+    // the order the bridge writes it in.
+    const [flag, rowsAtom] = answered.items;
+    const truncated = String(flag) === "true";
+    if (!(rowsAtom instanceof Expression)) return cut([], truncated);
+    const rows = rowsAtom;
+    return cut(rows.items.map((row) => {
       const parts = (row as Expression).items;
       const kind = String(parts[1]) === "exit" ? "exit" : "call";
       const term = parts[2] as Atom;
       return kind === "exit"
         ? { depth: Number(hostValue(parts[0] as Atom)), kind, term, answer: parts[3] as Atom }
         : { depth: Number(hostValue(parts[0] as Atom)), kind, term };
-    });
+    }), truncated);
   }
 
   /**

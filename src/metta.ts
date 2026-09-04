@@ -67,6 +67,7 @@ import { showsAs } from "./present.ts";
 import { type Library, useLibrary } from "./library.ts";
 import { mettaName } from "./naming.ts";
 import { Schema, type SchemaDeclarations } from "./schema.ts";
+import { Limit } from "./vocabularies.ts";
 import { ScopeHandle, Stats, World, nextWorldName } from "./scopes.ts";
 import type { Limits } from "./scopes.ts";
 import {
@@ -137,15 +138,38 @@ export interface TraceOptions {
 }
 
 /**
- * The events, and whether the bound stopped the recording early.
+ * The events, and which bound stopped the recording early.
  *
  * An array, because that is what a trace is and every caller iterates it. The
- * one thing an array cannot say is `truncated`, and a bounded trace has to say
- * it: reaching the bound answers the prefix, and a prefix that does not admit
- * to being one is worse than the raise it replaced.
+ * one thing an array cannot say is why it ends, and a bounded trace has to say
+ * it: reaching a bound answers the prefix, and a prefix that does not admit to
+ * being one is worse than the raise it replaced.
+ *
+ * `stopped` names the bound rather than raising a flag, because the bounds
+ * have different remedies and a caller told only that something cut the trace
+ * acts on the wrong one: asking for more events after `Limit.memory` stopped
+ * the recording returns the same prefix at the same cost. `truncated` is the
+ * yes-or-no reading of the same fact.
  */
 export interface Trace extends ReadonlyArray<TraceEvent> {
+  readonly stopped: Limit | null;
   readonly truncated: boolean;
+}
+
+/**
+ * The bound word the bridge wrote, as a `Limit`, or null when nothing cut it.
+ *
+ * An unrecognised word throws rather than reading as a complete trace: a
+ * vocabulary the engine grew and this package did not is a drift the caller
+ * should hear about, not silently a trace that claims to be whole.
+ */
+function stoppedAt(word: string): Limit | null {
+  if (word === "false") return null;
+  const words: readonly string[] = Object.values(Limit);
+  if (!words.includes(word)) {
+    throw new NameError(`the engine stopped a trace at an unknown bound ${word}`);
+  }
+  return word as Limit;
 }
 
 /** One event of a reduction trace. */
@@ -726,16 +750,16 @@ export class MeTTa implements Disposable {
   trace(source: string, options: TraceOptions = {}): Trace {
     const space = options.space ?? this.self;
     const max = options.maxEvents ?? 10_000;
-    const cut = (events: TraceEvent[], truncated: boolean): Trace =>
-      Object.assign(events, { truncated });
+    const cut = (events: TraceEvent[], stopped: Limit | null): Trace =>
+      Object.assign(events, { stopped, truncated: stopped !== null });
     const event = this.#engine.start(["trace", source, space.reference, max]).sync();
-    if (event === null || event.kind !== "value") return cut([], false);
+    if (event === null || event.kind !== "value") return cut([], null);
     const answered = event.atom;
-    if (!(answered instanceof Expression)) return cut([], false);
-    // (Truncated Rows): the qualifier leads the data it qualifies, which is
+    if (!(answered instanceof Expression)) return cut([], null);
+    // (Stopped Rows): the qualifier leads the data it qualifies, which is
     // the order the bridge writes it in.
     const [flag, rowsAtom] = answered.items;
-    const truncated = String(flag) === "true";
+    const truncated = stoppedAt(String(flag));
     if (!(rowsAtom instanceof Expression)) return cut([], truncated);
     const rows = rowsAtom;
     return cut(rows.items.map((row) => {

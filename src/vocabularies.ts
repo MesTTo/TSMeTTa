@@ -189,6 +189,18 @@ export const ImageMode = {
 /** One value of the `image-mode` vocabulary. */
 export type ImageMode = (typeof ImageMode)[keyof typeof ImageMode];
 
+/** The `limit` vocabulary, in the catalog's own order. */
+export const Limit = {
+  events: "events",
+  memory: "memory",
+  inferences: "inferences",
+  timeout: "timeout",
+  stack: "stack",
+} as const;
+
+/** One value of the `limit` vocabulary. */
+export type Limit = (typeof Limit)[keyof typeof Limit];
+
 /** The `memo-aggregate` vocabulary, in the catalog's own order. */
 export const MemoAggregate = {
   none: "none",
@@ -376,6 +388,7 @@ export interface Vocabularies {
   readonly "event-order": typeof EventOrder;
   readonly "fidelity": typeof Fidelity;
   readonly "image-mode": typeof ImageMode;
+  readonly "limit": typeof Limit;
   readonly "memo-aggregate": typeof MemoAggregate;
   readonly "memo-strategy": typeof MemoStrategy;
   readonly "numeric-type": typeof NumericType;
@@ -412,6 +425,7 @@ export const VOCABULARIES: Vocabularies = {
   "event-order": EventOrder,
   "fidelity": Fidelity,
   "image-mode": ImageMode,
+  "limit": Limit,
   "memo-aggregate": MemoAggregate,
   "memo-strategy": MemoStrategy,
   "numeric-type": NumericType,

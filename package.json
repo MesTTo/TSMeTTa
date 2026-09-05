@@ -34,6 +34,11 @@
       "browser": "./browser/arrays.js",
       "default": "./dist/arrays.js"
     },
+    "./atom": {
+      "types": "./dist/atom.d.ts",
+      "browser": "./browser/atom.js",
+      "default": "./dist/atom.js"
+    },
     "./bridge.pl": "./bridge.pl",
     "./config": {
       "types": "./dist/config.d.ts",
@@ -49,6 +54,11 @@
       "types": "./dist/derivation.d.ts",
       "browser": "./browser/derivation.js",
       "default": "./dist/derivation.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "browser": "./browser/errors.js",
+      "default": "./dist/errors.js"
     },
     "./events": {
       "types": "./dist/events.d.ts",

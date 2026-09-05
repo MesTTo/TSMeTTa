@@ -21,6 +21,7 @@ let browser;
 let server;
 let origin;
 let consumer;
+let atomConsumer;
 const workerSource = `
 import { metta } from '/browser/index.js';
 try {
@@ -46,6 +47,20 @@ before(async () => {
     bundle: true, platform: 'browser', format: 'esm', write: false,
   });
   consumer = bundled.outputFiles[0].text;
+  const atomsOnly = await build({
+    stdin: {
+      contents: `import { expr, sym, G, float } from 'metta-node/atom';
+        import { MettaError } from 'metta-node/errors';
+        export function probeAtoms() {
+          const term = expr(sym('user'), G(42), float(1), G('ada'));
+          const refusal = new MettaError('refused');
+          return { text: term.text, code: refusal.code, caught: refusal instanceof Error };
+        }`,
+      resolveDir: root,
+    },
+    bundle: true, platform: 'browser', format: 'esm', write: false,
+  });
+  atomConsumer = atomsOnly.outputFiles[0].text;
   server = createServer(async (request, response) => {
     const path = new URL(request.url, 'http://localhost').pathname;
     if (path === '/' || path === '/empty/') {
@@ -56,6 +71,11 @@ before(async () => {
     if (path === '/consumer.js') {
       response.writeHead(200, { 'content-type': 'text/javascript' });
       response.end(consumer);
+      return;
+    }
+    if (path === '/atom-consumer.js') {
+      response.writeHead(200, { 'content-type': 'text/javascript' });
+      response.end(atomConsumer);
       return;
     }
     if (path === '/worker.js') {
@@ -159,6 +179,42 @@ test('boots in a module worker without window or Node globals', async () => {
       worker.onerror = event => { worker.terminate(); reject(new Error(event.message)); };
     }));
     assert.deepEqual(result, { result: ['42'] });
+  } finally { await page.close(); }
+});
+
+
+test('builds atoms in a browser with no engine behind them', async () => {
+  // The consumer bundled above imports `metta-node/atom` and
+  // `metta-node/errors` by NAME, so what is exercised is the exports map's
+  // `browser` key rather than a path this file happens to know. A page that
+  // only builds terms must not pay for the engine, and the two ways it could
+  // are both checked: the bundle cannot mention swipl-wasm or a node builtin,
+  // and the page must fetch no engine asset while running it.
+  assert.doesNotMatch(atomConsumer, /swipl-wasm/);
+  assert.doesNotMatch(atomConsumer, /\bnode:[a-z]/);
+  const page = await browser.newPage();
+  const errors = [];
+  const fetched = [];
+  page.on('pageerror', error => errors.push(String(error)));
+  page.on('request', request => fetched.push(new URL(request.url()).pathname));
+  try {
+    await page.goto(origin);
+    const result = await page.evaluate(async () => {
+      const { probeAtoms } = await import('/atom-consumer.js');
+      return { ...probeAtoms(), booted: typeof globalThis.SWIPL };
+    });
+    // `code` rather than `name`: the class sets its name from `new.target.name`
+    // deliberately, so a bundler that renames the class renames that too, and
+    // the code is what src/errors.ts pins as the stable identity.
+    assert.deepEqual(result, {
+      text: '(user 42 1.0 "ada")',
+      code: 'ERR_METTA_ENGINE',
+      caught: true,
+      booted: 'undefined',
+    });
+    assert.deepEqual(errors, []);
+    const engineAssets = fetched.filter(path => /wasm|_runtime|runtime\.json|swipl/.test(path));
+    assert.deepEqual(engineAssets, [], 'the page fetched an engine asset');
   } finally { await page.close(); }
 });
 

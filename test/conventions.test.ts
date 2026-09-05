@@ -25,7 +25,7 @@
 
 import { strict as assert } from "node:assert";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 
 import { packageRoot } from "../src/engine.ts";
@@ -250,6 +250,50 @@ describe("the TypeScript style guide, where it reaches this surface", () => {
   it("imports every module with the .ts extension node's resolver needs", () => {
     const wrong = offences(/from "(\.[^"]*)"/g, (name) => !name.endsWith(".ts"));
     assert.deepEqual(wrong, []);
+  });
+
+  it("names a source file for every subpath the exports map carries", () => {
+    // The map is the package's public allow-list, and a name in it with no
+    // module behind it is a subpath that resolves to nothing for a consumer.
+    // The three that are not modules are named individually.
+    const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
+      readonly exports: Readonly<Record<string, unknown>>;
+    };
+    const notModules = new Set(["./bridge.pl", "./package.json", "./browser"]);
+    const missing = Object.keys(manifest.exports)
+      .filter((name) => !notModules.has(name))
+      .map((name) => (name === "." ? "index" : name.slice(2)))
+      .filter((name) => !FILES.some((file) => file.path === join(SOURCE, `${name}.ts`)));
+    assert.deepEqual(missing, []);
+  });
+
+  it("keeps the engine-free subpaths engine-free", () => {
+    // A consumer that only BUILDS atoms imports these, and the whole point is
+    // that neither reaches the module which loads swipl-wasm. Walking the
+    // SOURCE rather than a bundle is what makes an import that would break it
+    // fail here, before anything is emitted.
+    for (const entry of ["atom", "errors"]) {
+      const seen = new Set<string>();
+      const work = [join(SOURCE, `${entry}.ts`)];
+      const outside: string[] = [];
+      while (work.length > 0) {
+        const file = work.pop() as string;
+        if (seen.has(file)) continue;
+        seen.add(file);
+        const held = FILES.find((each) => each.path === file);
+        assert.ok(held, `${file} is not one of this package's sources`);
+        for (const found of held.text.matchAll(/^import[^"']*["']([^"']+)["']/gm)) {
+          const specifier = found[1] as string;
+          if (specifier.startsWith(".")) {
+            work.push(join(dirname(file), specifier));
+            continue;
+          }
+          outside.push(`${file.slice(SOURCE.length + 1)}: ${specifier}`);
+        }
+      }
+      assert.deepEqual(outside, [], `metta-node/${entry} reaches outside this package`);
+      assert.ok(!seen.has(join(SOURCE, "engine.ts")), `metta-node/${entry} reaches the engine`);
+    }
   });
 
   it("sorts through one comparator, or says in place that the order is not an answer", () => {

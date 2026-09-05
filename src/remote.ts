@@ -232,7 +232,7 @@ function refuseRepeatedKeys(text: string): void {
       // than through a second escape table written here. The comparison is on
       // the DECODED name, which is what makes `{"a":1,"a":2}` a repeat
       // [tested: "reads a repeated JSON key the way the engine's codec reads one";
-      // commit=WORKTREE].
+      // commit=25c518d08f68d2566229f61fe86cc69c6ee21f0d].
       const token = text.slice(from, at);
       const key = escaped ? (JSON.parse(token) as string) : token.slice(1, -1);
       if (keys.has(key)) throw new MettaError(`JSON object repeats the key ${key}`);

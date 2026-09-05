@@ -27,6 +27,10 @@ set -eu
 HERE=$(cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(cd -- "$HERE/../.." && pwd)
 
+# One spelling of the bound, implemented in bounded.sh, which every runner in
+# this tree and a command typed by hand all reach.
+bounded() { sh "$ROOT/bounded.sh" "$@"; }
+
 if ! command -v node >/dev/null 2>&1; then
     echo "note: node not found, the Node benchmarks will not run" >&2
     exit 0
@@ -56,7 +60,8 @@ if ! command -v "$PY" >/dev/null 2>&1; then
     echo "note: no python found (set CHECK_PY), the Node benchmarks will not run" >&2
     exit 0
 fi
-if ! PYTHONPATH="$ROOT/extensions/python" "$PY" -c 'import metta.testing' >/dev/null 2>&1; then
+if ! PYTHONPATH="$ROOT/extensions/python" bounded "$PY" -c 'import metta.testing' \
+        >/dev/null 2>&1; then
     echo "note: $PY cannot import metta.testing; run 'uv sync --extra checks' in \
 extensions/python or set CHECK_PY, the Node benchmarks will not run" >&2
     exit 0
@@ -73,4 +78,4 @@ and host-op) will not be measured" >&2
     COUNTER_ONLY='--counter-only'
 fi
 
-exec "$PY" "$HERE/benchmarks/bench.py" $COUNTER_ONLY "$@"
+exec sh "$ROOT/bounded.sh" "$PY" "$HERE/benchmarks/bench.py" $COUNTER_ONLY "$@"

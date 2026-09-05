@@ -23,6 +23,8 @@
     "tests/codec/corpus.json separately holds both hosts to the wire grammar."
   ],
   "programs": [
+    { "source": "!(* 2)", "why": "a partial application crosses as Python's ordinary expression tag" },
+    { "source": "!(collapse (superpose ((* 2) (+ 3))))", "why": "partial applications nested in an answer retain structure" },
     { "source": "!(+ 1 1)", "why": "an integer answer" },
     { "source": "!(- 0 5)", "why": "a negative integer" },
     { "source": "!(* 1000000000000 1000000000000)", "why": "an integer past IEEE-754 exact range" },

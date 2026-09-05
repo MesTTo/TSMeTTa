@@ -30,6 +30,11 @@
 %     PeTTa@ae66fa8e41dcd5539d614706bd4e5cfb34f9608d src/metta.pl,
 %     eval_20/6 clauses for '==' and '!='].
 % Guarantees:
+%   - partial/2 and other compounds use Python's expression tag, with the
+%     functor followed by its arguments; improper lists use (cons Head Tail)
+%     [tested: "carries partial applications as the Python wire's expression",
+%     "carries compound edge cases under the shared expression grammar";
+%     commit=WORKTREE]
 %   - metta_node_step/2 computes at most one event per call, so a host that
 %     stops pulling leaves the rest of an infinite stream uncomputed
 %     [tested: "leaves an abandoned stream's remaining answers uncomputed"]
@@ -204,6 +209,19 @@ metta_node_encode(T, N, N, [p, S|R], R) :- atom(T), metta_space_operand(T), !, a
 metta_node_encode(T, N, N, [s, S|R], R)    :- atom(T), !, atom_string(T, S).
 metta_node_encode(T, N0, N, [e, Count|R0], R)   :- is_list(T), !,
     metta_node_encode_items(T, N0, N, 0, Count, R0, R).
+% Match metta_py_encode/4's structural projection, including improper lists.
+% compound_name_arguments/3 also accepts zero-arity compounds, unlike =../2.
+% [source: extensions/python/metta/shim.pl, metta_py_encode/4;
+% commit=8f853f992a4c732eca39de34ff0a3dfe161508dd]
+metta_node_encode([H|T], N0, N, [e, 3, s, "cons"|R0], R) :- !,
+    metta_node_encode(H, N0, N1, R0, R1),
+    metta_node_encode(T, N1, N, R1, R).
+metta_node_encode(T, N0, N, [e, Count, s, FS|R0], R) :-
+    compound(T),
+    compound_name_arguments(T, F, Args),
+    atom(F), !,
+    atom_string(F, FS),
+    metta_node_encode_items(Args, N0, N, 1, Count, R0, R).
 metta_node_encode(T, _, _, _, _) :-
     throw(error(metta_node_untaggable(T),
                 context(metta_node_encode/2,

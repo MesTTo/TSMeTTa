@@ -5,6 +5,10 @@
  * Assumes:
  *   - swipl-wasm is installed; `npm ci` fetches it
  * Guarantees:
+ *   - partial applications and compound edge cases share Python's expression
+ *     wire grammar [tested: "carries partial applications as the Python wire's expression",
+ *     "carries compound edge cases under the shared expression grammar";
+ *     commit=WORKTREE]
  *   - Number and BigInt cross the signed-i64 boundary without losing a digit
  *   - an abandoned stream leaves the rest of an unbounded generator uncomputed
  *   - nothing the engine says reaches the host's console
@@ -94,6 +98,28 @@ after(() => {
 });
 
 describe("boot", () => {
+  it("carries partial applications as the Python wire's expression", () => {
+    const answer = m.run("!(* 2)")[0]?.answers[0];
+    const expected = m.parse("(partial * (2))");
+    assert.equal(answer, expected);
+    assert.equal(m.engine.roundTrip(expected), expected);
+    assert.deepEqual(m.run("!(collapse (superpose ((* 2) (+ 3))))")[0]?.texts,
+      ["((partial * (2)) (partial + (3)))"]);
+  });
+
+  it("carries compound edge cases under the shared expression grammar", () => {
+    // These Prolog shapes have no source constructor; use the bridge door to
+    // check zero arity, improper lists and variable sharing inside compounds.
+    for (const [term, text] of [
+      ["zero()", "(zero)"],
+      ["[a|b]", "(cons a b)"],
+      ["pair(X, partial(f, [X]))", "(pair $x (partial f ($x)))"],
+    ]) {
+      const result = m.engine.once(`metta_node_encode_named(${term}, [x-X], W)`);
+      assert.equal(m.engine.decodeAtom(result["W"]), m.parse(text!));
+    }
+  });
+
   it("reads what this build does without from the engine's own census", () => {
     assert.deepEqual(
       m.refusals.map(({ capability }) => capability).sort(),

@@ -250,6 +250,22 @@ describe("the lifetime of a surface", () => {
     );
   });
 
+  it("takes a blank root as absent rather than as a path", async () => {
+    // `??` only replaces null and undefined, so `root: ""` reached the
+    // checkout test and was refused with `"" is not a MeTTa Kernel checkout`,
+    // which sends a reader looking for a checkout rather than at their own
+    // empty string. An empty string is what a caller computes when the value
+    // it meant to pass was not there.
+    for (const blank of ["", "   "]) {
+      const engine = await metta({ root: blank });
+      try {
+        assert.equal(engine.parse("(f 1)").text, "(f 1)", `root: ${JSON.stringify(blank)}`);
+      } finally {
+        engine.dispose();
+      }
+    }
+  });
+
   it("refuses every door once it is disposed, rather than answering", async () => {
     const released = await metta();
     assert.equal(released.parse("(f 1)").text, "(f 1)");

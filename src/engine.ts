@@ -1105,7 +1105,14 @@ export { fromTransport, toTransport };
 export async function boot(
   options: { root?: string; verbose?: boolean } = {},
 ): Promise<Engine> {
-  const root = options.root ?? REPO_ROOT;
+  // A BLANK root is absent, not a path. `??` only replaces null and
+  // undefined, so `boot({ root: "" })` reached the check below and was told
+  // `"" is not a MeTTa Kernel checkout`, which sends the reader looking for a
+  // checkout rather than at their own empty string. An empty or whitespace
+  // string is what a caller computes when the value it meant to pass was not
+  // there, so it means the same thing as omitting it.
+  const supplied = options.root?.trim();
+  const root = supplied ? supplied : REPO_ROOT;
   const verbose = options.verbose ?? false;
   // Checked before anything is instantiated, so a wrong root is one sentence
   // naming what was wanted rather than a mount failure part way through a boot.

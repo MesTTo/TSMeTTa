@@ -21,7 +21,7 @@
  *   - a predicate a platform library lends a builtin's name, library(wasm)'s
  *     sleep/1 here, stays out of the arity registry on a build that does not
  *     call it built_in [tested: "keeps a platform library's namesake predicate
- *     out of the builtin registry"; commit=WORKTREE]
+ *     out of the builtin registry"; commit=7eff330776f703cb603d7eea03fc1166d9e08e5e]
  *   - bridge job identifiers never recycle after the live-job table empties,
  *     and allocating one costs the same engine inferences with 0, 200, 400 or
  *     800 jobs already live [tested: "does not recycle an identifier after the

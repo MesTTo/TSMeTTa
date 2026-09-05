@@ -449,6 +449,8 @@ export {
   numberFromText,
   numberToText,
   toTransport,
+  transportFromJson,
+  transportToJson,
   wireFromAtom,
 } from "./wire.ts";
 

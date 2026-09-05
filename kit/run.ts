@@ -3,8 +3,9 @@
  *   JSON report, so a checker in another language can hold both hosts to the
  *   same cases without embedding either.
  * Assumes:
- *   - corpus.json's numbers are canonical Prolog text, which is what the
- *     comparison form below turns back into a value
+ *   - corpus.json's numbers are the VALUES CODEC.md's `n` row names, with a
+ *     non-finite float written as the corpus's own `{"$float": ...}` escape,
+ *     which `./pipe.ts` resolves
  * Guarantees:
  *   - the report is JSON, so nothing here carries a JavaScript BigInt or a raw
  *     float across; an integer crosses as its digits and a float as its
@@ -27,8 +28,10 @@ import {
   fromTransport,
   packageRoot,
   toTransport,
+  transportFromJson,
   wireFromAtom,
 } from "../src/index.ts";
+import { materialise, writePipe } from "./pipe.ts";
 
 /**
  * The form both hosts compare in. Three things differ between them and each is
@@ -73,8 +76,11 @@ interface Corpus {
   readonly refused: readonly { readonly transport: unknown }[];
 }
 
-const corpus = JSON.parse(
-  readFileSync(join(packageRoot, "kit", "corpus.json"), "utf-8"),
+// Through the transport reader, not `JSON.parse`: this file's `["n", 0]` is
+// the INTEGER zero and `["n", 2.0]` the float, and one JavaScript number kind
+// cannot tell them apart.
+const corpus = materialise(
+  transportFromJson(readFileSync(join(packageRoot, "kit", "corpus.json"), "utf-8")),
 ) as Corpus;
 const engine = await boot();
 
@@ -169,4 +175,7 @@ report["streaming"] = {
       : [],
 };
 
-process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+// Through the pipe writer, because the report carries `backToTransport`,
+// whose numbers are a bigint or a non-finite float and neither of which
+// `JSON.stringify` can write.
+process.stdout.write(`${writePipe(report)}\n`);

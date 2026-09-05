@@ -9,6 +9,11 @@
  *     operations plus `GET /health`, JSON bodies both ways, atoms as tagged
  *     arrays in the codec's CORE PROFILE. That page is the contract and this
  *     file implements it rather than inventing beside it
+ *   - an `n` payload is a JSON NUMBER, as CODEC.md's `n` row and
+ *     `tests/codec/corpus.json` say; the literal tells an integer from a float
+ *     and an integer is exact at any width, which is why both ends read and
+ *     write through {@link readJson} and {@link writeJson} rather than through
+ *     `JSON.parse` and `JSON.stringify`
  *   - a body is capped at 16 MiB in both directions, which is why an answer
  *     set larger than that crosses through the cursor lifecycle and not
  *     through `/match`
@@ -30,6 +35,18 @@
  *     collapsed to the last value the way `JSON.parse` collapses it
  *     [tested: "refuses a body that names one key twice",
  *     "refuses an answer that names one key twice"]
+ *   - a number survives a crossing to the OTHER seat unchanged, for every
+ *     class the `n` tag has: an integer, a float, a float whose value is
+ *     whole, a negative fraction, and an integer past every JavaScript number
+ *     [tested:
+ *     extensions/python/tests/ch21_another_language_at_the_seam/test_node_binding.py,
+ *     test_a_python_client_reads_every_number_class_from_a_node_gateway,
+ *     test_a_node_client_reads_every_number_class_from_a_python_gateway]
+ *   - a non-finite float is REFUSED on this wire in the engine's own sentence,
+ *     because JSON has no literal for one [source: CODEC.md, "A non-finite
+ *     float is carried by an encoding that has a spelling for one and refused
+ *     by an encoding that does not"; tested:
+ *     test_both_seats_refuse_a_non_finite_float_on_the_json_wire]
  *   - operation refusals use the protocol's single 4xx error shape, whatever
  *     local class produced them [tested: "uses one protocol error status for every refusal";
  *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
@@ -49,7 +66,15 @@ import { MettaError, TransportError } from "./errors.ts";
 import { showsAs } from "./present.ts";
 import type { DeliveryPromise, ProviderCapability, SpaceProvider } from "./provider.ts";
 import type { Space } from "./space.ts";
-import { type Transport as Wire, atomFromWire, fromTransport, toTransport, wireFromAtom } from "./wire.ts";
+import {
+  type Transport as Wire,
+  atomFromWire,
+  fromTransport,
+  toTransport,
+  transportFromJson,
+  transportToJson,
+  wireFromAtom,
+} from "./wire.ts";
 
 /** The protocol revision this end speaks. */
 export const PROTOCOL = 3;
@@ -128,9 +153,23 @@ export interface RemoteRequest {
  * wire.
  */
 export function readJson(text: string): unknown {
-  const value: unknown = JSON.parse(text);
+  const value: unknown = transportFromJson(text);
   refuseRepeatedKeys(text);
   return value;
+}
+
+/**
+ * One document as the JSON text this wire carries.
+ *
+ * `JSON.stringify` writes the float 1.0 as `1` and refuses a `bigint`
+ * outright, so it cannot write this protocol's atoms at all: an integral float
+ * would arrive as an integer and a wide integer could not be sent
+ * [source: CODEC.md, "Number and BigInt are exact, or refused"]. This is
+ * `transportToJson`, which places each `n` payload as its own literal, under
+ * the name the reading half already has.
+ */
+export function writeJson(value: unknown): string {
+  return transportToJson(value);
 }
 
 /**
@@ -220,7 +259,7 @@ export function httpTransport(url: string, options: { readonly token?: string } 
   if (options.token !== undefined) headers["authorization"] = `Bearer ${options.token}`;
   return {
     async post(path: string, body: Readonly<Record<string, unknown>>): Promise<Record<string, unknown>> {
-      const payload = JSON.stringify(body);
+      const payload = writeJson(body);
       if (payload.length > BODY_LIMIT) {
         throw new TransportError(
           `this request is ${String(payload.length)} bytes and the protocol caps a body at ` +
@@ -565,7 +604,7 @@ async function handle(
 ): Promise<void> {
   const reply = (status: number, body: unknown): void => {
     response.writeHead(status, { "content-type": "application/json" });
-    response.end(JSON.stringify(body));
+    response.end(writeJson(body));
   };
   // The credential is checked BEFORE the body is read, which is what the
   // protocol asks and what keeps an unauthorised request from costing

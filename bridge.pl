@@ -53,10 +53,16 @@
 %   - signed-i64 Number values and wider BigInt values cross as exact decimal
 %     text in both directions
 %     [tested: "carries Number and BigInt across the signed-i64 boundary"]
-%   - p accepts only an ampersand-prefixed space name, and the reserved engine
-%     spaces cross as p rather than collapsing into ordinary symbols
+%   - p carries the space name the ENGINE registered, ampersand-prefixed or
+%     not, and the reserved engine spaces cross as p rather than collapsing
+%     into ordinary symbols. The prefix is how the built-in spaces are spelled
+%     and not a rule of the tag: a space operation is built as
+%     `Term =.. [Space, Rel|Args]`, so any symbol written through is a
+%     registered name, and requiring the prefix on the host side made one such
+%     name un-decodable and cost the whole registry read rather than the entry
 %     [tested: "decodes a portable space reference into an interned handle",
-%     "reads a space reference back as an interned handle"]
+%     "reads a space reference back as an interned handle",
+%     "names a space the engine registered without an ampersand"]
 %   - runnable free variables retain source names in their wire value and host
 %     text [tested: "keeps a source variable's own name in the answer and in
 %     the text"]
@@ -598,18 +604,42 @@ metta_node_remove_one(Space, Pattern) :-
 
 % Evaluate a term already built on the host side. This is the primary door:
 % going through text would lose a live host reference, which has no spelling.
+%
+% &self is the RECEIVER of the evaluation, here as at the text door below. It
+% is a tokenizer substitution for the running space rather than a space of its
+% own [source: metta_substitute_self/3 in engine/metta/control.pl], and the
+% engine's source loader applies it in rewrite_parsed_form/4, which a term
+% built on the host side never reaches. Without it this door and runstatus
+% disagreed about one word: asked in a scratch space, `(get-atoms &self)`
+% answered the ENGINE ROOT's atoms here and the scratch's there, so a program
+% copied into an analysis scratch saw its own rows in both places
+% [measured 2026-09-05 against the Python binding, whose two doors already
+% agree; source: metta_py_target_term_bindings/4 in
+% extensions/python/metta/shim.pl].
+%
+% Only EXECUTION targets. Stored data keeps its literal atoms, so add, remove
+% and the match patterns do not pass through it; that is the line the Python
+% binding draws too. The walk is the identity when the receiver IS '&self',
+% which is the engine's default space and this surface's own.
 metta_node_command(eval, [Wire, Space0], [answer, Out, Text]) :-
     metta_node_space(Space0, Space),
-    metta_node_decode(Wire, Term),
+    metta_node_decode(Wire, Term0),
+    metta_substitute_self(Space, Term0, Term),
     space_module(Space, Module),
     with_metta_module(Module, eval(Term, Result)),
     metta_node_answer(Result, [Out, Text]).
 
-% Evaluate MeTTa source text, through the engine's own reader.
+% Evaluate MeTTa source text, through the engine's own reader. The substring
+% probe is the gate the engine's own rewrite uses, so text that never says
+% &self pays no walk.
 metta_node_command(source, [Src, Space0], [answer, Out, Text]) :-
     metta_node_space(Space0, Space),
     metta_node_text(Src, S),
-    sread_with_names(S, Term, _Names),
+    sread_with_names(S, Term0, _Names),
+    (   sub_string(S, _, _, _, "&self")
+    ->  metta_substitute_self(Space, Term0, Term)
+    ;   Term = Term0
+    ),
     space_module(Space, Module),
     with_metta_module(Module, eval(Term, Result)),
     metta_node_answer(Result, [Out, Text]).
@@ -618,17 +648,24 @@ metta_node_command(source, [Src, Space0], [answer, Out, Text]) :-
 % lifecycle are the engine's own host run surface, shared with the Python
 % shim; this side maps its codec over the term groups and nothing else. One
 % encoded group per ! directive, in source order.
-metta_node_command(run, [Src], [groups, Groups]) :-
+%
+% The space is the caller's, where it used to be the engine root whatever the
+% caller was working in: a program loaded through this door landed in &self
+% while every other door took the space, so there was no way to load a program
+% into a space of its own through it.
+metta_node_command(run, [Src, Space0], [groups, Groups]) :-
     metta_node_text(Src, S),
-    metta_host_run_source(S, '&self', [], TermGroups),
+    metta_node_space(Space0, Space),
+    metta_host_run_source(S, Space, [], TermGroups),
     maplist(metta_node_group, TermGroups, Groups).
 
 % A file, loaded through the same engine door import! uses, so the file is
 % recorded under the canonical path both doors key on and a reload replaces
 % the first load's definitions rather than doubling them.
-metta_node_command(load, [File0], [groups, Groups]) :-
+metta_node_command(load, [File0, Space0], [groups, Groups]) :-
     metta_node_atom(File0, File),
-    metta_host_load_file(File, '&self', TermGroups),
+    metta_node_space(Space0, Space),
+    metta_host_load_file(File, Space, TermGroups),
     maplist(metta_node_group, TermGroups, Groups).
 
 metta_node_command(add, [Space0, Wires], [value, [s, "ok"]]) :-

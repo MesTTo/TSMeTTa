@@ -79,6 +79,7 @@ import {
   type WatchOptions,
   answerIterator,
   hostValue,
+  refuseCallableScopeBody,
   rowOf,
 } from "./space.ts";
 import { type SpaceProvider, registerProvider, unregisterProvider } from "./provider.ts";
@@ -265,15 +266,32 @@ export class MeTTa implements Disposable {
     return held;
   }
 
-  /** Every space this engine has registered. */
+  /**
+   * Every space this engine has registered, whatever it is named.
+   *
+   * A space is registered by the symbol something wrote through, and that
+   * symbol need not carry the `&` the built-in spaces use. Such an entry comes
+   * back as a handle whose name is the engine's own, which {@link MeTTa.space}
+   * takes: the string door MINTS a name and prefixes `&`, so `space("kb")`
+   * reaches `&kb` and only the handle reaches a bare one.
+   *
+   * Total over the registry, and it says so when it cannot be. This used to
+   * `filter`, which answered a shorter list with nothing said, so a caller
+   * photographing every space to put it back afterwards would have silently
+   * left one standing.
+   */
   spaces(): SpaceIdentity[] {
     const event = this.#engine.start(["spacenames"]).sync();
     if (event === null || event.kind !== "value") return [];
     const listed = event.atom;
     if (!(listed instanceof Expression)) return [];
-    return listed.items.filter(
-      (item): item is SpaceIdentity => item instanceof SpaceHandle || item instanceof Expression,
-    );
+    return listed.items.map((item) => {
+      if (item instanceof SpaceHandle || item instanceof Expression) return item;
+      throw new NameError(
+        `the engine listed a space named ${item.text}, which is neither a name nor a ` +
+          "parametric identity, so this registry cannot be read",
+      );
+    });
   }
 
   /** Admit atoms into the engine's own space. */
@@ -337,9 +355,15 @@ export class MeTTa implements Disposable {
    *
    * The program door, for text that carries definitions and directives
    * together. `eval` is the door for a term already in hand.
+   *
+   * The space is where the definitions land and what the program's own `&self`
+   * means, defaulting to this surface's own. It used to be the engine root
+   * whatever the caller passed anywhere else, which is why a program could not
+   * be loaded into a space of its own through this door at all, and why an
+   * analysis that copies a program elsewhere had to use `runStatus` instead.
    */
-  run(source: string): AnswerGroup[] {
-    return groupsOf(this.#engine.start(["run", source]).sync());
+  run(source: string, space: Space = this.self): AnswerGroup[] {
+    return groupsOf(this.#engine.start(["run", source, space.reference]).sync());
   }
 
   /**
@@ -485,7 +509,7 @@ export class MeTTa implements Disposable {
     this.run(`!(register_metta_library_path ${alias} "${full}")`);
   }
 
-  loadFile(path: string): AnswerGroup[] {
+  loadFile(path: string, space: Space = this.self): AnswerGroup[] {
     const full = resolvePath(path);
     const directory = full.slice(0, full.lastIndexOf("/")) || "/";
     this.#engine.mount(
@@ -493,7 +517,7 @@ export class MeTTa implements Disposable {
       directory,
       (name) => name.endsWith(".metta") || name.endsWith(".pl"),
     );
-    return groupsOf(this.#engine.start(["load", full]).sync());
+    return groupsOf(this.#engine.start(["load", full, space.reference]).sync());
   }
 
   /**
@@ -628,15 +652,21 @@ export class MeTTa implements Disposable {
   }
 
   /**
-   * Reduce a term with its writes DISCARDED.
+   * Reduce a term with its writes DISCARDED, answering every answer.
    *
    * The engine's own speculative scope. It is for a plan the engine runs by
    * itself: a host operation cannot fire inside it, because `engine_yield/1`
    * cannot unwind through the nested query frame `snapshot/1` opens
-   * [measured 2026-08-27]. `world()` is the door for a draft host code takes
-   * part in.
+   * [measured 2026-08-27]. A callable is refused here for that reason rather
+   * than lifted into a grounded atom nothing calls, and `world()` is the door
+   * for a draft host code takes part in.
    */
   speculate(term: Term, options: AskOptions = {}): Answers<Atom> {
+    refuseCallableScopeBody(
+      term,
+      "speculate",
+      "this door runs it against a snapshot and discards its writes",
+    );
     const engine = this.#engine;
     const built = toAtom(term);
     const wire = engine.encodeAtom(built);

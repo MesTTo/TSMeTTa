@@ -34,7 +34,7 @@ const operations: Readonly<Record<string, (request: Record<string, never>) => un
   transport: ({ transport }) => toTransport(fromTransport(transport)),
   render: ({ transport }) => engine.text(atomFromWire(fromTransport(transport))),
   transcript: ({ program }) => {
-    const event = engine.start(["run", program as string]).sync();
+    const event = engine.start(["run", program as string, "&self"]).sync();
     if (event === null || event.kind !== "groups") return [];
     return event.groups.map((group) => group.map((answer) => toTransport(wireFromAtom(answer.atom))));
   },

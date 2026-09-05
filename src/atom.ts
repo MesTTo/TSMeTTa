@@ -325,6 +325,17 @@ const expressionReaper = new FinalizationRegistry<{
  * The name is the whole host identity: the store stays in the engine. Two
  * decodes of one name are one handle, because interning turns the name-based
  * identity this has always carried into reference identity as well.
+ *
+ * The ampersand is how the built-in spaces are spelled, not a rule of the tag,
+ * and the tag is what says this is a space. The engine builds a space operation
+ * as `Term =.. [Space, Rel|Args]`, so any symbol something has written through
+ * is a registered space name, and
+ * `examples/ch04-spaces-and-matching/04-01-a-space-is-where-a-program-lives/07-add_atom_fun_space.metta`
+ * writes through one. Requiring the prefix here made such a name un-decodable,
+ * and because the whole registry crosses as one expression that cost the entire
+ * `MeTTa.spaces()` answer rather than the single entry
+ * [tested: "names a space the engine registered without an ampersand";
+ * commit=WORKTREE].
  */
 export class SpaceHandle extends Atom {
   readonly kind: Kind = "space";
@@ -335,11 +346,6 @@ export class SpaceHandle extends Atom {
     super();
     if (typeof name !== "string") {
       throw new WireError(`the p tag carries text, not ${JSON.stringify(name)}`);
-    }
-    if (!name.startsWith("&")) {
-      throw new WireError(
-        `the p tag carries an ampersand-prefixed space name, not ${JSON.stringify(name)}`,
-      );
     }
     this.name = name;
     Object.freeze(this);

@@ -312,6 +312,34 @@ describe("a child space", () => {
   });
 });
 
+// `&self` is a substitution for the space the code is running in, which the
+// engine's source loader applies and a term built here never went through. The
+// two doors therefore disagreed about one word, and an analysis that copies a
+// program into a scratch saw the program's own rows in both places: through the
+// scratch's copy and through `&self`, which still named the original.
+describe("&self is the space the ask was made in", () => {
+  it("means the receiver at the term door as it does at the source door", async () => {
+    const scratch = fresh();
+    scratch.add(S.onlyHere(1));
+    const asked = await m.ask(m.parse("(collapse (get-atoms &self))"), scratch);
+    assert.deepEqual(asked.map(String), ["((only-here 1))"]);
+    const ran = m.runStatus("!(collapse (get-atoms &self))", scratch);
+    assert.deepEqual(
+      ran.map((group) => group.map((row) => row.text)),
+      asked.map((atom) => [String(atom)]),
+    );
+  });
+
+  it("loads a program into the space run was given, not the engine root", async () => {
+    const program = fresh();
+    m.run("(fact inTheProgramSpace)", program);
+    assert.deepEqual((await program.match(S.fact(V.x))).map((row) => String(row["x"])), [
+      "inTheProgramSpace",
+    ]);
+    assert.equal((await m.self.match(S.fact(V.x))).length, 0, "it reached the root as well");
+  });
+});
+
 describe("a world", () => {
   it("drafts, and commit applies the whole delta", async () => {
     const kb = fresh();
@@ -534,6 +562,28 @@ describe("reflection", () => {
     kb.add(S.something());
     assert.ok(m.spaces().includes(space(kb.name)));
     assert.ok(m.spaces().includes(space("&self")));
+  });
+
+  // Any symbol written through is a registered space name, which
+  // `examples/.../07-add_atom_fun_space.metta` uses. Refusing the un-prefixed
+  // name at the wire cost the WHOLE registry, since it crosses as one
+  // expression, so one such space made every other space unreadable too.
+  it("names a space the engine registered without an ampersand", async () => {
+    m.run("(= (bare-space) surface_bare_space)");
+    m.run("!(add-atom (bare-space) (surface bare atom))");
+    const listed = m.spaces();
+    assert.ok(listed.includes(space("&self")), "the rest of the registry survives");
+    const bare = listed.find(
+      (identity) => identity instanceof SpaceHandle && identity.name === "surface_bare_space",
+    );
+    assert.ok(bare !== undefined, "the un-prefixed name is listed");
+    // And the identity addresses that space, where the string door would mint
+    // the prefixed name of a different, empty one.
+    assert.deepEqual((await m.space(bare as SpaceHandle).atoms()).map(String), [
+      "(surface bare atom)",
+    ]);
+    assert.equal(m.space("surface_bare_space").name, "&surface_bare_space");
+    assert.deepEqual(await m.space("surface_bare_space").atoms(), []);
   });
 
   it("answers the engine's own account of how a match will be answered", () => {

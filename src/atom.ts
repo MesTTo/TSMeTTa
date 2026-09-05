@@ -35,6 +35,11 @@
  *     across every host atom distinction", "sorts the portable ground image
  *     exactly as the engine's msort", "keeps host-only order stable across
  *     reverse engine allocation"; commit=74e1edc753da5aae13d8dcf128ea6a51545e06db]
+ *   - `byCodePoint` is the one text comparator this package sorts answers
+ *     with, so anything ordered here is ordered the way `sorted()` orders it on
+ *     the Python seat; `Array.prototype.sort` with no comparator is UTF-16 code
+ *     UNIT order and parts from it on every astral character [tested: "orders
+ *     text by code point where the default sort orders by UTF-16 unit"]
  *   - a float's text is the ENGINE's spelling and not JavaScript's: the digits
  *     are `Number.prototype.toString`'s shortest round trip and the layout is
  *     the arbiter's, so one atom has one text in this seat, the Python seat and
@@ -733,8 +738,21 @@ function rank(atom: Atom): number {
   return ATOM_RANK;
 }
 
-/** Compare Unicode scalar values, as SWI does, rather than UTF-16 code units. */
-function compareText(left: string, right: string): number {
+/**
+ * Compare Unicode scalar values, as SWI does, rather than UTF-16 code units.
+ *
+ * `names.sort(byCodePoint)` is what `sorted(names)` is in Python, and the bare
+ * `names.sort()` beside it is NOT: `Array.prototype.sort` with no comparator
+ * compares UTF-16 code UNITS, so it puts every astral character before
+ * U+E000..U+FFFF where a code-point order puts it after. The two agree on the
+ * whole BMP, which is why a corpus without an astral character cannot tell
+ * them apart, and disagree on emoji, the CJK extensions and the mathematical
+ * alphanumerics. Anything this seat sorts INTO an answer, an atom or an order
+ * another host also computes sorts through this
+ * [tested: "orders text by code point where the default sort orders by UTF-16
+ * unit"].
+ */
+export function byCodePoint(left: string, right: string): number {
   let leftAt = 0;
   let rightAt = 0;
   while (leftAt < left.length && rightAt < right.length) {
@@ -853,15 +871,15 @@ export function byStandardOrder(left: Atom, right: Atom): number {
         rightAtom as Grounded<number | bigint>,
       );
     } else if (leftRank === TEXT_RANK) {
-      order = compareText(
+      order = byCodePoint(
         (leftAtom as Grounded<string>).value,
         (rightAtom as Grounded<string>).value,
       );
     } else if (leftRank === ATOM_RANK) {
-      order = compareText(atomicName(leftAtom), atomicName(rightAtom));
+      order = byCodePoint(atomicName(leftAtom), atomicName(rightAtom));
       if (order === 0) order = compareIdentity(leftAtom, rightAtom);
     } else if (leftAtom instanceof Var && rightAtom instanceof Var) {
-      order = compareText(leftAtom.name, rightAtom.name);
+      order = byCodePoint(leftAtom.name, rightAtom.name);
       if (order === 0) order = compareIdentity(leftAtom, rightAtom);
     } else {
       order = compareIdentity(leftAtom, rightAtom);

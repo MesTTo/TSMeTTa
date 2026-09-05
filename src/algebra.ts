@@ -43,6 +43,7 @@ import {
   Sym,
   type Term,
   Var,
+  byCodePoint,
   expr,
   substitute,
   sym,
@@ -385,9 +386,15 @@ export class Algebra {
       sym(this.extend),
       this.zero,
       this.one,
-      expr(sym("laws"), ...[...this.laws].sort().map((law) => sym(law))),
+      // By CODE POINT, not by the default sort's UTF-16 units: this atom is
+      // read by the engine and written by the Python seat's own `sorted`, so a
+      // capability name outside the BMP would land in a different order here
+      // and make one declaration two atoms
+      // [source: extensions/python/metta/algebra.py, _symbol_list("laws",
+      // sorted(...)) and _symbol_list("requires", sorted(...))].
+      expr(sym("laws"), ...[...this.laws].sort(byCodePoint).map((law) => sym(law))),
       expr(sym("carrier"), ...this.carrier),
-      expr(sym("requires"), ...[...this.requires].sort().map((each) => sym(each))),
+      expr(sym("requires"), ...[...this.requires].sort(byCodePoint).map((each) => sym(each))),
     );
   }
 
@@ -630,7 +637,9 @@ function counterexample(
 
 /** Every law an algebra claims, checked over its own finite carrier. */
 export function validateLaws(space: Space, algebra: Algebra): void {
-  const equational = [...algebra.laws].filter((law) => EQUATIONAL.has(law)).sort();
+  // Not message-only: this list is also what `checkLaw` walks below, so it
+  // decides WHICH counterexample an algebra failing two laws reports.
+  const equational = [...algebra.laws].filter((law) => EQUATIONAL.has(law)).sort(byCodePoint);
   if (equational.length > 0 && algebra.carrier.length === 0) {
     throw new AlgebraLawError(
       `algebra_law_uncheckable(${algebra.name}, laws=[${equational.join(", ")}], ` +
@@ -1018,7 +1027,12 @@ function hasVariable(atom: Atom): boolean {
 }
 
 function signature(answer: TaggedAnswer): string {
-  return `${answer.value.text}|${answer.tag.text}|${[...answer.tokens].sort().join(",")}|${answer.proof.join(",")}`;
+  // The tokens are NUMBERS and the key has to be one canonical spelling of the
+  // set, so the comparator is numeric: the default sort compares them as text,
+  // which puts 10 before 2. It is still order-independent either way, so this
+  // did not mis-deduplicate, but the key it wrote was not the set's order.
+  const tokens = [...answer.tokens].sort((left, right) => left - right);
+  return `${answer.value.text}|${answer.tag.text}|${tokens.join(",")}|${answer.proof.join(",")}`;
 }
 
 function fuse(space: Space, algebra: Algebra, answers: readonly TaggedAnswer[]): TaggedAnswer[] {
@@ -1187,6 +1201,7 @@ async function requireContextCapabilities(
 ): Promise<void> {
   if (algebra.requires.size === 0) return;
   const declared = await contextCapabilities(catalog, space, algebra.name);
+  // sort order is not an answer: this list reaches the refusal's text only.
   const missing = [...algebra.requires].filter((each) => !declared.has(each)).sort();
   if (missing.length === 0) return;
   const refusal =

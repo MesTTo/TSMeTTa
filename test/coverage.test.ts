@@ -305,6 +305,24 @@ describe("what a package advertises", () => {
       /requires the integration gone/,
     );
   });
+
+  it("takes the ready set in code-point name order", () => {
+    // The order is BEHAVIOUR: it decides which integration installs first, and
+    // `installOrder`'s own comment fixes it as name order so the answer does
+    // not depend on which manifest was read first. U+1D400 is astral and
+    // U+F900 is not, so the comparator-less sort, which compares UTF-16 code
+    // units, puts them the other way round from every code-point order,
+    // Python's `sorted` included.
+    const astral = String.fromCodePoint(0x1d400);
+    const high = String.fromCodePoint(0xf900);
+    const ordered = discover(
+      packageTree({
+        [astral]: { metta: { integrations: "./a.js" } },
+        [high]: { metta: { integrations: "./b.js" } },
+      }),
+    );
+    assert.deepEqual(ordered.map((each) => each.name), [high, astral]);
+  });
 });
 
 describe("wrapping a host thing", () => {
@@ -1019,6 +1037,23 @@ describe("a definition's own facts", () => {
     assert.ok(scoped.pure);
   });
 
+  it("answers a body's free names in code-point order", () => {
+    // The free list is ANSWERED, as `freeVariables` and as the order the
+    // effect and unresolved lists follow, so it is data rather than
+    // presentation. A JavaScript identifier may hold an astral character:
+    // U+1D400 is one and U+F900 is not, and a comparator-less sort puts them
+    // the other way round from Python's `sorted` because it compares UTF-16
+    // code units. The names are written as escapes so this file stays ASCII.
+    const read = definitionFacts(m, function ordersFree(n: number): number {
+      return \u{1D400}(\u{F900}(n));
+    });
+    assert.deepEqual(
+      [...read.freeVariables],
+      [String.fromCodePoint(0xf900), String.fromCodePoint(0x1d400)],
+    );
+    assert.deepEqual([...read.unresolved], read.freeVariables);
+  });
+
   it("puts a span where the caller says the text came from", () => {
     const span = spanOf("function f() {\n  return 1;\n}", { path: "/src/f.ts", line: 40, column: 2 });
     assert.deepEqual(span, {
@@ -1042,3 +1077,5 @@ declare function covHelper(n: number): number;
 declare function addAtom(n: number): number;
 declare function neverHeardOfThis(n: number): number;
 declare const limit: number;
+declare function \u{1D400}(n: number): number;
+declare function \u{F900}(n: number): number;

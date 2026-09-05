@@ -139,6 +139,7 @@ export class Config {
     }
     if (frozen.length > 0) {
       throw new MettaError(
+        // sort order is not an answer: these names reach a sentence and nothing else.
         `${frozen.sort().join(" and ")} take effect when the first engine starts and ` +
           `cannot change after; one is already running`,
       );

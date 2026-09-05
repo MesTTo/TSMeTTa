@@ -72,6 +72,46 @@ function offences(pattern: RegExp, keep: (name: string, path: string) => boolean
   return scan(FILES, pattern, keep);
 }
 
+/** What a site whose order genuinely decides nothing says about itself. */
+const NOT_AN_ANSWER = "sort order is not an answer";
+
+/**
+ * Every comparator-less `.sort()` that has not said why its order decides
+ * nothing.
+ *
+ * `Array.prototype.sort` with no comparator orders strings by UTF-16 code
+ * UNIT, which parts from `sorted()` on the Python seat on every astral
+ * character, and orders numbers as TEXT, so `[2, 10]` reads "10, 2". Anything
+ * that shapes an answer, an atom, or an order another host also computes goes
+ * through `byCodePoint` or a numeric comparator; a site that only builds a
+ * sentence, or that gives both sides of one comparison the same order, says so
+ * where it stands. A doc comment mentioning `.sort()` is not a call, so
+ * comment lines are skipped rather than matched.
+ *
+ * The declaration may sit anywhere in the comment BLOCK immediately above the
+ * call, not only on the line before it, because the reason usually needs a
+ * sentence and one sentence often needs two lines.
+ */
+function bareSorts(files: readonly { path: string; text: string }[]): string[] {
+  const comment = (line: string): boolean => {
+    const text = line.trim();
+    return text.startsWith("//") || text.startsWith("*") || text.startsWith("/*");
+  };
+  const found: string[] = [];
+  for (const file of files) {
+    const lines = file.text.split("\n");
+    lines.forEach((line, at) => {
+      const code = line.trim();
+      if (comment(line) || !code.includes(".sort()")) return;
+      let from = at;
+      while (from > 0 && comment(lines[from - 1] as string)) from -= 1;
+      if (lines.slice(from, at + 1).join("\n").includes(NOT_AN_ANSWER)) return;
+      found.push(`${file.path.slice(SOURCE.length + 1)}:${String(at + 1)}: ${code}`);
+    });
+  }
+  return found;
+}
+
 /**
  * The three names this package spells against the casing rules, each because
  * the ENGINE spells it that way and a name that meant something else would be
@@ -212,6 +252,16 @@ describe("the TypeScript style guide, where it reaches this surface", () => {
     assert.deepEqual(wrong, []);
   });
 
+  it("sorts through one comparator, or says in place that the order is not an answer", () => {
+    assert.deepEqual(
+      bareSorts(FILES),
+      [],
+      `sort with byCodePoint, or with (a, b) => a - b for numbers. If the order ` +
+        `really is not an answer, put "${NOT_AN_ANSWER}" and the reason on that ` +
+        `line or in the comment block above it.`,
+    );
+  });
+
   /**
    * The gate's own eyesight.
    *
@@ -234,6 +284,7 @@ describe("the TypeScript style guide, where it reaches this surface", () => {
           "export default 1;",
           "export const held: any = 1;",
           'import { x } from "./other";',
+          "export const ordered = names.sort();",
         ].join("\n"),
       },
     ];
@@ -253,5 +304,17 @@ describe("the TypeScript style guide, where it reaches this surface", () => {
       .filter(([, pattern, keep]) => scan(planted, pattern, keep).length === 0)
       .map(([what]) => what);
     assert.deepEqual(blind, [], "every rule can see a violation of itself");
+    // The bare-sort rule reads whole lines rather than a pattern, so it proves
+    // its own eyesight here: it finds the planted call, and stops finding it
+    // once the line declares why its order decides nothing.
+    assert.equal(bareSorts(planted).length, 1, "the bare-sort rule saw nothing");
+    const declared = planted.map((file) => ({
+      path: file.path,
+      text: file.text.replace(
+        "export const ordered = names.sort();",
+        `// ${NOT_AN_ANSWER}: a planted line.\nexport const ordered = names.sort();`,
+      ),
+    }));
+    assert.deepEqual(bareSorts(declared), [], "the in-place opt-out does not work");
   });
 });

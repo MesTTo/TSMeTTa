@@ -50,7 +50,7 @@ import type {
   VariableDeclaration,
 } from "acorn";
 
-import { type Atom, type Term, expr, exprOf, sym, toAtom, variable } from "../atom.ts";
+import { type Atom, type Term, byCodePoint, expr, exprOf, sym, toAtom, variable } from "../atom.ts";
 import { CompileError, MettaError, nearest } from "../errors.ts";
 import { mettaName } from "../naming.ts";
 
@@ -195,7 +195,11 @@ export function lower(target: (...args: never[]) => unknown, given: LowerScope):
     body.type === "BlockStatement"
       ? lowerBlock((body as BlockStatement).body, bindings, scope)
       : lowerExpression(body as AcornExpression, bindings, scope);
-  return { params, body: term, free: [...free].sort() };
+  // The free names are ANSWERED, as `freeVariables` and in the order the
+  // effect and unresolved lists follow, so the order is data. A JavaScript
+  // identifier may hold an astral character, where the default sort's UTF-16
+  // units and a code-point order part.
+  return { params, body: term, free: [...free].sort(byCodePoint) };
 }
 
 function lowerBlock(statements: readonly Statement[], bindings: Bindings, scope: LowerScope): Atom {

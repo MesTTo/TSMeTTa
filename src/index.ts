@@ -26,6 +26,7 @@ export {
   type Term,
   type TermList,
   Var,
+  byCodePoint,
   byStandardOrder,
   expr,
   exprOf,

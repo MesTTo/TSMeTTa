@@ -23,6 +23,7 @@ import {
   SpaceHandle,
   Sym,
   Var,
+  byCodePoint,
   byStandardOrder,
   expr,
   exprOf,
@@ -265,6 +266,31 @@ describe("walking", () => {
   it("substitutes by name and leaves the rest alone", () => {
     const pattern = expr(sym("f"), variable("x"), variable("y"));
     assert.equal(String(substitute(pattern, { x: sym("tom") })), "(f tom $y)");
+  });
+});
+
+describe("the text order", () => {
+  it("orders text by code point where the default sort orders by UTF-16 unit", () => {
+    // U+1D400 is astral and spells as the surrogate pair D835 DC00, so its
+    // first code UNIT is below U+F900 while its code POINT is above it. That
+    // one fact is the whole disagreement, and it is invisible to any corpus
+    // whose text stays inside the BMP.
+    const astral = String.fromCodePoint(0x1d400);
+    const high = String.fromCodePoint(0xf900);
+    // What `sorted([astral, high])` answers on the Python seat
+    // [measured 2026-09-05 with the interpreter that seat runs on].
+    assert.deepEqual([astral, high].sort(byCodePoint), [high, astral]);
+    assert.deepEqual([high, astral].sort(byCodePoint), [high, astral]);
+    // And what the comparator-less sort answers for the same pair, so this
+    // says what it is protecting against and not only what it wants.
+    assert.deepEqual([high, astral].sort(), [astral, high]);
+
+    assert.equal(byCodePoint("a", "a"), 0);
+    assert.ok(byCodePoint("a", "ab") < 0, "a prefix sorts before what extends it");
+    assert.ok(byCodePoint("ab", "a") > 0);
+    assert.ok(byCodePoint("", "a") < 0);
+    assert.ok(byCodePoint(`${astral}a`, `${astral}b`) < 0, "past a surrogate pair too");
+    assert.ok(byCodePoint(`x${high}`, `x${astral}`) < 0);
   });
 });
 

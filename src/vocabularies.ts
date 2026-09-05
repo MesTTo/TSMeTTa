@@ -292,6 +292,8 @@ export const Semiring = {
   tropical: "tropical",
   prob: "prob",
   prov: "prov",
+  budget: "budget",
+  amplitude: "amplitude",
 } as const;
 
 /** One value of the `semiring` vocabulary. */

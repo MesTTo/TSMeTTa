@@ -19,4 +19,8 @@ if [ ! -d "$HERE/node_modules" ]; then
     echo "extensions/node/build.sh: node_modules is absent; run 'npm install' in $HERE" >&2
     exit 0
 fi
-cd "$HERE" && npm run build --silent
+# One spelling of the bound, implemented in bounded.sh, which every runner in
+# this tree and a command typed by hand all reach.
+bounded() { sh "$HERE/../../bounded.sh" "$@"; }
+
+cd "$HERE" && bounded npm run build --silent

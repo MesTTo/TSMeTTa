@@ -57,7 +57,7 @@
 %     answers" [tested: "names the verb and both counts, whichever way the
 %     count is wrong", "keeps an unknown verb a different refusal from a wrong
 %     count", "refuses a known scope word given the wrong details, by its own
-%     name"; commit=WORKTREE]
+%     name"; commit=c794d8f7d53c0fdc0a0c18ba4f0a05178f234622]
 %   - signed-i64 Number values and wider BigInt values cross as exact decimal
 %     text in both directions
 %     [tested: "carries Number and BigInt across the signed-i64 boundary"]

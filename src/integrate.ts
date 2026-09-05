@@ -29,7 +29,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { type Atom, G, type Term, Var, expr, sym } from "./atom.ts";
+import { type Atom, G, type Term, Var, byCodePoint, expr, sym } from "./atom.ts";
 import { MettaError, NameError, SourceNotFoundError } from "./errors.ts";
 import type { Defined } from "./define/define.ts";
 import type { MeTTa } from "./metta.ts";
@@ -425,6 +425,7 @@ export async function loadEntryPoint(
   const advertised = entryPoints(options.group ?? SPACES_GROUP, from);
   const entry = advertised.get(name);
   if (entry === undefined) {
+    // sort order is not an answer: this lists what IS installed, beside a typo.
     const known = [...advertised.keys()].sort().join(", ") || "none";
     throw new NameError(
       `no package advertises ${name} under ${options.group ?? SPACES_GROUP}; installed: ${known}`,
@@ -638,9 +639,16 @@ function installOrder(found: ReadonlyMap<string, Discovered>): Discovered[] {
   }
   const ordered: Discovered[] = [];
   while (waiting.size > 0) {
-    const ready = [...waiting].filter(([, unmet]) => unmet.size === 0).map(([name]) => name).sort();
+    // Name order, by CODE POINT: this decides the order integrations install
+    // in, so it is behaviour rather than presentation, and the default sort's
+    // UTF-16 units would give an astral package name a different place.
+    const ready = [...waiting]
+      .filter(([, unmet]) => unmet.size === 0)
+      .map(([name]) => name)
+      .sort(byCodePoint);
     if (ready.length === 0) {
       throw new MettaError(
+        // sort order is not an answer: the cycle is the finding, not the order.
         `integrations require each other in a cycle: ${[...waiting.keys()].sort().join(", ")}`,
       );
     }

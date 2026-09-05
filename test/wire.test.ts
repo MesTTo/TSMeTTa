@@ -106,9 +106,37 @@ describe("the strict wire", () => {
     assert.deepEqual(fromTransport(["s", "foo"]), ["s", "foo"]);
     assert.deepEqual(fromTransport(["v", "x"]), ["v", "x"]);
     assert.deepEqual(fromTransport(["g", "text"]), ["g", "text"]);
-    assert.deepEqual(fromTransport(["n", "42"]), ["n", 42n]);
+    // The VALUE, as CODEC.md's n row asks: `bigint` is an integer at any
+    // width and `number` is a float, which is the only pair of JavaScript
+    // types that tells `["n", 1]` from `["n", 1.0]`.
+    assert.deepEqual(fromTransport(["n", 42n]), ["n", 42n]);
+    assert.deepEqual(fromTransport(["n", 42]), ["n", 42]);
+    assert.deepEqual(fromTransport(["n", 9007199254740993n]), ["n", 9007199254740993n]);
     assert.deepEqual(fromTransport(["b", "true"]), ["b", true]);
     assert.deepEqual(fromTransport(["e", []]), ["e", []]);
+  });
+
+  it("refuses an n payload that is text, naming the tag and what arrived", () => {
+    // Not a legacy spelling with a compatibility path: this transport carries
+    // the value and the ENGINE transport carries decimal text, so text here is
+    // a peer speaking a different grammar.
+    for (const [payload, kind] of [
+      ["42", "a string"],
+      ["1.0Inf", "a string"],
+      [true, "a boolean"],
+      [null, "null"],
+    ] as readonly [unknown, string][]) {
+      assert.throws(
+        () => fromTransport(["n", payload]),
+        (error: unknown) => {
+          assert.ok(error instanceof WireError);
+          assert.match(error.message, /^the n tag carries an exact integer or a float, not /);
+          assert.ok(error.message.includes(kind), error.message);
+          return true;
+        },
+        JSON.stringify(payload),
+      );
+    }
   });
 
   it("decodes a portable space reference into an interned handle", () => {
@@ -143,6 +171,7 @@ describe("the strict wire", () => {
   it("refuses a payload of the wrong kind for its tag", () => {
     assert.throws(() => toTransport(["s", 5]), /carries text/);
     assert.throws(() => toTransport(["n", "2"]), /carries a number/);
+    assert.throws(() => fromTransport(["n", "2"]), /carries an exact integer or a float/);
     assert.throws(() => toTransport(["b", "true"]), /carries a boolean/);
     assert.throws(() => fromTransport(["b", "maybe"]), /carries true or false/);
     assert.throws(() => toTransport(["e", "x"]), /carries a list/);
@@ -259,8 +288,10 @@ describe("the engine transport, which is flat", () => {
 
   it("agrees with the wire reader on every tag", () => {
     // Two readers, one grammar: the portable one answers a `Wire` without
-    // interning and the engine one answers the atom directly. A leaf's flat
-    // spelling IS its portable pair, so the two are asked the very same input.
+    // interning and the engine one answers the atom directly. The two
+    // serialisations spell a number differently, the portable one carrying the
+    // value and the engine one its decimal text, so each leg is driven through
+    // its own writer and the ATOM is what has to come back the same.
     const values = new HostValues();
     const held = { live: true };
     const leaves: Wire[] = [
@@ -275,11 +306,12 @@ describe("the engine transport, which is flat", () => {
       ["p", space("&kb")],
     ];
     for (const leaf of leaves) {
-      const pair = toTransport(leaf);
+      const atom = atomFromWire(leaf);
+      assert.equal(decodeEngine(encodeEngine(atom), {}), atom, `the engine leg lost ${String(atom)}`);
       assert.equal(
-        decodeEngine(pair, {}),
-        atomFromWire(fromTransport(pair)),
-        `the two readers disagree on ${JSON.stringify(pair)}`,
+        atomFromWire(fromTransport(toTransport(leaf))),
+        atom,
+        `the portable leg lost ${String(atom)}`,
       );
     }
     const reference = toTransport(["o", held], { hostValues: values });

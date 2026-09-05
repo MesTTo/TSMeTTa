@@ -640,14 +640,27 @@ The root exports what a program reaches for; everything else is a subpath, so
 an unimported one costs nothing at all. This is the TypeScript image of the
 Python package's lazily loaded satellites.
 
+Two of them carry no engine at all. `metta-node/atom` is the atom algebra --
+`sym`, `expr`, `G`, `float`, `variable`, the classes and the standard order --
+and `metta-node/errors` is what it throws; between them they reach nothing but
+each other and the presentation hook. Importing `metta-node` resolves 166
+modules and reaches `node:fs`, `node:path` and `node:url`, which is what a
+browser bundler trips over; importing `metta-node/atom` resolves three and
+reaches none of them, so a page that only BUILDS terms pays for none of it
+[tested: "builds atoms in a browser with no engine behind them",
+"keeps the engine-free subpaths engine-free", and the `node-dist` lane, which
+resolves both subpaths through Node's own resolver].
+
 | subpath | what it carries |
 |---|---|
 | `metta-node/algebra` | value algebras, tagged derivations, `evaluate`, `why`, `under` |
 | `metta-node/ambient` | the module tier: one lazily booted engine |
 | `metta-node/arrays` | typed arrays as atoms, `Tensor`, `EmbeddingStore` |
+| `metta-node/atom` | the atom algebra alone, with NO engine behind it |
 | `metta-node/config` | the settings a process runs under |
 | `metta-node/convert` | the two-way projection, the four images, `registerType` |
 | `metta-node/derivation` | the proof tree |
+| `metta-node/errors` | the error classes, which `metta-node/atom` throws |
 | `metta-node/events` | the fold over a space's writes |
 | `metta-node/integrate` | the library interface, discovery, wrapping, reflection |
 | `metta-node/lint` | five rules over MeTTa source, with suppression |

@@ -25,7 +25,7 @@
 
 import { strict as assert } from "node:assert";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 
 import { packageRoot } from "../src/engine.ts";
@@ -70,6 +70,46 @@ function scan(
 /** Every match of a pattern over this package's own sources. */
 function offences(pattern: RegExp, keep: (name: string, path: string) => boolean): string[] {
   return scan(FILES, pattern, keep);
+}
+
+/** What a site whose order genuinely decides nothing says about itself. */
+const NOT_AN_ANSWER = "sort order is not an answer";
+
+/**
+ * Every comparator-less `.sort()` that has not said why its order decides
+ * nothing.
+ *
+ * `Array.prototype.sort` with no comparator orders strings by UTF-16 code
+ * UNIT, which parts from `sorted()` on the Python seat on every astral
+ * character, and orders numbers as TEXT, so `[2, 10]` reads "10, 2". Anything
+ * that shapes an answer, an atom, or an order another host also computes goes
+ * through `byCodePoint` or a numeric comparator; a site that only builds a
+ * sentence, or that gives both sides of one comparison the same order, says so
+ * where it stands. A doc comment mentioning `.sort()` is not a call, so
+ * comment lines are skipped rather than matched.
+ *
+ * The declaration may sit anywhere in the comment BLOCK immediately above the
+ * call, not only on the line before it, because the reason usually needs a
+ * sentence and one sentence often needs two lines.
+ */
+function bareSorts(files: readonly { path: string; text: string }[]): string[] {
+  const comment = (line: string): boolean => {
+    const text = line.trim();
+    return text.startsWith("//") || text.startsWith("*") || text.startsWith("/*");
+  };
+  const found: string[] = [];
+  for (const file of files) {
+    const lines = file.text.split("\n");
+    lines.forEach((line, at) => {
+      const code = line.trim();
+      if (comment(line) || !code.includes(".sort()")) return;
+      let from = at;
+      while (from > 0 && comment(lines[from - 1] as string)) from -= 1;
+      if (lines.slice(from, at + 1).join("\n").includes(NOT_AN_ANSWER)) return;
+      found.push(`${file.path.slice(SOURCE.length + 1)}:${String(at + 1)}: ${code}`);
+    });
+  }
+  return found;
 }
 
 /**
@@ -212,6 +252,60 @@ describe("the TypeScript style guide, where it reaches this surface", () => {
     assert.deepEqual(wrong, []);
   });
 
+  it("names a source file for every subpath the exports map carries", () => {
+    // The map is the package's public allow-list, and a name in it with no
+    // module behind it is a subpath that resolves to nothing for a consumer.
+    // The three that are not modules are named individually.
+    const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
+      readonly exports: Readonly<Record<string, unknown>>;
+    };
+    const notModules = new Set(["./bridge.pl", "./package.json", "./browser"]);
+    const missing = Object.keys(manifest.exports)
+      .filter((name) => !notModules.has(name))
+      .map((name) => (name === "." ? "index" : name.slice(2)))
+      .filter((name) => !FILES.some((file) => file.path === join(SOURCE, `${name}.ts`)));
+    assert.deepEqual(missing, []);
+  });
+
+  it("keeps the engine-free subpaths engine-free", () => {
+    // A consumer that only BUILDS atoms imports these, and the whole point is
+    // that neither reaches the module which loads swipl-wasm. Walking the
+    // SOURCE rather than a bundle is what makes an import that would break it
+    // fail here, before anything is emitted.
+    for (const entry of ["atom", "errors"]) {
+      const seen = new Set<string>();
+      const work = [join(SOURCE, `${entry}.ts`)];
+      const outside: string[] = [];
+      while (work.length > 0) {
+        const file = work.pop() as string;
+        if (seen.has(file)) continue;
+        seen.add(file);
+        const held = FILES.find((each) => each.path === file);
+        assert.ok(held, `${file} is not one of this package's sources`);
+        for (const found of held.text.matchAll(/^import[^"']*["']([^"']+)["']/gm)) {
+          const specifier = found[1] as string;
+          if (specifier.startsWith(".")) {
+            work.push(join(dirname(file), specifier));
+            continue;
+          }
+          outside.push(`${file.slice(SOURCE.length + 1)}: ${specifier}`);
+        }
+      }
+      assert.deepEqual(outside, [], `metta-node/${entry} reaches outside this package`);
+      assert.ok(!seen.has(join(SOURCE, "engine.ts")), `metta-node/${entry} reaches the engine`);
+    }
+  });
+
+  it("sorts through one comparator, or says in place that the order is not an answer", () => {
+    assert.deepEqual(
+      bareSorts(FILES),
+      [],
+      `sort with byCodePoint, or with (a, b) => a - b for numbers. If the order ` +
+        `really is not an answer, put "${NOT_AN_ANSWER}" and the reason on that ` +
+        `line or in the comment block above it.`,
+    );
+  });
+
   /**
    * The gate's own eyesight.
    *
@@ -234,6 +328,7 @@ describe("the TypeScript style guide, where it reaches this surface", () => {
           "export default 1;",
           "export const held: any = 1;",
           'import { x } from "./other";',
+          "export const ordered = names.sort();",
         ].join("\n"),
       },
     ];
@@ -253,5 +348,17 @@ describe("the TypeScript style guide, where it reaches this surface", () => {
       .filter(([, pattern, keep]) => scan(planted, pattern, keep).length === 0)
       .map(([what]) => what);
     assert.deepEqual(blind, [], "every rule can see a violation of itself");
+    // The bare-sort rule reads whole lines rather than a pattern, so it proves
+    // its own eyesight here: it finds the planted call, and stops finding it
+    // once the line declares why its order decides nothing.
+    assert.equal(bareSorts(planted).length, 1, "the bare-sort rule saw nothing");
+    const declared = planted.map((file) => ({
+      path: file.path,
+      text: file.text.replace(
+        "export const ordered = names.sort();",
+        `// ${NOT_AN_ANSWER}: a planted line.\nexport const ordered = names.sort();`,
+      ),
+    }));
+    assert.deepEqual(bareSorts(declared), [], "the in-place opt-out does not work");
   });
 });

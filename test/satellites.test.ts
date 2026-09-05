@@ -197,6 +197,26 @@ describe("linting", () => {
     assert.equal(m.self.size, before, "linting stored nothing");
   });
 
+  it("lists the arities it found in numeric order", async () => {
+    // The arities are NUMBERS and `Array.prototype.sort` with no comparator
+    // compares them as text, so a head defined at 2 and at 10 read
+    // "defined with 10 or 2".
+    const findings = await lint(
+      m,
+      [
+        "(= (spread $a $b) $a)",
+        "(= (spread $a $b $c $d $e $f $g $h $i $j) $a)",
+        "(= (caller $n) (spread $n))",
+      ].join("\n"),
+    );
+    const said = findings.filter((finding) => finding.rule === "arity-disagreement");
+    assert.equal(said.length, 1, findings.map((finding) => finding.rule).join(", "));
+    assert.equal(
+      said[0]?.message,
+      "spread is called with 1 arguments and defined with 2 or 10",
+    );
+  });
+
   it("an ok comment suppresses only its own rule", async () => {
     const source = [
       "(= (unused $a $b) $a)",

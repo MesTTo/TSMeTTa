@@ -8,6 +8,9 @@
  *   - the lazy lifecycle really is lazy: two answers of a larger set cost two
  *     answers on the serving side
  *   - a credential is checked before the body is read
+ *   - a JSON object that names one key twice is refused at BOTH ends, over the
+ *     documents the engine's own codec suite reads, because `JSON.parse`
+ *     collapses one silently where the Python seat answers 400
  *   - every operation refusal uses the protocol's one 4xx error shape without
  *     a dead classification branch [tested: "uses one protocol error status for every refusal";
  *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
@@ -19,10 +22,20 @@
 
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { CapabilityError, type MeTTa, type Space, S, V, metta, packageRoot } from "../src/index.ts";
+import {
+  CapabilityError,
+  type MeTTa,
+  MettaError,
+  type Space,
+  S,
+  V,
+  metta,
+  packageRoot,
+} from "../src/index.ts";
 import {
   BODY_LIMIT,
   type Gateway,
@@ -31,6 +44,7 @@ import {
   type Transport,
   connect,
   httpTransport,
+  readJson,
   serve,
 } from "../src/remote.ts";
 
@@ -206,6 +220,100 @@ describe("the remote protocol", () => {
 
     const wrongMethod = await fetch(`${gateway.url}/match`, { method: "PUT" });
     assert.equal(wrongMethod.status, 405);
+  });
+
+  // `JSON.parse`'s reviver runs after each object is BUILT, so a repeated key
+  // has already collapsed to the last value; Python's object_pairs_hook is
+  // handed every pair as it is read. The engine's codec refuses the object,
+  // the Python gateway answers 400 for one, and these hold this end to it.
+  // The documents are the ones the engine's own suite reads
+  // [source: tests/prolog/suites/libraries/json_codec.plt, document/1].
+  it("reads a repeated JSON key the way the engine's codec reads one", () => {
+    const repeats: readonly [string, string][] = [
+      ['{"a":1,"a":2}', "a"],
+      ['{"a":1,"a":1}', "a"],
+      // Two spellings of one key. The repeat is in the DECODED name, which a
+      // check over the raw quoted text would miss.
+      ['{"a":1,"\\u0061":2}', "a"],
+      ['{"\\u00e9":1,"\u00e9":2}', "\u00e9"],
+      ['{"a":{"b":1,"b":2}}', "b"],
+      ['[{"ok":1},{"a":0,"a":1}]', "a"],
+      ['{"outer":[1,2],"k":"}","k":2}', "k"],
+      ['{"__proto__":1,"__proto__":2}', "__proto__"],
+      ['{"":1,"":2}', ""],
+      // An astral key, where a comparison over UTF-16 units would still see
+      // the repeat but the message must name the whole character.
+      ['{"\u{1D400}":1,"\u{1D400}":2}', "\u{1D400}"],
+    ];
+    for (const [text, key] of repeats) {
+      assert.throws(
+        () => readJson(text),
+        (raised: unknown) => {
+          assert.ok(raised instanceof MettaError, text);
+          // The engine's own sentence, so one refusal reads the same in both
+          // seats [source: extensions/python/metta/shim.pl,
+          // metta_py_json_rethrow/1 on duplicate_key/1].
+          assert.equal(raised.message, `JSON object repeats the key ${key}`, text);
+          return true;
+        },
+        text,
+      );
+    }
+    // Two objects each naming a key once is not a repeat, and neither is a
+    // key that only LOOKS repeated because a value spelled it.
+    const kept: readonly [string, unknown][] = [
+      ['[{"a":1},{"a":2}]', [{ a: 1 }, { a: 2 }]],
+      ['{"a":1,"b":2}', { a: 1, b: 2 }],
+      ['{"a":"a"}', { a: "a" }],
+      ['{"a":{"a":1}}', { a: { a: 1 } }],
+      ['{"a":"{\\"b\\":1,\\"b\\":2}"}', { a: '{"b":1,"b":2}' }],
+      ['{"a":["b","b"]}', { a: ["b", "b"] }],
+      ["[]", []],
+      ["3", 3],
+    ];
+    for (const [text, value] of kept) assert.deepEqual(readJson(text), value, text);
+    // Malformed text keeps JSON.parse's own message rather than gaining one.
+    assert.throws(() => readJson('{"a":1'), SyntaxError);
+  });
+
+  it("refuses a body that names one key twice", async () => {
+    const repeated = await fetch(`${gateway.url}/match`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      // Last-wins would read this as `&served` and answer three users, which
+      // is a different request from the one a reader of the first pair saw.
+      body: '{"space":"&not-served","space":"&served","pattern":["e",[["s","user"],["v","id"],["v","who"]]]}',
+    });
+    assert.equal(repeated.status, 400);
+    assert.deepEqual(await repeated.json(), { error: "JSON object repeats the key space" });
+
+    const once = await fetch(`${gateway.url}/match`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: '{"space":"&served","pattern":["e",[["s","user"],["v","id"],["v","who"]]]}',
+    });
+    assert.equal(once.status, 200);
+  });
+
+  it("refuses an answer that names one key twice", async () => {
+    const answering = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end('{"atoms":[],"atoms":[["s","smuggled"]]}');
+    });
+    await new Promise<void>((resume) => answering.listen(0, "127.0.0.1", resume));
+    const port = (answering.address() as { port: number }).port;
+    try {
+      const transport = httpTransport(`http://127.0.0.1:${String(port)}`);
+      // Both client reads go through the same door: the operation answer and
+      // the health answer a mutation negotiates against.
+      await assert.rejects(
+        () => transport.post("/atoms", { space: "&served" }),
+        /JSON object repeats the key atoms/,
+      );
+      await assert.rejects(() => transport.health(), /JSON object repeats the key atoms/);
+    } finally {
+      await new Promise<void>((resume) => answering.close(() => resume()));
+    }
   });
 
   it("uses one protocol error status for every refusal", async () => {

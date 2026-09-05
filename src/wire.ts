@@ -68,6 +68,7 @@ import {
   Var,
   exprOf,
   float,
+  floatText,
   space,
   sym,
   variable,
@@ -89,21 +90,38 @@ export type Wire =
   | readonly ["e", readonly Wire[]];
 
 /**
- * The PORTABLE serialisation: one tagged pair per atom, nested, payloads text.
+ * The PORTABLE serialisation: one tagged pair per atom, nested.
  *
  * This is the written-down grammar, the one `tests/codec/corpus.json` records,
  * the one the Python host writes, and the one `metta-node/remote` puts on the
- * network. {@link WireTokens} is the same grammar serialised flat, and that is what
- * crosses into this engine.
+ * network. {@link WireTokens} is the same grammar serialised flat, and that is
+ * what crosses into this engine.
+ *
+ * Every payload is the same as {@link Wire}'s but for `p`, which carries the
+ * portable NAME rather than the interned handle, and `o`, which carries the
+ * id this host handed out rather than the value. A number is the VALUE:
+ * CODEC.md's `n` row reads "exact integer or float", and `tests/codec/corpus.json`
+ * holds `["n", 1.0]` and `["n", 0]` as JSON numbers. JavaScript's two numeric
+ * types carry that distinction, `bigint` for an integer at any width and
+ * `number` for a float, which is the same split the Python host makes with
+ * `int` and `float`.
  */
 export type Transport = readonly [string, unknown];
 
 /**
  * The ENGINE serialisation: one flat preorder token list, arity-prefixed.
  *
- * A leaf is its tag followed by its payload, which is the portable spelling of
- * a leaf unchanged; an expression is `e`, its child COUNT, and then its
- * children's tokens in order. `(f 1)` crosses as `["e", 2, "s", "f", "n", "1"]`.
+ * A leaf is its tag followed by its payload; an expression is `e`, its child
+ * COUNT, and then its children's tokens in order. `(f 1)` crosses as
+ * `["e", 2, "s", "f", "n", "1"]`.
+ *
+ * The payloads are TEXT here and that is this transport's own decision, not
+ * the grammar's: swipl-wasm's value conversion renders the float 2.0 and the
+ * integer 2 as one JavaScript number, and MeTTa answers `false` to
+ * `(== 2 2.0)`, so the canonical decimal text is what keeps them apart across
+ * the WebAssembly boundary. {@link Transport} carries the VALUE instead,
+ * because a JSON document can spell an integer and a float apart and the
+ * grammar says it does.
  *
  * The shape is prefix notation with explicit arity, which is what SWI's own
  * `PL_record_external` (behind `library(fastrw)`) writes for a compound term
@@ -163,7 +181,19 @@ export function numberFromText(text: string): number | bigint {
   );
 }
 
-/** A host number as the canonical Prolog text the reader takes back. */
+/**
+ * A host number as the canonical Prolog text the reader takes back.
+ *
+ * The ENGINE transport's spelling, and only that one: {@link Transport}
+ * carries the value, as CODEC.md's `n` row asks, and this text exists because
+ * swipl-wasm's value conversion cannot tell the float 2.0 from the integer 2.
+ *
+ * Deliberately NOT {@link floatText}'s spelling either, which is what an atom
+ * PRINTS as: this writes `1.0e+21` where the atom prints `1e21`. What has to
+ * accept this text is SWI's reader, and every one of 4,030 doubles read back
+ * to the identical double through it [measured 2026-09-05 by spelling each
+ * here and printing the result through engine/parser.pl's swrite/2].
+ */
 export function numberToText(value: number | bigint): string {
   if (typeof value === "bigint") return value.toString();
   if (Number.isNaN(value)) return NAN_SPELLING;
@@ -178,6 +208,214 @@ export function numberToText(value: number | bigint): string {
   const exponent = text.indexOf("e");
   if (exponent >= 0) return `${text.slice(0, exponent)}.0${text.slice(exponent)}`;
   return `${text}.0`;
+}
+
+/**
+ * A transport `n` payload as the host value it names.
+ *
+ * `bigint` is an integer at any width and `number` is a float, which is the
+ * split CODEC.md's `n` row asks for ("exact integer or float") and the same
+ * one the Python host makes with `int` and `float`; nothing else can tell
+ * `["n", 1]` from `["n", 1.0]`, and MeTTa answers `False` to `(== 1.0 1)`.
+ *
+ * A STRING is a protocol error rather than an older spelling. This transport
+ * carries the value and the ENGINE transport carries decimal text, so a peer
+ * sending one where the other belongs is speaking a different grammar, and
+ * reading its digits here would accept a document the written-down wire does
+ * not have.
+ */
+function numberOfPayload(payload: unknown): number | bigint {
+  if (typeof payload === "bigint" || typeof payload === "number") return payload;
+  throw wireError(
+    `the n tag carries an exact integer or a float, not ${payloadKind(payload)} ` +
+      `(${JSON.stringify(payload) ?? String(payload)}); this transport spells a ` +
+      `number as the VALUE, and the engine's own flat transport is the one that ` +
+      `spells it as decimal text`,
+  );
+}
+
+/** What a refused payload IS, in words, so a peer can see which half it sent. */
+function payloadKind(payload: unknown): string {
+  if (payload === null) return "null";
+  if (payload === undefined) return "nothing";
+  if (Array.isArray(payload)) return "an array";
+  const kind = typeof payload;
+  return kind === "object" ? "an object" : `a ${kind}`;
+}
+
+/** One encoded leaf's payload as the ENGINE transport spells it. */
+function engineNumber(tag: string, payload: unknown): unknown {
+  return tag === "n" ? numberToText(payload as number | bigint) : payload;
+}
+
+// ---------------------------------------------------------------------------
+// The JSON serialisation of a transport document.
+
+/**
+ * ECMAScript's JSON source-text access, which TypeScript 6.0 does not declare.
+ *
+ * `JSON.rawJSON` and the reviver's `context.source` are the proposal that
+ * shipped in V8 12.4, so every Node this package's `engines` field admits has
+ * them (>=22.18 carries V8 12.4). One cast rather than a `declare global`,
+ * because augmenting `JSON` here would augment it for every consumer of this
+ * package's declarations too.
+ */
+interface RawJson {
+  readonly rawJSON: string;
+}
+interface SourceAwareJson {
+  rawJSON(text: string): RawJson;
+  parse(
+    text: string,
+    reviver: (
+      this: unknown,
+      key: string,
+      value: unknown,
+      context?: { readonly source?: string },
+    ) => unknown,
+  ): unknown;
+}
+const sourceJson = JSON as unknown as SourceAwareJson;
+
+/** Whether the reviver's holder and key are the payload half of an `n` pair. */
+function atNumberPayload(holder: unknown, key: string): boolean {
+  return key === "1" && Array.isArray(holder) && holder[0] === "n";
+}
+
+/**
+ * A transport number as the JSON literal that reads back as the same value.
+ *
+ * An integer is its digits, exactly and at any width, which is what makes
+ * `["n", 9007199254740993]` survive a wire whose parser would otherwise round
+ * it. A float always carries a point or an exponent, because a JSON reader
+ * with two numeric kinds decides which one it built from exactly that, and
+ * `JSON.stringify(1.0)` writing `1` is the failure CODEC.md names by name.
+ *
+ * A non-finite float is REFUSED. JSON has no literal for one and the engine's
+ * codec refuses it in the same words, so both ends of this wire agree
+ * [measured 2026-09-05: metta._json.dumps({'n': float('inf')}) answers
+ * "JSON cannot carry the non-finite number inf"].
+ */
+function jsonNumberLiteral(value: number | bigint): string {
+  if (typeof value === "bigint") return value.toString();
+  if (!Number.isFinite(value)) {
+    throw wireError(`JSON cannot carry the non-finite number ${floatText(value)}`);
+  }
+  // `String(-0)` is "0", which loses the sign a double carries.
+  const text = Object.is(value, -0) ? "-0" : String(value);
+  return /[.e]/.test(text) ? text : `${text}.0`;
+}
+
+/**
+ * A document holding transport terms, as JSON text.
+ *
+ * `JSON.stringify` alone cannot write this wire: it writes the float 1.0 as
+ * `1`, which is the same failure as rounding a wide integer with a different
+ * cause [source: CODEC.md, "Number and BigInt are exact, or refused"].
+ * `JSON.rawJSON` is ECMAScript's own answer and places a literal verbatim.
+ *
+ * The literals go into the STRUCTURE first rather than through a
+ * `JSON.stringify` replacer, because a replacer cannot be trusted to see a
+ * `bigint` at all: `JSON.stringify` asks each value for `toJSON` BEFORE it
+ * calls the replacer, and booting this seat's engine installs
+ * `BigInt.prototype.toJSON`, which answers the decimal string. Under a
+ * replacer this gateway answered `["n", "1"]` for the integer 1, a string
+ * where the grammar says a number, and the replacer was never reached
+ * [measured 2026-09-05: `typeof BigInt.prototype.toJSON` is `undefined`
+ * before `metta()` and `function` after it; tested: "writes a wide integer as
+ * a JSON number after the engine has booted"]. Placing the literal depends on
+ * nothing any library did to a prototype.
+ */
+export function transportToJson(value: unknown): string {
+  return JSON.stringify(literalised(value));
+}
+
+/** A container this walk copies rather than passes through. */
+function branching(value: unknown): value is unknown[] | Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/** An empty copy of one container, for the walk to fill. */
+function shell(value: unknown[] | Record<string, unknown>): unknown[] | Record<string, unknown> {
+  return Array.isArray(value) ? new Array<unknown>(value.length) : {};
+}
+
+/**
+ * A document with every `n` payload replaced by its own JSON literal.
+ *
+ * An explicit worklist rather than recursion, the same shape every other walk
+ * in this file takes. A `bigint` anywhere OTHER than an `n` payload is
+ * refused: nothing in this protocol puts one there, and letting it through
+ * would hand it to `JSON.stringify`, where the engine's `toJSON` would turn
+ * it into a string without saying so.
+ */
+function literalised(root: unknown): unknown {
+  if (typeof root === "bigint") {
+    throw wireError("a bigint outside an n payload has no JSON spelling on this wire");
+  }
+  if (!branching(root)) return root;
+  const out = shell(root);
+  const work: [unknown[] | Record<string, unknown>, unknown[] | Record<string, unknown>][] = [
+    [root, out],
+  ];
+  while (work.length > 0) {
+    const [from, into] = work.pop() as [
+      unknown[] | Record<string, unknown>,
+      unknown[] | Record<string, unknown>,
+    ];
+    const numeric = Array.isArray(from) && from.length === 2 && from[0] === "n";
+    for (const [key, child] of Object.entries(from)) {
+      const target = into as Record<string, unknown>;
+      if (numeric && key === "1" && (typeof child === "number" || typeof child === "bigint")) {
+        target[key] = sourceJson.rawJSON(jsonNumberLiteral(child));
+        continue;
+      }
+      if (typeof child === "bigint") {
+        throw wireError("a bigint outside an n payload has no JSON spelling on this wire");
+      }
+      if (!branching(child)) {
+        target[key] = child;
+        continue;
+      }
+      const nested = shell(child);
+      target[key] = nested;
+      work.push([child, nested]);
+    }
+  }
+  return out;
+}
+
+/**
+ * JSON text holding transport terms, as the document it spells.
+ *
+ * The inverse of {@link transportToJson}, and it needs the same help:
+ * `JSON.parse` has one numeric kind, so `["n", 1]` and `["n", 1.0]` arrive
+ * identical and `["n", 9007199254740993]` arrives rounded. The reviver's
+ * `context.source` is the literal's own text, which is the mechanism CODEC.md
+ * points at for exactly this, so an integer literal becomes a `bigint` and a
+ * float literal a `number`, at any width and with no rounding anywhere.
+ *
+ * A float literal that overflows to infinity is refused rather than becoming
+ * one, which is what SWI's reader does with the same text
+ * [measured 2026-09-05: metta._json.loads('{"n":1e400}') refuses].
+ */
+export function transportFromJson(text: string): unknown {
+  return sourceJson.parse(text, function revive(this: unknown, key, held, context): unknown {
+    if (typeof held !== "number" || !atNumberPayload(this, key)) return held;
+    const source = context?.source;
+    if (source === undefined) {
+      throw wireError(
+        `this runtime's JSON.parse does not expose a number's source text, so an ` +
+          `n payload cannot be read exactly; Node 22 and later do`,
+      );
+    }
+    if (!/[.e]/i.test(source)) return BigInt(source);
+    const held2 = Number(source);
+    if (!Number.isFinite(held2)) {
+      throw wireError(`the number ${source} is out of range for a float`);
+    }
+    return held2;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -373,7 +611,7 @@ function decodeLeaf(tag: unknown, payload: unknown, context: DecodeContext): Wir
     case "g":
       return ["g", hostText(payload)];
     case "n":
-      return ["n", numberFromText(hostText(payload))];
+      return ["n", numberOfPayload(payload)];
     case "b": {
       // Exactly the two words. Reading anything else as false answers a
       // question nobody asked, and a truthiness rule here would let ["b", 1]
@@ -455,7 +693,9 @@ function encodeLeaf(tag: unknown, payload: unknown, context: EncodeContext): Tra
       if (typeof payload !== "number" && typeof payload !== "bigint") {
         throw wireError(`the n tag carries a number, not ${JSON.stringify(payload)}`);
       }
-      return ["n", numberToText(payload)];
+      // The VALUE, not a spelling of it. The engine transport asks for text
+      // and gets it from its own two call sites in encodeEngine.
+      return ["n", payload];
     case "b":
       if (typeof payload !== "boolean") {
         throw wireError(`the b tag carries a boolean, not ${JSON.stringify(payload)}`);
@@ -643,7 +883,7 @@ export function encodeEngine(atom: Atom, context: EncodeContext = {}): unknown[]
   if (!(atom instanceof Expression)) {
     const leaf = wireOfLeaf(atom);
     const [tag, payload] = encodeLeaf(leaf[0], leaf[1], context);
-    return [tag, payload];
+    return [tag, engineNumber(tag, payload)];
   }
   const out: unknown[] = [];
   const work: Atom[] = [atom];
@@ -656,7 +896,7 @@ export function encodeEngine(atom: Atom, context: EncodeContext = {}): unknown[]
     }
     const leaf = wireOfLeaf(step);
     const [tag, payload] = encodeLeaf(leaf[0], leaf[1], context);
-    out.push(tag, payload);
+    out.push(tag, engineNumber(tag, payload));
   }
   return out;
 }

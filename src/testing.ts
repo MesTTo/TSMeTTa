@@ -440,8 +440,11 @@ export async function checkSpaceProvider(
         const expected = nestedLoopJoin(claimed, held);
         const answered = claim.rows.map((row) => row.map(toAtom));
         const key = (row: readonly Atom[]): string => row.map((atom) => alphaKey(atom)).join(" ");
-        const wanted = expected.map(key).sort();
-        const got = answered.map(key).sort();
+        // sort order is not an answer: both sides take the SAME order, so this
+        // is a multiset comparison and any total order decides it identically.
+        const ordered = (rows: readonly (readonly Atom[])[]): string[] => rows.map(key).sort();
+        const wanted = ordered(expected);
+        const got = ordered(answered);
         if (wanted.length !== got.length || wanted.some((each, index) => each !== got[index])) {
           throw new MettaError(
             `the claim is not exact: the same join over this space's own atoms has ` +
@@ -668,6 +671,7 @@ export async function checkTwin<T>(
     try {
       const [a, b] = await Promise.all([left(subject), right(subject)]);
       const key = (answers: readonly Term[]): string =>
+        // sort order is not an answer: one key per side, compared with each other.
         answers.map((answer) => alphaKey(toAtom(answer))).sort().join(" | ");
       const one = key(a);
       const other = key(b);
@@ -716,6 +720,7 @@ export async function checkReplay(
     try {
       const now = (await run(asked)).map((answer) => toAtom(answer).text);
       const same =
+        // sort order is not an answer: both sides take the same order.
         now.length === answered.length && [...now].sort().join("|") === [...answered].sort().join("|");
       results.push(
         same
@@ -809,6 +814,7 @@ export async function checkMintedHandles(
       ok: false,
       detail:
         `this provider's answers mention space identities the engine never minted: ` +
+        // sort order is not an answer: these names reach a sentence and nothing else.
         `${[...new Set(fabricated)].sort().join(", ")}. A backend answers into spaces ` +
         `and the engine mints their identities; pass them in \`registered\` if they are real`,
     },

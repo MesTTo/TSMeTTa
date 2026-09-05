@@ -26,6 +26,7 @@ export {
   type Term,
   type TermList,
   Var,
+  byCodePoint,
   byStandardOrder,
   expr,
   exprOf,
@@ -448,6 +449,8 @@ export {
   numberFromText,
   numberToText,
   toTransport,
+  transportFromJson,
+  transportToJson,
   wireFromAtom,
 } from "./wire.ts";
 

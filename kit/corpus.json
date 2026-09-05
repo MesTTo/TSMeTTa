@@ -5,12 +5,15 @@
     "the shipped Python host supplies those at run time and a frozen copy of",
     "them could go stale without anything noticing.",
     "",
-    "Numbers are written as their canonical Prolog text. JSON has one number",
-    "kind, so a JSON value cannot tell the integer 2 from the float 2.0, and",
-    "the engine tells them apart through pure term equality as well as identity:",
-    "Prolog reads the text into its own representation, Python into int and float",
-    "and JavaScript into BigInt and number. MeTTa's Number or BigInt type is",
-    "recovered from the exact integer value at the signed-i64 boundary.",
+    "A number is the VALUE, as CODEC.md's n row asks and as",
+    "tests/codec/corpus.json writes it. JSON has one number kind and MeTTa has",
+    "two, so the LITERAL is what tells them apart: bare digits are an integer,",
+    "exact at any width, and a point or an exponent makes a float. Prolog reads",
+    "the literal into its own representation, Python into int and float, and",
+    "JavaScript into BigInt and number. MeTTa's Number or BigInt type is",
+    "recovered from the exact integer value at the signed-i64 boundary. JSON",
+    "has no literal for a non-finite float, so those two take the golden",
+    "corpus's own {\"$float\": ...} escape and a reader materialises them.",
     "",
     "Every case must answer the same in a fresh engine and in one that has",
     "already run other work, because the Python host shares one engine per",
@@ -23,72 +26,397 @@
     "tests/codec/corpus.json separately holds both hosts to the wire grammar."
   ],
   "programs": [
-    { "source": "!(* 2)", "why": "a partial application crosses as Python's ordinary expression tag" },
-    { "source": "!(collapse (superpose ((* 2) (+ 3))))", "why": "partial applications nested in an answer retain structure" },
-    { "source": "!(+ 1 1)", "why": "an integer answer" },
-    { "source": "!(- 0 5)", "why": "a negative integer" },
-    { "source": "!(* 1000000000000 1000000000000)", "why": "an integer past IEEE-754 exact range" },
-    { "source": "!(get-type 9223372036854775807)", "why": "the upper Number integer boundary" },
-    { "source": "!(get-type 9223372036854775808)", "why": "the lower positive BigInt boundary" },
-    { "source": "!(+ 9223372036854775807 1)", "why": "exact arithmetic crossing from Number to BigInt" },
-    { "source": "!(+ 1.0 0.5)", "why": "a float answer" },
-    { "source": "!(+ 1.0 1.0)", "why": "a float whose value is integral, the case a JSON number loses" },
-    { "source": "!(/ 1.0 3.0)", "why": "a float with a full mantissa" },
-    { "source": "!(* 1.0e10 1.0e10)", "why": "a float that renders with an exponent" },
-    { "source": "!(/ 1.0 0.0)", "why": "positive infinity" },
-    { "source": "!(/ -1.0 0.0)", "why": "negative infinity" },
-    { "source": "!(if True \"yes\" \"no\")", "why": "a string answer" },
-    { "source": "!(== 1 1)", "why": "true" },
-    { "source": "!(== 1 2)", "why": "false" },
-    { "source": "!(== 2 2.0)", "why": "pure term equality distinguishes the two constructors" },
-    { "source": "!(!= 2 2.0)", "why": "pure term inequality distinguishes the two constructors" },
-    { "source": "!(== (Error bad none) 0)", "why": "a written Error is compared as a term" },
-    { "source": "!(=alpha 2 2.0)", "why": "identity also distinguishes them, which is what a codec must preserve" },
-    { "source": "!(car-atom (a b))", "why": "a symbol answer" },
-    { "source": "!(superpose (a b c))", "why": "three answers in one group" },
-    { "source": "!(quote (a (b c)))", "why": "a nested expression" },
-    { "source": "!(cdr-atom (a b c))", "why": "an expression built by the engine" },
-    { "source": "!(collapse (superpose (1 2)))", "why": "an expression of numbers" },
-    { "source": "!(quote $x)", "why": "a free variable, whose wire name is a writer artifact" },
-    { "source": "!(empty)", "why": "a directive with no answers at all" },
-    { "source": "!(let $x (+ 1 2) $x)", "why": "a binding form" },
-    { "source": "(= (kit-double $x) (* $x 2))\n!(kit-double 21)", "why": "a program with a definition above its directive" },
-    { "source": "! untouched-symbol\n! 42", "why": "bare runnable atoms answer their groups, the arbiter's self-evaluating rule" },
-    { "source": "!(+ 1 2)\n!(+ 3 4)", "why": "one group per directive, in source order" }
+    {
+      "source": "!(* 2)",
+      "why": "a partial application crosses as Python's ordinary expression tag"
+    },
+    {
+      "source": "!(collapse (superpose ((* 2) (+ 3))))",
+      "why": "partial applications nested in an answer retain structure"
+    },
+    {
+      "source": "!(+ 1 1)",
+      "why": "an integer answer"
+    },
+    {
+      "source": "!(- 0 5)",
+      "why": "a negative integer"
+    },
+    {
+      "source": "!(* 1000000000000 1000000000000)",
+      "why": "an integer past IEEE-754 exact range"
+    },
+    {
+      "source": "!(get-type 9223372036854775807)",
+      "why": "the upper Number integer boundary"
+    },
+    {
+      "source": "!(get-type 9223372036854775808)",
+      "why": "the lower positive BigInt boundary"
+    },
+    {
+      "source": "!(+ 9223372036854775807 1)",
+      "why": "exact arithmetic crossing from Number to BigInt"
+    },
+    {
+      "source": "!(+ 1.0 0.5)",
+      "why": "a float answer"
+    },
+    {
+      "source": "!(+ 1.0 1.0)",
+      "why": "a float whose value is integral, the case a JSON number loses"
+    },
+    {
+      "source": "!(/ 1.0 3.0)",
+      "why": "a float with a full mantissa"
+    },
+    {
+      "source": "!(* 1.0e10 1.0e10)",
+      "why": "a float that renders with an exponent"
+    },
+    {
+      "source": "!(/ 1.0 0.0)",
+      "why": "positive infinity"
+    },
+    {
+      "source": "!(/ -1.0 0.0)",
+      "why": "negative infinity"
+    },
+    {
+      "source": "!(if True \"yes\" \"no\")",
+      "why": "a string answer"
+    },
+    {
+      "source": "!(== 1 1)",
+      "why": "true"
+    },
+    {
+      "source": "!(== 1 2)",
+      "why": "false"
+    },
+    {
+      "source": "!(== 2 2.0)",
+      "why": "pure term equality distinguishes the two constructors"
+    },
+    {
+      "source": "!(!= 2 2.0)",
+      "why": "pure term inequality distinguishes the two constructors"
+    },
+    {
+      "source": "!(== (Error bad none) 0)",
+      "why": "a written Error is compared as a term"
+    },
+    {
+      "source": "!(=alpha 2 2.0)",
+      "why": "identity also distinguishes them, which is what a codec must preserve"
+    },
+    {
+      "source": "!(car-atom (a b))",
+      "why": "a symbol answer"
+    },
+    {
+      "source": "!(superpose (a b c))",
+      "why": "three answers in one group"
+    },
+    {
+      "source": "!(quote (a (b c)))",
+      "why": "a nested expression"
+    },
+    {
+      "source": "!(cdr-atom (a b c))",
+      "why": "an expression built by the engine"
+    },
+    {
+      "source": "!(collapse (superpose (1 2)))",
+      "why": "an expression of numbers"
+    },
+    {
+      "source": "!(quote $x)",
+      "why": "a free variable, whose wire name is a writer artifact"
+    },
+    {
+      "source": "!(empty)",
+      "why": "a directive with no answers at all"
+    },
+    {
+      "source": "!(let $x (+ 1 2) $x)",
+      "why": "a binding form"
+    },
+    {
+      "source": "(= (kit-double $x) (* $x 2))\n!(kit-double 21)",
+      "why": "a program with a definition above its directive"
+    },
+    {
+      "source": "! untouched-symbol\n! 42",
+      "why": "bare runnable atoms answer their groups, the arbiter's self-evaluating rule"
+    },
+    {
+      "source": "!(+ 1 2)\n!(+ 3 4)",
+      "why": "one group per directive, in source order"
+    }
   ],
   "atoms": [
-    { "transport": ["s", "foo"], "why": "a symbol" },
-    { "transport": ["s", "+"], "why": "a symbol that is an operator" },
-    { "transport": ["s", "a-b"], "why": "a symbol with a hyphen" },
-    { "transport": ["g", "text"], "why": "a string" },
-    { "transport": ["g", ""], "why": "the empty string" },
-    { "transport": ["g", "a \"quoted\" one"], "why": "a string carrying the delimiter" },
-    { "transport": ["g", "line\nbreak"], "why": "a string carrying a newline" },
-    { "transport": ["b", "true"], "why": "true" },
-    { "transport": ["b", "false"], "why": "false" },
-    { "transport": ["n", "0"], "why": "zero" },
-    { "transport": ["n", "-7"], "why": "a negative integer" },
-    { "transport": ["n", "9007199254740993"], "why": "an integer one past the exact JavaScript range" },
-    { "transport": ["n", "-9223372036854775809"], "why": "the negative BigInt boundary" },
-    { "transport": ["n", "-9223372036854775808"], "why": "the signed-i64 minimum Number" },
-    { "transport": ["n", "9223372036854775807"], "why": "the signed-i64 maximum Number" },
-    { "transport": ["n", "9223372036854775808"], "why": "the positive BigInt boundary" },
-    { "transport": ["n", "1208925819614629174706176"], "why": "an integer far past it" },
-    { "transport": ["n", "2.0"], "why": "a float whose value is integral" },
-    { "transport": ["n", "-0.5"], "why": "a negative float" },
-    { "transport": ["n", "-0.0"], "why": "negative zero, which a double carries and String(-0) loses" },
-    { "transport": ["n", "1.0e+20"], "why": "a float with an exponent" },
-    { "transport": ["n", "1.0Inf"], "why": "positive infinity, in the spelling the reader takes back" },
-    { "transport": ["n", "-1.0Inf"], "why": "negative infinity" },
-    { "transport": ["e", []], "why": "the empty expression" },
-    { "transport": ["e", [["s", "f"], ["n", "1"]]], "why": "an expression of a symbol and a number" },
-    { "transport": ["e", [["s", "a"], ["e", [["s", "b"], ["s", "c"]]]]], "why": "a nested expression" },
-    { "transport": ["e", [["g", "s"], ["b", "true"], ["n", "2.0"]]], "why": "every leaf tag in one expression" }
+    {
+      "transport": [
+        "s",
+        "foo"
+      ],
+      "why": "a symbol"
+    },
+    {
+      "transport": [
+        "s",
+        "+"
+      ],
+      "why": "a symbol that is an operator"
+    },
+    {
+      "transport": [
+        "s",
+        "a-b"
+      ],
+      "why": "a symbol with a hyphen"
+    },
+    {
+      "transport": [
+        "g",
+        "text"
+      ],
+      "why": "a string"
+    },
+    {
+      "transport": [
+        "g",
+        ""
+      ],
+      "why": "the empty string"
+    },
+    {
+      "transport": [
+        "g",
+        "a \"quoted\" one"
+      ],
+      "why": "a string carrying the delimiter"
+    },
+    {
+      "transport": [
+        "g",
+        "line\nbreak"
+      ],
+      "why": "a string carrying a newline"
+    },
+    {
+      "transport": [
+        "b",
+        "true"
+      ],
+      "why": "true"
+    },
+    {
+      "transport": [
+        "b",
+        "false"
+      ],
+      "why": "false"
+    },
+    {
+      "transport": [
+        "n",
+        0
+      ],
+      "why": "zero"
+    },
+    {
+      "transport": [
+        "n",
+        -7
+      ],
+      "why": "a negative integer"
+    },
+    {
+      "transport": [
+        "n",
+        9007199254740993
+      ],
+      "why": "an integer one past the exact JavaScript range"
+    },
+    {
+      "transport": [
+        "n",
+        -9223372036854775809
+      ],
+      "why": "the negative BigInt boundary"
+    },
+    {
+      "transport": [
+        "n",
+        -9223372036854775808
+      ],
+      "why": "the signed-i64 minimum Number"
+    },
+    {
+      "transport": [
+        "n",
+        9223372036854775807
+      ],
+      "why": "the signed-i64 maximum Number"
+    },
+    {
+      "transport": [
+        "n",
+        9223372036854775808
+      ],
+      "why": "the positive BigInt boundary"
+    },
+    {
+      "transport": [
+        "n",
+        1208925819614629174706176
+      ],
+      "why": "an integer far past it"
+    },
+    {
+      "transport": [
+        "n",
+        2.0
+      ],
+      "why": "a float whose value is integral"
+    },
+    {
+      "transport": [
+        "n",
+        -0.5
+      ],
+      "why": "a negative float"
+    },
+    {
+      "transport": [
+        "n",
+        -0.0
+      ],
+      "why": "negative zero, which a double carries and String(-0) loses"
+    },
+    {
+      "transport": [
+        "n",
+        1.0e+20
+      ],
+      "why": "a float with an exponent"
+    },
+    {
+      "transport": [
+        "n",
+        {
+          "$float": "inf"
+        }
+      ],
+      "why": "positive infinity, in the spelling the reader takes back"
+    },
+    {
+      "transport": [
+        "n",
+        {
+          "$float": "-inf"
+        }
+      ],
+      "why": "negative infinity"
+    },
+    {
+      "transport": [
+        "e",
+        []
+      ],
+      "why": "the empty expression"
+    },
+    {
+      "transport": [
+        "e",
+        [
+          [
+            "s",
+            "f"
+          ],
+          [
+            "n",
+            1
+          ]
+        ]
+      ],
+      "why": "an expression of a symbol and a number"
+    },
+    {
+      "transport": [
+        "e",
+        [
+          [
+            "s",
+            "a"
+          ],
+          [
+            "e",
+            [
+              [
+                "s",
+                "b"
+              ],
+              [
+                "s",
+                "c"
+              ]
+            ]
+          ]
+        ]
+      ],
+      "why": "a nested expression"
+    },
+    {
+      "transport": [
+        "e",
+        [
+          [
+            "g",
+            "s"
+          ],
+          [
+            "b",
+            "true"
+          ],
+          [
+            "n",
+            2.0
+          ]
+        ]
+      ],
+      "why": "every leaf tag in one expression"
+    }
   ],
   "refused": [
-    { "transport": ["n", "1r3"], "why": "a rational, which JavaScript has no type for" },
-    { "transport": ["n", "twelve"], "why": "a number payload that is not a number" },
-    { "transport": ["z", "what"], "why": "a tag outside the grammar" },
-    { "transport": ["s"], "why": "a wire atom missing its payload" }
+    {
+      "transport": [
+        "n",
+        "1r3"
+      ],
+      "why": "a rational, which the wire has no payload class for"
+    },
+    {
+      "transport": [
+        "n",
+        "twelve"
+      ],
+      "why": "an n payload that is text, where this wire carries the value"
+    },
+    {
+      "transport": [
+        "z",
+        "what"
+      ],
+      "why": "a tag outside the grammar"
+    },
+    {
+      "transport": [
+        "s"
+      ],
+      "why": "a wire atom missing its payload"
+    }
   ]
 }

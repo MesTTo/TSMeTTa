@@ -884,4 +884,90 @@ describe("the atom door and the engine's own writer agree", () => {
       assert.equal(atomFromWire(wireFromAtom(atom)), atom);
     }
   });
+
+  // One atom, one text. The engine's writer is the authority and the Python
+  // seat implements the same law, so a float spelled JavaScript's way here is
+  // this seat disagreeing with both [source: engine/parser.pl,
+  // metta_float_layout/4; extensions/python/metta/_atoms_core.py, _float_text].
+  // The values are the layout's own boundaries, where `String` parts from it:
+  // the exponent's plus sign, the positional range ending at 1e16 rather than
+  // 1e21, and its low end at 1e-5 rather than 1e-6.
+  it("spells every float the way the engine spells it", () => {
+    const pinned: readonly [number, string][] = [
+      [0.1 + 0.2, "0.30000000000000004"],
+      [1e15, "1000000000000000.0"],
+      [1e16, "1e16"],
+      [1e17, "1e17"],
+      [1234567890123456, "1234567890123456.0"],
+      [1e20, "1e20"],
+      [1e21, "1e21"],
+      [1e26, "1e26"],
+      [123456789012345680000, "1.2345678901234568e20"],
+      [1e-4, "0.0001"],
+      [1e-5, "0.00001"],
+      [1e-6, "1e-6"],
+      [1e-7, "1e-7"],
+      [1.5e-7, "1.5e-7"],
+      [5e-324, "5e-324"],
+      [-5e-324, "-5e-324"],
+      [2.2250738585072014e-308, "2.2250738585072014e-308"],
+      [1.7976931348623157e308, "1.7976931348623157e308"],
+      [-1e16, "-1e16"],
+      [1.5e300, "1.5e300"],
+      [1e10, "10000000000.0"],
+      [1e-300, "1e-300"],
+      [0, "0.0"],
+      [-0, "-0.0"],
+      [5, "5.0"],
+      [1230, "1230.0"],
+      [3.8, "3.8"],
+      [-0.25, "-0.25"],
+    ];
+    for (const [value, spelled] of pinned) {
+      // Written out as well as compared, so a change to BOTH writers at once
+      // is still caught rather than agreeing on something new.
+      assert.equal(float(value).text, spelled, `${String(value)} on this side`);
+      assert.equal(m.text(float(value)), spelled, `${String(value)} through the engine`);
+    }
+    // The non-finite three have no MeTTa literal and still print; these are
+    // hyperon's own f64 Display spellings, which the arbiter pins.
+    for (const [value, spelled] of [
+      [Number.NaN, "NaN"],
+      [Number.POSITIVE_INFINITY, "inf"],
+      [Number.NEGATIVE_INFINITY, "-inf"],
+    ] as readonly [number, string][]) {
+      assert.equal(float(value).text, spelled);
+      assert.equal(m.text(float(value)), spelled);
+    }
+  });
+
+  it("spells a swept two thousand doubles the way the engine spells them", () => {
+    // A fixed generator rather than a recorded corpus: the engine beside it is
+    // the oracle, so the cases only have to REACH the layout's branches, and a
+    // seed keeps a red run reproducible. xorshift64, because Math.random
+    // cannot be seeded.
+    let state = 0x2026_0905_1234_5678n;
+    const mask = (1n << 64n) - 1n;
+    const bits = new DataView(new ArrayBuffer(8));
+    const swept: number[] = [];
+    while (swept.length < 2000) {
+      state = (state ^ (state << 13n)) & mask;
+      state = state ^ (state >> 7n);
+      state = (state ^ (state << 17n)) & mask;
+      bits.setBigUint64(0, state);
+      const value = bits.getFloat64(0);
+      // The three non-finite spellings are pinned above; a sweep that met one
+      // would be testing them a second time and nothing else.
+      if (Number.isFinite(value)) swept.push(value);
+    }
+    // Every magnitude the layout has a branch for, so the sweep cannot be a
+    // sweep of one region: raw bit patterns are overwhelmingly huge or tiny.
+    for (let power = -20; power <= 24; power += 1) swept.push(1.2345678901234567 * 10 ** power);
+    const differing = swept.filter((value) => float(value).text !== m.text(float(value)));
+    assert.deepEqual(
+      differing.map((value) => [float(value).text, m.text(float(value))]),
+      [],
+      "the two writers spell these differently",
+    );
+  });
 });

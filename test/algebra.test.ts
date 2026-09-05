@@ -403,4 +403,37 @@ describe("a tagged program", () => {
       "(algebra readable + * 0 1 (laws combine-associative extend-associative) (carrier 0 1) (requires))",
     );
   });
+
+  it("orders its requirement names by code point, as the other seat does", () => {
+    // A capability name is whatever a caller wrote; nothing narrows it to a
+    // vocabulary the way `laws` is narrowed. U+1D400 is astral and U+F900 is
+    // not, and the two orders disagree on exactly that pair: Python's
+    // `sorted`, which extensions/python/metta/algebra.py uses to build this
+    // same row, puts U+F900 first, while a comparator-less
+    // `Array.prototype.sort` puts the astral one first because it compares
+    // UTF-16 units. The row is an ATOM the engine reads, so one declaration
+    // would have been two atoms.
+    const astral = String.fromCodePoint(0x1d400);
+    const high = String.fromCodePoint(0xf900);
+    const algebra = new Algebra("ordered", {
+      combine: "+",
+      extend: "*",
+      zero: 0,
+      one: 1,
+      requires: [astral, high],
+    });
+    assert.equal(
+      algebra.atom.text,
+      `(algebra ordered + * 0 1 (laws) (carrier) (requires ${high} ${astral}))`,
+    );
+    // Declaration order does not decide it either way.
+    const other = new Algebra("ordered", {
+      combine: "+",
+      extend: "*",
+      zero: 0,
+      one: 1,
+      requires: [high, astral],
+    });
+    assert.equal(other.atom.text, algebra.atom.text);
+  });
 });

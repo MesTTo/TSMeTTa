@@ -9,6 +9,11 @@
  *     operations plus `GET /health`, JSON bodies both ways, atoms as tagged
  *     arrays in the codec's CORE PROFILE. That page is the contract and this
  *     file implements it rather than inventing beside it
+ *   - an `n` payload is a JSON NUMBER, as CODEC.md's `n` row and
+ *     `tests/codec/corpus.json` say; the literal tells an integer from a float
+ *     and an integer is exact at any width, which is why both ends read and
+ *     write through {@link readJson} and {@link writeJson} rather than through
+ *     `JSON.parse` and `JSON.stringify`
  *   - a body is capped at 16 MiB in both directions, which is why an answer
  *     set larger than that crosses through the cursor lifecycle and not
  *     through `/match`
@@ -25,6 +30,23 @@
  *     protocol says to spell it as a removal instead
  *   - a bearer token is compared in CONSTANT TIME and checked before the body
  *     is read [tested: "refuses a wrong token before reading the body"]
+ *   - every JSON body, sent or received, is read through {@link readJson}, so
+ *     an object naming one key twice is REFUSED at both ends rather than
+ *     collapsed to the last value the way `JSON.parse` collapses it
+ *     [tested: "refuses a body that names one key twice",
+ *     "refuses an answer that names one key twice"]
+ *   - a number survives a crossing to the OTHER seat unchanged, for every
+ *     class the `n` tag has: an integer, a float, a float whose value is
+ *     whole, a negative fraction, and an integer past every JavaScript number
+ *     [tested:
+ *     extensions/python/tests/ch21_another_language_at_the_seam/test_node_binding.py,
+ *     test_a_python_client_reads_every_number_class_from_a_node_gateway,
+ *     test_a_node_client_reads_every_number_class_from_a_python_gateway]
+ *   - a non-finite float is REFUSED on this wire in the engine's own sentence,
+ *     because JSON has no literal for one [source: CODEC.md, "A non-finite
+ *     float is carried by an encoding that has a spelling for one and refused
+ *     by an encoding that does not"; tested:
+ *     test_both_seats_refuse_a_non_finite_float_on_the_json_wire]
  *   - operation refusals use the protocol's single 4xx error shape, whatever
  *     local class produced them [tested: "uses one protocol error status for every refusal";
  *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
@@ -44,7 +66,15 @@ import { MettaError, TransportError } from "./errors.ts";
 import { showsAs } from "./present.ts";
 import type { DeliveryPromise, ProviderCapability, SpaceProvider } from "./provider.ts";
 import type { Space } from "./space.ts";
-import { type Transport as Wire, atomFromWire, fromTransport, toTransport, wireFromAtom } from "./wire.ts";
+import {
+  type Transport as Wire,
+  atomFromWire,
+  fromTransport,
+  toTransport,
+  transportFromJson,
+  transportToJson,
+  wireFromAtom,
+} from "./wire.ts";
 
 /** The protocol revision this end speaks. */
 export const PROTOCOL = 3;
@@ -94,6 +124,124 @@ export interface RemoteRequest {
 }
 
 /**
+ * One JSON value off this wire, read the way the engine's codec reads it.
+ *
+ * `JSON.parse` cannot answer the question a repeated key asks. Its reviver
+ * runs after each object is BUILT, so the duplicate has already collapsed to
+ * the last value before anything can look, where Python's `object_pairs_hook`
+ * is handed every pair as it is read. The engine's codec REFUSES a repeated
+ * key on this wire and the Python gateway answers 400 for one, so a body both
+ * ends must read the same way cannot go through a bare `JSON.parse`
+ * [source: extensions/python/metta/shim.pl, metta_py_json_options/1 asking for
+ * shape(dicts) and metta_py_json_rethrow/1 turning duplicate_key(Key) into
+ * "JSON object repeats the key <k>"; extensions/python/metta/remote.py,
+ * Handler._payload; tested:
+ * extensions/python/tests/ch03_atoms_and_expressions/test_json.py,
+ * test_json_codec_refuses_duplicate_keys]. The ruling is a refusal rather than
+ * a last-wins policy because dropping the first value silently lets a peer
+ * smuggle one value past a reader that saw the other.
+ *
+ * `JSON.parse` still does the parsing; a second pass over the same text finds
+ * the keys, which is protobuf.js's shape for the same law
+ * [source: protobufjs/protobuf.js ext/protojson.js, checkDuplicateKeys]. The
+ * pass runs AFTER the parse, so it only ever walks text that is already valid
+ * JSON and a malformed body keeps `JSON.parse`'s own syntax message.
+ *
+ * The MeTTa surface's `json-decode` is a DIFFERENT door with a different
+ * ruling: it asks the same codec for shape(classic), which keeps both pairs
+ * [source: lib/lib_json/lib_json.pl, lib_json_options/1]. This one is the
+ * wire.
+ */
+export function readJson(text: string): unknown {
+  const value: unknown = transportFromJson(text);
+  refuseRepeatedKeys(text);
+  return value;
+}
+
+/**
+ * One document as the JSON text this wire carries.
+ *
+ * `JSON.stringify` writes the float 1.0 as `1` and refuses a `bigint`
+ * outright, so it cannot write this protocol's atoms at all: an integral float
+ * would arrive as an integer and a wide integer could not be sent
+ * [source: CODEC.md, "Number and BigInt are exact, or refused"]. This is
+ * `transportToJson`, which places each `n` payload as its own literal, under
+ * the name the reading half already has.
+ */
+export function writeJson(value: unknown): string {
+  return transportToJson(value);
+}
+
+/**
+ * Refuse a JSON object that names one key twice, naming the key.
+ *
+ * A structural scan, which is all this needs: only `{ } [ ] : , "` decide
+ * where a key is, and every other byte of a number, a keyword or a value
+ * string is skipped one at a time. `keys` is both the target and the flag,
+ * so "the next string is a key" and "the object it belongs to" cannot
+ * disagree.
+ */
+function refuseRepeatedKeys(text: string): void {
+  // The objects still open, innermost last. `undefined` marks an open ARRAY,
+  // which has no keys of its own.
+  const open: (Set<string> | undefined)[] = [];
+  let keys: Set<string> | undefined;
+  let at = 0;
+  while (at < text.length) {
+    const here = text[at];
+    if (here === "{") {
+      const fresh = new Set<string>();
+      open.push(fresh);
+      keys = fresh;
+      at += 1;
+    } else if (here === "[") {
+      open.push(undefined);
+      keys = undefined;
+      at += 1;
+    } else if (here === "}" || here === "]") {
+      open.pop();
+      keys = undefined;
+      at += 1;
+    } else if (here === ":") {
+      keys = undefined;
+      at += 1;
+    } else if (here === ",") {
+      keys = open[open.length - 1];
+      at += 1;
+    } else if (here !== '"') {
+      at += 1;
+    } else {
+      const from = at;
+      let escaped = false;
+      at += 1;
+      while (at < text.length) {
+        const step = text[at];
+        at += 1;
+        if (step === '"') break;
+        if (step !== "\\") continue;
+        // A backslash consumes whatever follows it, `\uXXXX` included: the
+        // four hex digits are ordinary characters and none of them can end
+        // the string, so skipping the one escaped character still lands on
+        // the real closing quote.
+        escaped = true;
+        at += 1;
+      }
+      if (keys === undefined) continue;
+      // A JSON string with no backslash IS its own decoding, so the ordinary
+      // key costs a slice; an escaped one goes back through the parser rather
+      // than through a second escape table written here. The comparison is on
+      // the DECODED name, which is what makes `{"a":1,"a":2}` a repeat
+      // [tested: tests/prolog/suites/libraries/json_codec.plt, document/1].
+      const token = text.slice(from, at);
+      const key = escaped ? (JSON.parse(token) as string) : token.slice(1, -1);
+      if (keys.has(key)) throw new MettaError(`JSON object repeats the key ${key}`);
+      keys.add(key);
+      keys = undefined;
+    }
+  }
+}
+
+/**
  * How a request reaches the other end.
  *
  * Supplied rather than assumed, so the same protocol runs over a worker, a
@@ -111,7 +259,7 @@ export function httpTransport(url: string, options: { readonly token?: string } 
   if (options.token !== undefined) headers["authorization"] = `Bearer ${options.token}`;
   return {
     async post(path: string, body: Readonly<Record<string, unknown>>): Promise<Record<string, unknown>> {
-      const payload = JSON.stringify(body);
+      const payload = writeJson(body);
       if (payload.length > BODY_LIMIT) {
         throw new TransportError(
           `this request is ${String(payload.length)} bytes and the protocol caps a body at ` +
@@ -119,7 +267,11 @@ export function httpTransport(url: string, options: { readonly token?: string } 
         );
       }
       const answered = await fetch(`${base}${path}`, { method: "POST", headers, body: payload });
-      const held = (await answered.json()) as Record<string, unknown>;
+      // `Response.json` is `JSON.parse`, so a peer's repeated key would be
+      // last-wins here while the Python client refuses it
+      // [source: extensions/python/metta/remote.py, the _json.loads on every
+      // answer]. Both ends of this protocol read the same way.
+      const held = readJson(await answered.text()) as Record<string, unknown>;
       if (!answered.ok || typeof held["error"] === "string") {
         throw new TransportError(
           `${path} refused with ${String(answered.status)}: ${String(held["error"] ?? answered.statusText)}`,
@@ -132,7 +284,7 @@ export function httpTransport(url: string, options: { readonly token?: string } 
       if (!answered.ok) {
         throw new TransportError(`/health refused with ${String(answered.status)}`);
       }
-      return (await answered.json()) as Health;
+      return readJson(await answered.text()) as Health;
     },
   };
 }
@@ -452,7 +604,7 @@ async function handle(
 ): Promise<void> {
   const reply = (status: number, body: unknown): void => {
     response.writeHead(status, { "content-type": "application/json" });
-    response.end(JSON.stringify(body));
+    response.end(writeJson(body));
   };
   // The credential is checked BEFORE the body is read, which is what the
   // protocol asks and what keeps an unauthorised request from costing
@@ -504,7 +656,7 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
     if (seen > BODY_LIMIT) throw new MettaError(`a body is capped at ${String(BODY_LIMIT)} bytes`);
     chunks.push(chunk as Buffer);
   }
-  const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  const parsed: unknown = readJson(Buffer.concat(chunks).toString("utf8"));
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new MettaError("a body is one JSON object");
   }

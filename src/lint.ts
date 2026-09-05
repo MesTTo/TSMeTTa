@@ -237,10 +237,13 @@ export async function lint(
         const arities = defined.get(called.name);
         if (arities === undefined) continue;
         if (!arities.has(arity)) {
+          // Numerically: the arities are numbers and the default sort compares
+          // them as text, so a head defined at 2 and 10 read "10 or 2".
+          const spelled = [...arities].sort((left, right) => left - right);
           say(
             "arity-disagreement",
             `${called.name} is called with ${String(arity)} arguments and defined with ` +
-              `${[...arities].sort().join(" or ")}`,
+              `${spelled.join(" or ")}`,
           );
         }
       }

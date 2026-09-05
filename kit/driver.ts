@@ -19,13 +19,15 @@
 import { createInterface } from "node:readline";
 
 import { atomFromWire, boot, fromTransport, toTransport, wireFromAtom } from "../src/index.ts";
+import { readPipe, writePipe } from "./pipe.ts";
 
 const engine = await boot();
 
 /**
- * The kit's wire and this binding's transport are the same tags; they differ
- * only in what a payload is spelled as, which is what `fromTransport` and
- * `toTransport` already convert.
+ * The kit's wire and this binding's transport are the same terms, so
+ * `fromTransport` and `toTransport` take one to the other with no spelling in
+ * between. What the LINE cannot carry is a non-finite float, which JSON has no
+ * literal for, and `./pipe.ts` puts the corpus's own escape around that.
  */
 const operations: Readonly<Record<string, (request: Record<string, never>) => unknown>> = {
   read: ({ text }) => toTransport(wireFromAtom(engine.read(text as string))),
@@ -46,7 +48,7 @@ for await (const line of lines) {
   if (line.trim() === "") continue;
   let response: Record<string, unknown>;
   try {
-    const request = JSON.parse(line) as { op?: string };
+    const request = readPipe(line) as { op?: string };
     // hasOwn rather than a truth test on the lookup: `constructor` and
     // `__proto__` are inherited and callable, so a bare index would run
     // something this table never named.
@@ -58,5 +60,5 @@ for await (const line of lines) {
   } catch (error) {
     response = { error: error instanceof Error ? error.message : String(error) };
   }
-  process.stdout.write(`${JSON.stringify(response)}\n`);
+  process.stdout.write(`${writePipe(response)}\n`);
 }

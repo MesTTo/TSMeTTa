@@ -120,7 +120,6 @@ export type Atomicity = (typeof Atomicity)[keyof typeof Atomicity];
 
 /** The `cache-mode` vocabulary, in the catalog's own order. */
 export const CacheMode = {
-  unchecked: "unchecked",
   force: "force",
   refuse: "refuse",
 } as const;

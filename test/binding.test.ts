@@ -798,6 +798,58 @@ describe("errors are data, and interruption is opt-in", () => {
   });
 });
 
+// A dispatcher's worst compliant answer is silence. A known verb given the
+// wrong number of arguments matched no clause head, so the command simply
+// FAILED, and a caller pulling one event reads a failed command as "this space
+// is empty": giving `run` its second argument on 2026-09-05 disarmed
+// `Space.capacity`'s admission guard and stopped the conformance kit's
+// streaming definitions from loading, both in silence, and only the suites
+// caught either.
+describe("a malformed command is refused rather than answered empty", () => {
+  const refusal = (command: readonly unknown[]): string => {
+    try {
+      m.engine.start(command).sync();
+      return "";
+    } catch (error) {
+      return String((error as Error).message);
+    }
+  };
+
+  it("names the verb and both counts, whichever way the count is wrong", () => {
+    // The control first: a well-formed command still answers, so these are
+    // about the count and not about the helper.
+    assert.equal(refusal(["spacenames"]), "", "a well-formed command was refused");
+    // Too few and too many, on a verb that takes arguments and on one that
+    // takes none, because the silence was symmetric across all four.
+    assert.match(refusal(["atoms"]), /the atoms command takes 1 argument, not 0/);
+    assert.match(refusal(["atoms", "&self", "x"]), /the atoms command takes 1 argument, not 2/);
+    assert.match(refusal(["run", "(a b)"]), /the run command takes 2 arguments, not 1/);
+    assert.match(refusal(["spacenames", "&self"]), /the spacenames command takes 0 arguments, not 1/);
+  });
+
+  it("keeps an unknown verb a different refusal from a wrong count", () => {
+    // JSON-RPC 2.0 keeps -32601 "method not found" apart from -32602 "invalid
+    // params" because a caller acts on them differently: one is a typo, the
+    // other a signature that moved under a caller that still exists.
+    const unknown = refusal(["nosuchverb", "x"]);
+    assert.match(unknown, /no such command/);
+    assert.doesNotMatch(unknown, /takes/);
+  });
+
+  // The scope dispatcher beside it took the same input class and answered the
+  // wrong diagnosis: a KNOWN word with the wrong details fell through to the
+  // catch-all and was reported as a scope this binding does not have.
+  it("refuses a known scope word given the wrong details, by its own name", () => {
+    let scoped = "";
+    try {
+      m.engine.start(["spacenames"], [["stack"] as never]).sync();
+    } catch (error) {
+      scoped = String((error as Error).message);
+    }
+    assert.match(scoped, /the stack scope takes 1 argument, not 0/);
+  });
+});
+
 describe("the atom door and the engine's own writer agree", () => {
   it("renders what this host renders, for everything with a text spelling", () => {
     for (const source of ["(parent tom bob)", '"text"', "42", "2.0", "True", "()"]) {

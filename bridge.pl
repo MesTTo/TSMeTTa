@@ -50,6 +50,14 @@
 %     it is reached outside an engine, rather than with SWI's vmi message
 %     [tested: "refuses a host operation reached where the engine cannot
 %     suspend"]
+%   - a command or scope whose ARGUMENT COUNT is not the one its verb declares
+%     is refused by name, naming both counts, and an unknown verb is a separate
+%     refusal from a wrong count. A wrong count used to unify with no clause
+%     head and fail, which a host pulling one event reads as "there are no
+%     answers" [tested: "names the verb and both counts, whichever way the
+%     count is wrong", "keeps an unknown verb a different refusal from a wrong
+%     count", "refuses a known scope word given the wrong details, by its own
+%     name"; commit=WORKTREE]
 %   - signed-i64 Number values and wider BigInt values cross as exact decimal
 %     text in both directions
 %     [tested: "carries Number and BigInt across the signed-i64 boundary"]
@@ -531,9 +539,51 @@ metta_node_scope(speculate, [], Goal) :- !,
 metta_node_scope(inferences, [Count], Goal) :- !,
     metta_host_inference_budget(Goal, Count, Bounded),
     call(Bounded).
-metta_node_scope(Unknown, _, _) :-
-    throw(error(metta_node_unknown_scope(Unknown),
-                context(metta_node_scope/3, 'this binding has no such scope'))).
+% The same two refusals the command table draws, for the same reason. A known
+% scope word given the wrong details unified with none of the clauses above and
+% fell through to here, which reported it as a scope this binding does not
+% have: loud, but the wrong diagnosis, and the one a caller cannot act on
+% [tested: "refuses a known scope word given the wrong details, by its own
+% name"].
+metta_node_scope(Word, Details, _) :-
+    (   metta_node_scope_word(Word, Arity),
+        is_list(Details)
+    ->  length(Details, Given),
+        throw(error(metta_node_wrong_arity(scope, Word, Given, Arity),
+                    context(metta_node_scope/3,
+                            'metta_node_scope_word/2 declares the count each \c
+                             scope takes')))
+    ;   throw(error(metta_node_unknown_scope(Word),
+                    context(metta_node_scope/3,
+                            'metta_node_scope_word/2 lists every scope this \c
+                             binding has')))
+    ).
+
+% Every scope word and the number of details it takes, read the same way the
+% verb table above is read and checked by the same static gate.
+metta_node_scope_word(stack, 1).
+metta_node_scope_word(module, 1).
+metta_node_scope_word(transaction, 0).
+metta_node_scope_word(speculate, 0).
+metta_node_scope_word(inferences, 1).
+
+:- multifile prolog:error_message//1.
+prolog:error_message(metta_node_unknown_command(Command)) -->
+    [ 'no such command: ~q'-[Command] ].
+prolog:error_message(metta_node_unknown_scope(Word)) -->
+    [ 'no such scope: ~w'-[Word] ].
+prolog:error_message(metta_node_wrong_arity(Kind, Name, Given, Expected)) -->
+    { metta_node_argument_count(Expected, Wanted) },
+    [ 'the ~w ~w takes ~w, not ~w'-[Name, Kind, Wanted, Given] ].
+
+% "1 argument" and "0 arguments" on the side that says what is wanted, and a
+% bare number on the side that says what arrived, because "takes 1 argument,
+% not 0 arguments" is a sentence a reader has to slow down for. The count is
+% the whole remedy: the caller passed a list and this says how long it should
+% have been.
+metta_node_argument_count(1, '1 argument') :- !.
+metta_node_argument_count(N, Text) :-
+    format(atom(Text), '~w arguments', [N]).
 
 % Every job reports what it spent, as its last event.
 %
@@ -565,33 +615,107 @@ metta_node_guarded(Command, Event) :-
 % is nondeterministic here and the host pulls; one that answers once is
 % deterministic and the host sees a single event followed by exhaustion.
 %
-% The verb is normalised to an atom BEFORE dispatch and an unknown one is
-% refused there, which is what keeps the refusal off the backtracking path: a
-% catch-all clause under the table would fire when a real command ran out of
-% answers, turning "this space is empty" into "no such command".
+% The verb is normalised to an atom BEFORE dispatch, and BOTH ways a command
+% can be malformed are refused there, which is what keeps the refusal off the
+% backtracking path: a catch-all clause under the table would fire when a real
+% command ran out of answers, turning "this space is empty" into "no such
+% command".
+%
+% SILENCE IS WHAT THE COUNT CHECK REPLACES, and it is the worst answer a
+% dispatcher has. A known verb given the wrong number of arguments unified with
+% no clause head, so metta_node_command/3 simply FAILED, and a host that pulls
+% one event reads a failed command as "there are no answers": giving run its
+% second argument on 2026-09-05 disarmed Space.capacity's admission guard and
+% stopped the conformance kit's streaming definitions from loading, both in
+% silence, and only the seats' own suites caught either
+% [tested: "names the verb and both counts, whichever way the count is wrong"].
+%
+% The two refusals stay SEPARATE words because a caller acts on them
+% differently: an unknown verb is a typo, a wrong count is a signature that
+% moved under a caller that still exists. That is the split JSON-RPC 2.0 draws
+% between -32601 "method not found" and -32602 "invalid params"
+% [source: the Model Context Protocol Python SDK's jsonrpc.py, which carries
+% the spec's own descriptions of both codes].
 metta_node_perform(Command, Event) :-
     (   Command = [Word|Args],
+        is_list(Args),
         metta_node_atom(Word, Verb),
-        metta_node_verb(Verb)
-    ->  metta_node_command(Verb, Args, Event)
+        metta_node_verb(Verb, Arity)
+    ->  length(Args, Given),
+        (   Given == Arity
+        ->  metta_node_command(Verb, Args, Event)
+        ;   throw(error(metta_node_wrong_arity(command, Verb, Given, Arity),
+                        context(metta_node_perform/2,
+                                'metta_node_verb/2 declares the count each \c
+                                 verb takes')))
+        )
     ;   throw(error(metta_node_unknown_command(Command),
                     context(metta_node_perform/2,
-                            'this binding has no such command')))
+                            'metta_node_verb/2 lists every verb this binding \c
+                             has')))
     ).
 
-metta_node_verb(Verb) :- memberchk(Verb, [eval, source, run, load, add, remove,
-                                          atoms, count, has, clear, spacenames,
-                                          parametric,
-                                          child, restrict, releasable, release,
-                                          explain, effect, registerop, dropop,
-                                          watch, unwatch, drain, watchpending,
-                                          commit,
-                                          platform, trace, forms, cast,
-                                          disassemble, derivation,
-                                          provider, unprovider, runstatus,
-                                          reducible,
-                                          currentspace, custommatch, digest,
-                                          token, untoken]).
+% Every verb, and the number of arguments its one clause takes. Redis carries
+% the same field in its command table and checks it in processCommand before
+% the command function runs, which is what makes a wrong count a refusal there
+% rather than a crash inside the command
+% [source: redis/redis src/server.c, the arity test that answers
+% "wrong number of arguments for '%s' command"]. Redis spells "at least n" with
+% a NEGATIVE arity; every verb here takes exactly one count, so that form would
+% be unused and is left out until a variadic verb arrives.
+%
+% Facts rather than the one memberchk this replaces, and the reason is not
+% speed: SWI's memberchk/2 is foreign, so the counter reads 2 inferences for it
+% and 0 for the indexed fact, which is to say neither was ever paid for
+% [measured 2026-09-05 on eval, untoken and digest, the first, last and a
+% middle row]. The reason is that a table of facts can be ENUMERATED.
+% tests/prolog/static_checks.pl derives the same table from
+% metta_node_command/3's own clause heads and refuses a disagreement either
+% way, which is what keeps a hand-written table from going stale. Deriving it
+% HERE instead was the other option and it lost twice over: clause/2 on the
+% dispatch path costs a clause walk per command, and it makes the refusal
+% depend on protect_static_code being false, a flag nothing in this tree sets
+% and whose flip would turn every command into a refusal.
+metta_node_verb(eval, 2).
+metta_node_verb(source, 2).
+metta_node_verb(run, 2).
+metta_node_verb(load, 2).
+metta_node_verb(add, 2).
+metta_node_verb(remove, 2).
+metta_node_verb(atoms, 1).
+metta_node_verb(count, 1).
+metta_node_verb(has, 2).
+metta_node_verb(clear, 1).
+metta_node_verb(spacenames, 0).
+metta_node_verb(parametric, 1).
+metta_node_verb(child, 2).
+metta_node_verb(restrict, 2).
+metta_node_verb(releasable, 1).
+metta_node_verb(release, 1).
+metta_node_verb(explain, 2).
+metta_node_verb(effect, 1).
+metta_node_verb(registerop, 4).
+metta_node_verb(dropop, 2).
+metta_node_verb(watch, 4).
+metta_node_verb(unwatch, 1).
+metta_node_verb(drain, 1).
+metta_node_verb(watchpending, 1).
+metta_node_verb(commit, 3).
+metta_node_verb(platform, 0).
+metta_node_verb(trace, 3).
+metta_node_verb(forms, 1).
+metta_node_verb(cast, 3).
+metta_node_verb(disassemble, 2).
+metta_node_verb(derivation, 3).
+metta_node_verb(provider, 3).
+metta_node_verb(unprovider, 1).
+metta_node_verb(runstatus, 2).
+metta_node_verb(reducible, 2).
+metta_node_verb(currentspace, 0).
+metta_node_verb(custommatch, 1).
+metta_node_verb(digest, 1).
+metta_node_verb(token, 2).
+metta_node_verb(untoken, 1).
 
 % Resolve a world journal pattern to one concrete occurrence before removing
 % it. The engine's ordinary bare-variable removal deliberately clears a whole

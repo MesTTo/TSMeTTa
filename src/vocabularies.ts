@@ -9,14 +9,15 @@
  *   - every table here matches its catalog row exactly, values in the
  *     catalog's own order, and the test that checks it BOOTS the engine and
  *     reads `&metta` rather than reading a copy of this file, so the two
- *     cannot drift [tested: "every vocabulary here matches the engine's own"]
+ *     cannot drift [tested: "every vocabulary here matches the engine's own";
+ *     commit=bbb512316280110a747e31c26adfc31e8c5104be]
  *   - a value's KEY is this package's own casing map applied to the word, so
  *     `AnswerPolicy.bestFirst` is `"best-first"`, exactly as `S.bestFirst` is
  *     the symbol `best-first`. A word the map leaves alone keeps its exact
  *     spelling, which is why `OpKind.raw_det` carries an underscore the style
  *     guide would otherwise refuse: it is the engine's word, not an identifier
  *     this package chose
- * Decides: a frozen object plus a derived union type, not an `enum`. The
+ * Decides: a const object plus a derived union type, not an `enum`. The
  *   package compiles under `erasableSyntaxOnly`, which refuses `enum` because
  *   an enum emits runtime code that type stripping cannot erase; the const
  *   object is the shape TypeScript's own documentation recommends in its

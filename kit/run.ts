@@ -89,7 +89,7 @@ const report: Record<string, unknown> = {
 const programs = report["programs"] as unknown[];
 for (const { source } of corpus.programs) {
   try {
-    const event = engine.start(["run", source]).sync();
+    const event = engine.start(["run", source, "&self"]).sync();
     const groups = event !== null && event.kind === "groups" ? event.groups : [];
     programs.push({
       source,
@@ -146,6 +146,7 @@ engine.start([
 (= (tick $n) (let $ignored (add-atom &kit-witness (produced $n)) $n))
 (= (unbounded $n) (superpose ((tick $n) (unbounded (+ $n 1)))))
 `,
+  "&self",
 ]).sync();
 
 const pulled: string[] = [];
@@ -160,7 +161,7 @@ for (;;) {
   }
 }
 
-const witness = engine.start(["run", "!(collapse (get-atoms &kit-witness))"]).sync();
+const witness = engine.start(["run", "!(collapse (get-atoms &kit-witness))", "&self"]).sync();
 report["streaming"] = {
   pulled,
   produced:

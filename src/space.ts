@@ -463,10 +463,14 @@ export class Space {
     if (!this.#claimed) {
       const guard = `space-admission-guard-${String(nextAdmissionGuard)}`;
       nextAdmissionGuard += 1;
+      // In the engine's own space, not the pool's: the guard is machinery and
+      // its equation is an ATOM, so defining it in the pool would spend one of
+      // the very atoms the capacity it installs is counting.
       this.#command([
         "run",
         `(= (${guard} $x) (space-admission-verdict ${this.name} $x))\n` +
           `!(declare-pre-add! ${this.name} ${guard})`,
+        "&self",
       ]).sync();
       this.#claimed = true;
     }
@@ -568,17 +572,7 @@ export class Space {
    * substitute, and it is the whole of one.
    */
   transaction(target: Term): Atom[] {
-    // A NAME is callable too -- `S.progn` is a function carrying its own atom
-    // -- so the test is whether lifting it gives back the function itself,
-    // which is what `project` asks in the same situation.
-    const lifted = typeof target === "function" ? lift(target) : undefined;
-    if (lifted instanceof Grounded && lifted.value === target) {
-      throw new CapabilityError(
-        "a transaction body here is a TERM rather than a callable: this seat reaches " +
-          "JavaScript by suspending the engine, and engine_yield/1 cannot unwind through " +
-          "a transaction. Build the work as a term and this door runs it atomically",
-      );
-    }
+    refuseCallableScopeBody(target, "transaction", "this door runs it atomically");
     const held = this.#command([
       "eval",
       this.#wire(expr(sym("transaction"), toAtom(target))),
@@ -1064,6 +1058,39 @@ export function rowOf(answer: Atom, vars: readonly Var[]): Row {
     row[variable.name] = answer.items[index]!;
   });
   return row;
+}
+
+/**
+ * Refuse a bare host callable where a scope wants a TERM, and say why.
+ *
+ * `transaction` and `speculate` are the two scopes a host operation cannot fire
+ * inside: this seat reaches JavaScript by SUSPENDING the engine, and
+ * `engine_yield/1` cannot unwind through the nested query frame `transaction/1`
+ * or `snapshot/1` opens [measured 2026-08-27]. That is a property of THIS
+ * transport, not missing work: the Python seat passes a callable to the same
+ * engine scopes because its crossing is a direct call rather than a suspension,
+ * and a host effect it did run would still not be rolled back by the engine's
+ * rollback, only the engine writes would.
+ *
+ * At the DOOR, because being lifted is worse than a late error:
+ * `speculate(callback)` answered `(js Function)` with the callback never called
+ * and nothing said, where `transaction(callback)` already refused
+ * [measured 2026-09-05; tested: "refuses a host callable, and says why it
+ * cannot be one", "refuses a host callable in a speculation too";
+ * commit=f5eb8775b78519c080da4ea7c6dff81f7be21ef9].
+ */
+export function refuseCallableScopeBody(target: Term, scope: string, remedy: string): void {
+  // A NAME is callable too -- `S.progn` is a function carrying its own atom --
+  // so the test is whether lifting it gives back the function itself, which is
+  // what `project` asks in the same situation.
+  if (typeof target !== "function") return;
+  const lifted = lift(target);
+  if (!(lifted instanceof Grounded) || lifted.value !== target) return;
+  throw new CapabilityError(
+    `a ${scope} body here is a TERM rather than a callable: this seat reaches ` +
+      "JavaScript by suspending the engine, and engine_yield/1 cannot unwind through " +
+      `a ${scope}. Build the work as a term and ${remedy}`,
+  );
 }
 
 /** A grounded atom's host value; anything else is itself. */

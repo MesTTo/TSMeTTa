@@ -788,6 +788,28 @@ describe("a transaction", () => {
     // A NAME is callable too and is not refused, because it carries an atom.
     assert.deepEqual(kb.transaction(S["add-atom"](kb.handle, S.viaName(1))).map(String), ["true"]);
   });
+
+  // The sibling scope had the same wall and did not say so: `lift` turned the
+  // callback into a grounded atom, so this answered `(js Function)` with the
+  // callback never called and nothing said.
+  it("refuses a host callable in a speculation too", async () => {
+    let ran = 0;
+    assert.throws(
+      () =>
+        m.speculate(((): number => {
+          ran += 1;
+          return 1;
+        }) as never),
+      /a speculate body here is a TERM rather than a callable/,
+    );
+    assert.equal(ran, 0);
+    // And the scope itself still answers every answer of a term, which is what
+    // the callable was standing in the way of.
+    assert.deepEqual(
+      (await m.speculate(S.superpose(expr(sym("one"), sym("two"))))).map(String),
+      ["one", "two"],
+    );
+  });
 });
 
 describe("a provider that claims a whole conjunction", () => {

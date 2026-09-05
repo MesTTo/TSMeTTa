@@ -117,7 +117,12 @@ describe("the strict wire", () => {
     assert.ok(handle instanceof SpaceHandle);
     assert.equal(handle.name, "&self");
     assert.equal(handle, space("&self"), "one name denotes one space identity");
-    assert.throws(() => fromTransport(["p", "self"]), /ampersand-prefixed space name/);
+    // The ampersand is the built-in spaces' spelling, not a rule of the tag: a
+    // bare symbol written through is a registered space name and crosses here.
+    const [, bare] = fromTransport(["p", "self"]) as readonly ["p", SpaceHandle];
+    assert.equal(bare.name, "self");
+    assert.notEqual(bare, handle, "a bare name is a different space from &self");
+    assert.throws(() => fromTransport(["p", 5]), /expected text from the engine/);
   });
 
   it("refuses the o tag, which only this host's own session can name", () => {

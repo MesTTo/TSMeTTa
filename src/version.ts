@@ -4,6 +4,8 @@
  *   - `package.json` sits beside `bridge.pl` at the package root, which is
  *     what `packageRoot` finds
  * Guarantees:
+ *   - browser bundles carry the same manifest version
+ *     [tested: npm run test:browser; commit=WORKTREE]
  *   - reading it starts no engine and mounts nothing, so `--version` answers
  *     on a machine where the engine cannot boot
  *     [tested: "answers its version and its usage without booting"]
@@ -15,19 +17,13 @@
  *   Future Enhancements: None
  */
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
-import { packageRoot } from "./engine.ts";
+import { runtimeVersion } from "./platform.ts";
 
 let held: string | undefined;
 
 /** The version this package declares. */
 export function version(): string {
   if (held !== undefined) return held;
-  const manifest = JSON.parse(
-    readFileSync(join(packageRoot, "package.json"), "utf8"),
-  ) as { version?: string };
-  held = manifest.version ?? "0.0.0";
+  held = runtimeVersion();
   return held;
 }

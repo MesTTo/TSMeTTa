@@ -1,5 +1,5 @@
 /**
- * Purpose: embed the MeTTa Kernel engine in a Node process over swipl-wasm, run a
+ * Purpose: embed the MeTTa Kernel engine in Node or a browser over swipl-wasm, run a
  *   job inside a suspendable SWI engine, and pump the events it produces,
  *   answering the ones only a JavaScript function can answer.
  * Assumes:
@@ -11,6 +11,8 @@
  *   - `bridge.pl` sits beside this file's package root and speaks the job
  *     protocol documented there
  * Guarantees:
+ *   - Node and browser boot share the job and wire implementation
+ *     [tested: npm run test:browser; commit=WORKTREE]
  *   - a job computes one event per pull, and abandoning it closes the engine
  *   - a host operation is called from the middle of a reduction, may be async,
  *     and may answer lazily; its rejection becomes the engine's own error
@@ -38,17 +40,11 @@
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
- *   Future Enhancements: publishing this to npm needs the engine tree beside
- *     it. boot() mounts engine/, lib/ and the backend control files from the
- *     checkout, and a published package carries none of them, which is why
- *     package.json is private for now. The Python side solved the same
- *     problem by copying them under metta/_runtime at build time (setup.py).
+ *   Future Enhancements: None
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { mountInto, packageRoot, prepareRuntime, repoRoot, type RuntimeFS } from "./platform.ts";
+import { loadSWIPL } from "./wasm.ts";
 
 import { Atom, Expression, G, Grounded, lift } from "./atom.ts";
 import { config } from "./config.ts";
@@ -59,7 +55,6 @@ import {
   EngineError,
   MettaError,
   NameError,
-  SourceNotFoundError,
   TransportError,
   UnsupportedError,
   engineError,
@@ -75,75 +70,9 @@ import {
   toTransport,
 } from "./wire.ts";
 
-const require = createRequire(import.meta.url);
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-
-/**
- * The package root, FOUND rather than assumed.
- *
- * This file runs from `src/` when a consumer type-strips the sources and from
- * `build/src/` or `dist/` when it runs a build, and each of those is a
- * different number of directories deep. Counting them got the engine tree
- * wrong the first time a build ran, so the root is the nearest ancestor that
- * carries this package's own `bridge.pl` beside its `package.json`.
- */
-function findPackageRoot(from: string): string {
-  let at = from;
-  for (;;) {
-    if (existsSync(join(at, "bridge.pl")) && existsSync(join(at, "package.json"))) return at;
-    const up = dirname(at);
-    if (up === at) {
-      throw new EngineError(
-        `this package's own bridge.pl is not above ${from}; the binding cannot ` +
-          `find the engine tree it mounts`,
-      );
-    }
-    at = up;
-  }
-}
-
-/**
- * This package's own root, wherever it was installed and however it is being
- * run. `bridge.pl` and `examples/` sit inside it.
- */
-export const packageRoot: string = findPackageRoot(HERE);
-const PACKAGE_ROOT = packageRoot;
-/**
- * Where the engine tree is mounted FROM, which is not the same place in a
- * checkout and in an install.
- *
- * In the checkout this package sits at `extensions/node/`, so the engine is two
- * levels up. Installed, it sits at `node_modules/metta-node/`, where two levels
- * up is the CONSUMER'S OWN project: measured 2026-08-29 on a fresh
- * `npm install` outside any checkout, that resolved to
- * `<consumer project>\engine`, which does not exist, and the boot died on
- * `scandir`. So a
- * published tarball carries its own copy at `_runtime/`, written by the
- * `prepack` script and preferred here whenever it is present, the way the
- * Python seat carries `metta/_runtime/`.
- */
-function findEngineRoot(packageRoot: string): string {
-  const bundled = join(packageRoot, "_runtime");
-  return existsSync(join(bundled, "engine")) ? bundled : resolve(packageRoot, "..", "..");
-}
-
-/**
- * The engine tree this package boots from: its own bundled `_runtime/` when
- * the package was published, and the surrounding checkout when it was not.
- */
-export const repoRoot: string = findEngineRoot(PACKAGE_ROOT);
+export { packageRoot, repoRoot };
 const REPO_ROOT = repoRoot;
 const VIRTUAL_ROOT = "/metta";
-
-// The directories engine/metta.pl reaches for while it loads: its own and the
-// standard library. This binding IS a seat, and its own bridge is written into
-// the image below rather than mounted from the tree.
-const ENGINE_DIRS = ["engine", "lib"] as const;
-
-// Where the engine globs for a seat's control file. Mounted a file at a time
-// by mountControlFiles below, not as a directory.
-const CONTROL_ROOT = "extensions";
 
 /** One capability the engine declares, and what its absence costs. */
 export interface Capability {
@@ -295,71 +224,10 @@ interface PrologInterface {
   query(goal: string, input?: Record<string, unknown>): PrologQuery;
 }
 
-interface EmscriptenFS {
-  mkdirTree(path: string): void;
-  writeFile(path: string, data: Uint8Array | string): void;
-}
-
-interface Swipl {
+/** @internal The wasm instance used by the shared engine. */
+export interface Swipl {
   readonly prolog: PrologInterface;
-  readonly FS: EmscriptenFS;
-}
-
-function mountInto(
-  fs: EmscriptenFS,
-  hostDir: string,
-  virtualDir: string,
-  keep?: (name: string) => boolean,
-): void {
-  // Read FIRST, so a directory that is not there is this package's own named
-  // refusal rather than Node's raw ENOENT `Error` reaching the caller.
-  let entries: string[];
-  try {
-    entries = readdirSync(hostDir);
-  } catch (error) {
-    throw new SourceNotFoundError(`${hostDir} is not a directory this host can read`, {
-      cause: error,
-    });
-  }
-  fs.mkdirTree(virtualDir);
-  for (const name of entries) {
-    const hostPath = join(hostDir, name);
-    const virtualPath = `${virtualDir}/${name}`;
-    if (statSync(hostPath).isDirectory()) {
-      mountInto(fs, hostPath, virtualPath, keep);
-    } else if (keep === undefined || keep(name)) {
-      fs.writeFile(virtualPath, readFileSync(hostPath));
-    }
-  }
-}
-
-/**
- * Every seat's control file, and nothing else under `extensions/`.
- *
- * The engine READS these at boot to record which seats are present. None of
- * their `entry(engine, _)` files can load in a wasm build, which has no
- * dynamic linking and no janus, and this binding's own seat declares only an
- * `entry(host, _)` that the engine never loads at all. So the control file is
- * the only thing under here the engine ever opens.
- *
- * mountInto would copy the whole tree, and a BUILT checkout carries the MORK
- * crate's Rust `target/` under it: 10,808 files and 3.2 GiB, which the image
- * cannot hold. That is not a slow boot, it is a dead one [measured
- * 2026-08-28 at e80fd4c3, same commit both ways: with `target/` present this
- * suite reported 70 tests, 62 pass and 8 test files aborted on `FATAL ERROR:
- * ... JavaScript heap out of memory`; with it moved aside, 203 tests and 203
- * pass]. Merging the seat folders makes it worse rather than better: this
- * package's own `node_modules` now sits under the same root.
- */
-function mountControlFiles(fs: EmscriptenFS, root: string): void {
-  const controls = join(root, CONTROL_ROOT);
-  if (!existsSync(controls)) return;
-  for (const seat of readdirSync(controls)) {
-    const control = join(controls, seat, "extension.pl");
-    if (!existsSync(control)) continue;
-    fs.mkdirTree(`${VIRTUAL_ROOT}/${CONTROL_ROOT}/${seat}`);
-    fs.writeFile(`${VIRTUAL_ROOT}/${CONTROL_ROOT}/${seat}/extension.pl`, readFileSync(control));
-  }
+  readonly FS: RuntimeFS;
 }
 
 /** One effectful crossing a saga recorded, before it becomes a receipt atom. */
@@ -1097,7 +965,8 @@ export { fromTransport, toTransport };
 /**
  * Boot the engine in this process.
  *
- * `root` is the MeTTa Kernel checkout; the default is the one this package lives in.
+ * `root` is a checkout in Node or an HTTP runtime directory in a browser.
+ * The default is the runtime shipped beside this package.
  * The engine's own `silent` flag goes in argv rather than being retracted
  * afterwards, because argv is where engine/filereader.pl reads it and
  * engine/main.pl already lists it as an engine flag.
@@ -1114,24 +983,13 @@ export async function boot(
   const supplied = options.root?.trim();
   const root = supplied ? supplied : REPO_ROOT;
   const verbose = options.verbose ?? false;
-  // Checked before anything is instantiated, so a wrong root is one sentence
-  // naming what was wanted rather than a mount failure part way through a boot.
-  if (!existsSync(join(root, "engine", "metta.pl"))) {
-    throw new SourceNotFoundError(
-      `${root} is not a MeTTa Kernel checkout: ${join(root, "engine", "metta.pl")} is not ` +
-        `there. boot({ root }) wants the tree the engine lives in, and this package's own ` +
-        `is ${REPO_ROOT}.`,
-    );
-  }
-  // The startup settings are fixed from here on, and `config` says so rather
-  // than quietly accepting a change that will do nothing.
+  const runtime = await prepareRuntime(root);
+  // Sources are validated before a wasm instance is allocated.
   config.markStarted();
-  const initSWIPL = require("swipl-wasm/dist/swipl-node") as (
-    config: Record<string, unknown>,
-  ) => Promise<Swipl>;
   const output: string[] = [];
   const stderr: string[] = [];
-  const swipl = await initSWIPL({
+  const swipl = await loadSWIPL({
+    ...(runtime.options ?? {}),
     arguments: ["-q"],
     print: (line: string) => {
       output.push(line);
@@ -1143,16 +1001,7 @@ export async function boot(
     },
   });
 
-  // Sources only: a .qlf is the NATIVE install's compiled artifact (engine/
-  // qlf_boot.pl writes them beside the sources, gitignored), and this build's
-  // older wasm SWI resolving one instead of the .pl derails the load and the
-  // refusal census with it. This host boots from source.
-  const source = (name: string): boolean => !name.endsWith(".qlf") && name !== ".qlf-stamp";
-  for (const directory of ENGINE_DIRS) {
-    mountInto(swipl.FS, join(root, directory), `${VIRTUAL_ROOT}/${directory}`, source);
-  }
-  mountControlFiles(swipl.FS, root);
-  swipl.FS.writeFile(`${VIRTUAL_ROOT}/bridge.pl`, readFileSync(join(PACKAGE_ROOT, "bridge.pl")));
+  runtime.mount(swipl.FS);
 
   const flags = verbose ? "['extensions']" : "['extensions', silent]";
   // Only when one was ASKED for. Unset means the build's own ceiling, and a

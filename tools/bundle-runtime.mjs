@@ -20,9 +20,12 @@
  *   - build products are excluded by extension: a shipped `.qlf` shadows the
  *     source it was built from and ties the package to one SWI version, and a
  *     host `.so` is meaningless to a WebAssembly engine
+ *   - runtime.json carries source text and extension metadata, and wasm/
+ *     carries the matching swipl-wasm browser assets
+ *     [source: extensions/node/tools/bundle-runtime.mjs; commit=WORKTREE]
  */
 
-import { cpSync, existsSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -57,4 +60,35 @@ for (const tree of TREES) {
   }
   cpSync(from, join(BUNDLE, tree), { recursive: true, filter: wanted });
 }
-console.log(`bundle-runtime: ${TREES.join(", ")} copied into _runtime/`);
+const controls = join(REPO, "extensions");
+for (const seat of readdirSync(controls)) {
+  const control = join(controls, seat, "extension.pl");
+  if (!existsSync(control)) continue;
+  const destination = join(BUNDLE, "extensions", seat);
+  mkdirSync(destination, { recursive: true });
+  cpSync(control, join(destination, "extension.pl"));
+}
+cpSync(join(PACKAGE, "bridge.pl"), join(BUNDLE, "bridge.pl"));
+
+// A text snapshot avoids requiring browser directory listings or native caches.
+const files = [];
+function collect(directory, prefix = "") {
+  for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const relative = `${prefix}${entry.name}`;
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) collect(path, `${relative}/`);
+    else if (/\.(?:pl|metta)$/.test(entry.name)) {
+      files.push({ path: relative, text: readFileSync(path, "utf8") });
+    }
+  }
+}
+collect(BUNDLE);
+writeFileSync(join(BUNDLE, "runtime.json"), JSON.stringify({ version: 1, files }));
+
+const wasm = join(BUNDLE, "wasm");
+mkdirSync(wasm, { recursive: true });
+const swipl = dirname(fileURLToPath(import.meta.resolve("swipl-wasm/dist/swipl/swipl-web.js")));
+for (const name of ["swipl-web.wasm", "swipl-web.data"]) {
+  cpSync(join(swipl, name), join(wasm, name));
+}
+console.log(`bundle-runtime: ${TREES.join(", ")}, extension controls, bridge and browser assets copied into _runtime/`);

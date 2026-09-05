@@ -1,0 +1,36 @@
+<!doctype html>
+<!-- Purpose: run a MeTTa program with the packaged browser engine. -->
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MeTTa in the browser</title>
+<style>
+  body { font: 1rem system-ui; max-width: 44rem; margin: 3rem auto; padding: 0 1rem; }
+  textarea { display: block; box-sizing: border-box; width: 100%; min-height: 8rem; margin: 1rem 0; font: 1rem monospace; }
+  button { padding: .5rem 1rem; }
+  pre { white-space: pre-wrap; }
+</style>
+<h1>MeTTa in the browser</h1>
+<label for="source">Program</label>
+<textarea id="source" spellcheck="false">!(+ 20 22)</textarea>
+<button id="run" disabled>Run</button>
+<pre id="result" role="status">Loading engine…</pre>
+<script type="module">
+  import { metta } from "../browser/index.js";
+  const source = document.querySelector("#source");
+  const button = document.querySelector("#run");
+  const result = document.querySelector("#result");
+  try {
+    const engine = await metta();
+    const run = () => {
+      try {
+        result.textContent = engine.run(source.value).map(group => group.texts.join("\n")).join("\n");
+      } catch (error) { result.textContent = `${error.code ?? error.name}: ${error.message}`; }
+    };
+    button.disabled = false;
+    button.addEventListener("click", run);
+    window.addEventListener("pagehide", () => engine.dispose(), { once: true });
+    run();
+  } catch (error) { result.textContent = `${error.code ?? error.name}: ${error.message}`; }
+</script>
+</html>

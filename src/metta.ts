@@ -6,6 +6,8 @@
  *   - the engine is the meaning and TypeScript is the notation, so every door
  *     here either builds a term or asks the engine one
  * Guarantees:
+ *   - browser evaluation uses the same surface as Node; host file paths refuse
+ *     by name [tested: npm run test:browser; commit=WORKTREE]
  *   - `await metta()` is the whole boot: a module may say it at top level
  *   - an ask is lazy, a definition costs no crossing per call, and a scope
  *     restores itself
@@ -42,7 +44,7 @@ import {
   termVars,
   toAtom,
 } from "./atom.ts";
-import { existsSync, statSync } from "node:fs";
+import { isDirectory, resolvePath } from "./platform.ts";
 
 import { Answers, type AskOptions, type Row } from "./answers.ts";
 import { type Derivation } from "./derivation.ts";
@@ -100,7 +102,7 @@ export interface AnswerGroup {
 
 /** What `boot` accepts. */
 export interface BootOptions {
-  /** The MeTTa Kernel checkout to mount. The one this package lives in, by default. */
+  /** A checkout in Node, or the HTTP runtime directory in a browser. */
   readonly root?: string;
   /** Whether the engine's own trace also reaches the console. */
   readonly verbose?: boolean;
@@ -478,7 +480,7 @@ export class MeTTa implements Disposable {
    */
   libraryPath(directory: string, alias: string): void {
     const full = resolvePath(directory);
-    if (!existsSync(full) || !statSync(full).isDirectory()) {
+    if (!isDirectory(full)) {
       throw new SourceNotFoundError(`a library path is a directory that exists, and ${full} is not`);
     }
     this.#engine.mount(full, full, (name) => name.endsWith(".metta") || name.endsWith(".pl"));
@@ -1011,11 +1013,6 @@ function interpolate(source: TemplateStringsArray | string, holes: readonly Term
     written += toAtom(hole).text + (source[index + 1] ?? "");
   });
   return written;
-}
-
-function resolvePath(path: string): string {
-  if (path.startsWith("/")) return path;
-  return `${process.cwd()}/${path}`.replace(/\/\.\//g, "/");
 }
 
 /** Whether an atom has the shape a scope pattern describes, structurally. */

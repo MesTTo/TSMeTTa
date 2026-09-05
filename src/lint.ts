@@ -5,6 +5,8 @@
  *   - `m.forms(source)` reads every top-level form without compiling, storing
  *     or evaluating one, so linting a file changes nothing anywhere
  * Guarantees:
+ *   - browser callers can lint source text; lintFile refuses host paths
+ *     [source: extensions/node/src/platform-browser.ts:readTextFile; commit=WORKTREE]
  *   - a lint pass performs no write and no reduction: it reads forms and, when
  *     given a space, the atoms already in it [tested: "changes nothing it
  *     looks at"]
@@ -24,6 +26,7 @@
 import { Atom, Expression, Sym, Var } from "./atom.ts";
 import { alphaKey, isGround } from "./matching.ts";
 import type { Form, MeTTa } from "./metta.ts";
+import { readTextFile } from "./platform.ts";
 import { showsAs } from "./present.ts";
 import type { Space } from "./space.ts";
 
@@ -311,6 +314,5 @@ export async function lintFile(
   path: string,
   options: LintOptions = {},
 ): Promise<Finding[]> {
-  const { readFileSync } = await import("node:fs");
-  return lint(surface, readFileSync(path, "utf8"), options);
+  return lint(surface, readTextFile(path), options);
 }

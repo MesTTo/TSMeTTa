@@ -6,6 +6,8 @@
  *     editing it, so every setting has one and the code's default is the
  *     fallback rather than the authority
  * Guarantees:
+ *   - browsers without process use the declared defaults
+ *     [tested: npm run test:browser; commit=WORKTREE]
  *   - a STARTUP setting is frozen once an engine exists, and changing it then
  *     is a refusal rather than a value that quietly does nothing
  *     [tested: "freezes a startup setting once an engine exists"]
@@ -78,7 +80,10 @@ export class Config {
   readonly #values: Record<Setting, number | undefined>;
   #started = false;
 
-  constructor(environment: Readonly<Record<string, string | undefined>> = process.env) {
+  constructor(
+    environment: Readonly<Record<string, string | undefined>> =
+      typeof process === "undefined" ? {} : process.env,
+  ) {
     this.#values = {
       stackLimit: fromEnvironment("stackLimit", environment),
       heartbeatInterval: fromEnvironment("heartbeatInterval", environment),

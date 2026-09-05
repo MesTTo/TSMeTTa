@@ -7,6 +7,8 @@
  *     `Space {}` unless it says otherwise
  *     [source: https://nodejs.org/api/util.html#utilinspectcustom]
  * Guarantees:
+ *   - the shared inspect symbol requires no Node module in a browser
+ *     [tested: npm run test:browser; commit=WORKTREE]
  *   - the hook is non-enumerable, so it never appears in a `for...in`, in
  *     `Object.keys`, or in a structured clone of a plain object built from one
  *   - installing it twice on one prototype is a refusal rather than a silent
@@ -21,8 +23,6 @@
  *   Hacks: None
  *   Future Enhancements: None
  */
-
-import { inspect } from "node:util";
 
 /**
  * Make instances of a class print as `render(instance)`.
@@ -41,7 +41,7 @@ export function showsAs<T extends object>(
   prototype: T,
   render: (value: T) => string,
 ): void {
-  Object.defineProperty(prototype, inspect.custom, {
+  Object.defineProperty(prototype, Symbol.for("nodejs.util.inspect.custom"), {
     value: function present(this: T): string {
       return render(this);
     },

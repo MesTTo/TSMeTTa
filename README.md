@@ -1,7 +1,6 @@
 # MeTTa in TypeScript, on the MeTTa Kernel engine
 
-The MeTTa Kernel engine runs inside a Node process here, in that process rather than
-behind a socket, over [swipl-wasm](https://github.com/SWI-Prolog/npm-swipl-wasm)
+The MeTTa Kernel engine runs inside Node or a browser over [swipl-wasm](https://github.com/SWI-Prolog/npm-swipl-wasm)
 8.0.6, which is the SWI-Prolog organisation's own WebAssembly build of SWI
 10.1.13. There is nothing to install besides npm packages: no SWI on the
 machine, no compiler, no shared library.
@@ -59,6 +58,57 @@ m.add(S.parent(S.tom, S.bob), S.parent(S.bob, S.ann));
 for await (const { child } of m.match(S.parent(S.tom, V.child))) {
   console.log(String(child));            // bob
 }
+```
+
+## Browser
+
+Build the browser distribution and its runtime assets from this checkout:
+
+```sh
+cd extensions/node
+npm run build:browser
+```
+
+Serve this package directory over HTTP and open `examples/browser.html`.
+The `browser/` JavaScript and `_runtime/` directory must be served together.
+The example boots the engine and answers `42` for `!(+ 20 22)`.
+
+```js
+import { metta } from "metta-node";
+
+const m = await metta({ root: new URL("./metta-runtime/", location.href).href });
+console.log(m.run("!(* 2)")[0].texts); // ["(partial * (2))"]
+m.dispose();
+```
+
+A consumer bundler selects the package's `browser` export condition. Copy
+`_runtime/` to the directory supplied as `root`; it contains `runtime.json`
+and `wasm/swipl-web.wasm` plus `wasm/swipl-web.data`. When importing the
+emitted browser files directly, omitting `root` uses their sibling
+`_runtime/` directory. `metta-node/browser` explicitly selects that entry.
+Module workers use the same API. Missing assets reject with
+`ERR_METTA_SOURCE` before allocating the wasm instance.
+
+The browser uses the same atoms, matching functions, host operations,
+`evalStatus`, and trace implementation as Node. Browser satellites share
+those atom identities with the main entry. `loadFile`, `libraryPath`,
+`mount`, and `lintFile` read host filesystem paths and refuse in a browser;
+`run` and `load` accept source text. The `remote`, `manifest`, `integrate`, and `testing` satellites require
+Node's HTTP server, host package discovery, or HTTP transport test APIs.
+The wasm build's concurrency and deadline limitations still apply.
+
+The build uses static dynamic imports for both wasm factories, with
+`swipl-wasm/dist/swipl/swipl-web.js` selected in the browser. The dependency
+ships CommonJS, so the browser distribution converts it once and excludes
+its inactive Node imports. Export conditions select this distribution;
+runtime detection alone would leave those imports for each consumer to
+resolve. The legacy `browser` field also selects the browser entry.
+
+To run the Chromium tests locally:
+
+```sh
+npx playwright install chromium
+npm run test:browser
 ```
 
 ## Atoms

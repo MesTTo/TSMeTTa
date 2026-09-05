@@ -26,7 +26,7 @@ import { main } from "../src/cli.ts";
  *
  * Through the injected sink rather than by replacing `process.stdout.write`:
  * the test runner reports on that same stream, and replacing it swallows the
- * whole run [measured: one test reported where seven ran].
+ * whole run [measured 2026-08-29: one test reported where seven ran].
  */
 async function run(...argv: readonly string[]): Promise<{ status: number; out: string; err: string }> {
   let out = "";

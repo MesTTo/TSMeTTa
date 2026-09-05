@@ -163,7 +163,20 @@ export function numberFromText(text: string): number | bigint {
   );
 }
 
-/** A host number as the canonical Prolog text the reader takes back. */
+/**
+ * A host number as the canonical Prolog text the reader takes back.
+ *
+ * Deliberately NOT {@link floatText}'s spelling, which is what an atom PRINTS
+ * as. The wire carries the value and the reader is what has to accept the
+ * text, so the two are free to differ and do: this writes `1.0e+21` where the
+ * atom prints `1e21`. The conformance kit says so in as many words, comparing
+ * a transport number as the number rather than as its spelling, because "only
+ * the engine's own writer is canonical about how it spells"
+ * [source: extensions/python/tests/ch21_another_language_at_the_seam/test_node_binding.py,
+ * _comparable_transport]. Every one of 4,030 doubles read back to the identical
+ * double through SWI [measured 2026-09-05 by spelling each here and printing
+ * the result through engine/parser.pl's swrite/2].
+ */
 export function numberToText(value: number | bigint): string {
   if (typeof value === "bigint") return value.toString();
   if (Number.isNaN(value)) return NAN_SPELLING;

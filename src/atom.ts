@@ -35,6 +35,11 @@
  *     across every host atom distinction", "sorts the portable ground image
  *     exactly as the engine's msort", "keeps host-only order stable across
  *     reverse engine allocation"; commit=74e1edc753da5aae13d8dcf128ea6a51545e06db]
+ *   - a float's text is the ENGINE's spelling and not JavaScript's: the digits
+ *     are `Number.prototype.toString`'s shortest round trip and the layout is
+ *     the arbiter's, so one atom has one text in this seat, the Python seat and
+ *     the engine alike [tested: "spells every float the way the engine spells
+ *     it", "spells a swept two thousand doubles the way the engine spells them"]
  *   - `exprOf` interns through weak structural-hash buckets, verifies every
  *     collision by child identity and never materialises all child ids as text
  *     [tested: "interns a wide expression without joining every child id into
@@ -651,14 +656,59 @@ function groundedText(value: unknown): string {
   return `(js ${named.constructor?.name ?? "Object"})`;
 }
 
-/** A JavaScript number spelled as a MeTTa FLOAT, whatever its value. */
+/**
+ * A JavaScript number spelled as a MeTTa FLOAT, whatever its value.
+ *
+ * The DIGITS are `Number.prototype.toString`'s, which ECMAScript defines as
+ * the shortest decimal that reads back to the same binary64 and which is what
+ * SWI's `number_codes/2` and Python's `repr` select too. The LAYOUT is the
+ * arbiter's, and it is neither host's own: with D the significand stripped of
+ * leading and trailing zeros and KK the exponent making the value `0.D*10^KK`,
+ * print positionally while KK is in -4..16 and scientifically otherwise,
+ * exponent KK-1, minus sign only, never a plus, never zero-padded
+ * [source: engine/parser.pl, metta_float_layout/4 over LeaTTa
+ * RyuLean4/Runtime.lean:371-396; the Python seat carries the same five
+ * branches at extensions/python/metta/_atoms_core.py, _float_text].
+ *
+ * JavaScript's own layout is a THIRD spelling, and leaving it in place is what
+ * made this seat the odd one out: `String` writes a plus in the exponent
+ * (`1e+21`), stays positional up to 1e21 where the law leaves at 1e16, and
+ * stays positional down to 1e-6 where the law leaves at 1e-5. 796 of 4,033
+ * doubles spelled differently here from the Python seat, which agreed with the
+ * engine on all 4,030 finite ones
+ * [tested: "spells every float the way the engine spells it"].
+ */
 export function floatText(value: number): string {
   if (Number.isNaN(value)) return "NaN";
   if (value === Infinity) return "inf";
   if (value === -Infinity) return "-inf";
+  // `String(-0)` is "0", which loses the sign a double carries.
   const text = Object.is(value, -0) ? "-0" : String(value);
-  if (text.includes(".") || text.includes("e") || text.includes("E")) return text;
-  return `${text}.0`;
+  const sign = text.startsWith("-") ? "-" : "";
+  const body = sign === "" ? text : text.slice(1);
+  const exponentAt = body.indexOf("e");
+  const mantissa = exponentAt < 0 ? body : body.slice(0, exponentAt);
+  const written = exponentAt < 0 ? 0 : Number(body.slice(exponentAt + 1));
+  // The mantissa's point only POSITIONS digits, so folding it into the power
+  // of ten is exact: "1.5e+300" is the digits 15 times 10^299.
+  const pointAt = mantissa.indexOf(".");
+  const fraction = pointAt < 0 ? "" : mantissa.slice(pointAt + 1);
+  const whole = pointAt < 0 ? mantissa : mantissa.slice(0, pointAt);
+  const digits = `${whole}${fraction}`.replace(/^0+/, "");
+  if (digits === "") return `${sign}0.0`;
+  const kk = digits.length + written - fraction.length;
+  // Dropping a trailing zero divides the digits by ten and raises the power of
+  // ten with it, so KK above is the same either way and only the printing
+  // wants the stripped form.
+  const kept = digits.replace(/0+$/, "");
+  if (kk - kept.length >= 0 && kk <= 16) {
+    return `${sign}${kept}${"0".repeat(kk - kept.length)}.0`;
+  }
+  if (kk > 0 && kk <= 16) return `${sign}${kept.slice(0, kk)}.${kept.slice(kk)}`;
+  if (kk > -5 && kk <= 0) return `${sign}0.${"0".repeat(-kk)}${kept}`;
+  return kept.length === 1
+    ? `${sign}${kept}e${String(kk - 1)}`
+    : `${sign}${kept.slice(0, 1)}.${kept.slice(1)}e${String(kk - 1)}`;
 }
 
 // ---------------------------------------------------------------------------

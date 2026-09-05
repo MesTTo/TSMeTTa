@@ -335,7 +335,7 @@ const expressionReaper = new FinalizationRegistry<{
  * and because the whole registry crosses as one expression that cost the entire
  * `MeTTa.spaces()` answer rather than the single entry
  * [tested: "names a space the engine registered without an ampersand";
- * commit=WORKTREE].
+ * commit=f5eb8775b78519c080da4ea7c6dff81f7be21ef9].
  */
 export class SpaceHandle extends Atom {
   readonly kind: Kind = "space";

@@ -1077,7 +1077,7 @@ export function rowOf(answer: Atom, vars: readonly Var[]): Row {
  * and nothing said, where `transaction(callback)` already refused
  * [measured 2026-09-05; tested: "refuses a host callable, and says why it
  * cannot be one", "refuses a host callable in a speculation too";
- * commit=WORKTREE].
+ * commit=f5eb8775b78519c080da4ea7c6dff81f7be21ef9].
  */
 export function refuseCallableScopeBody(target: Term, scope: string, remedy: string): void {
   // A NAME is callable too -- `S.progn` is a function carrying its own atom --

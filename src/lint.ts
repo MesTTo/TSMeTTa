@@ -6,7 +6,7 @@
  *     or evaluating one, so linting a file changes nothing anywhere
  * Guarantees:
  *   - browser callers can lint source text; lintFile refuses host paths
- *     [source: extensions/node/src/platform-browser.ts:readTextFile; commit=WORKTREE]
+ *     [source: extensions/node/src/platform-browser.ts:readTextFile; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  *   - a lint pass performs no write and no reduction: it reads forms and, when
  *     given a space, the atoms already in it [tested: "changes nothing it
  *     looks at"]

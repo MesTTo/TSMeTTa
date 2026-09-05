@@ -8,7 +8,7 @@
  *   - partial applications and compound edge cases share Python's expression
  *     wire grammar [tested: "carries partial applications as the Python wire's expression",
  *     "carries compound edge cases under the shared expression grammar";
- *     commit=WORKTREE]
+ *     commit=de332bf69feadc2080254f76a6c278fd6db344bc]
  *   - Number and BigInt cross the signed-i64 boundary without losing a digit
  *   - an abandoned stream leaves the rest of an unbounded generator uncomputed
  *   - nothing the engine says reaches the host's console

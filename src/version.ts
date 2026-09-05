@@ -5,7 +5,7 @@
  *     what `packageRoot` finds
  * Guarantees:
  *   - browser bundles carry the same manifest version
- *     [tested: npm run test:browser; commit=WORKTREE]
+ *     [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  *   - reading it starts no engine and mounts nothing, so `--version` answers
  *     on a machine where the engine cannot boot
  *     [tested: "answers its version and its usage without booting"]

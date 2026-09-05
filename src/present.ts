@@ -8,7 +8,7 @@
  *     [source: https://nodejs.org/api/util.html#utilinspectcustom]
  * Guarantees:
  *   - the shared inspect symbol requires no Node module in a browser
- *     [tested: npm run test:browser; commit=WORKTREE]
+ *     [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  *   - the hook is non-enumerable, so it never appears in a `for...in`, in
  *     `Object.keys`, or in a structured clone of a plain object built from one
  *   - installing it twice on one prototype is a refusal rather than a silent

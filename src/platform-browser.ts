@@ -1,9 +1,9 @@
 /**
  * Purpose: fetch a complete runtime source snapshot for browser boot.
  * Assumes: tools/bundle-runtime.mjs emits runtime.json and wasm assets beside
- *   it [source: extensions/node/tools/bundle-runtime.mjs; commit=WORKTREE].
+ *   it [source: extensions/node/tools/bundle-runtime.mjs:collect; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8].
  * Guarantees: source paths are validated before any file is mounted
- *   [source: extensions/node/src/platform-browser.ts:prepareRuntime; commit=WORKTREE].
+ *   [source: extensions/node/src/platform-browser.ts:prepareRuntime; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8].
  * Owns resources: a prepared snapshot owns its source strings until boot
  *   returns; the engine owns the WebAssembly filesystem receiving the copy.
  */

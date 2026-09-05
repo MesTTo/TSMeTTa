@@ -2,7 +2,7 @@
  * Purpose: locate and mount this package's runtime on a Node host.
  * Assumes: bridge.pl identifies the package root; engine/metta.pl identifies
  *   the runtime root [source: extensions/node/src/platform.ts:findPackageRoot, prepareRuntime;
- *   commit=WORKTREE].
+ *   commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8].
  * Owns resources: synchronous reads close their file descriptors before
  *   returning; the caller owns the destination WebAssembly filesystem.
  */

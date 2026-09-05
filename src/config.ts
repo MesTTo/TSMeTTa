@@ -7,7 +7,7 @@
  *     fallback rather than the authority
  * Guarantees:
  *   - browsers without process use the declared defaults
- *     [tested: npm run test:browser; commit=WORKTREE]
+ *     [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  *   - a STARTUP setting is frozen once an engine exists, and changing it then
  *     is a refusal rather than a value that quietly does nothing
  *     [tested: "freezes a startup setting once an engine exists"]

@@ -1,7 +1,7 @@
 /**
  * Purpose: bundle the shared public surface with the browser source loader.
  * Guarantees: Node imports in swipl-wasm's inactive branches never reach the
- *   consumer's resolver. [tested: npm run test:browser; commit=WORKTREE]
+ *   consumer's resolver. [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  */
 import { build } from "esbuild";
 import { readFileSync, rmSync, statSync } from "node:fs";

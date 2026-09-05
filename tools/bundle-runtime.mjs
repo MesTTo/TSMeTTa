@@ -22,7 +22,7 @@
  *     host `.so` is meaningless to a WebAssembly engine
  *   - runtime.json carries source text and extension metadata, and wasm/
  *     carries the matching swipl-wasm browser assets
- *     [source: extensions/node/tools/bundle-runtime.mjs; commit=WORKTREE]
+ *     [source: extensions/node/tools/bundle-runtime.mjs:collect; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  */
 
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";

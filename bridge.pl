@@ -34,7 +34,7 @@
 %     functor followed by its arguments; improper lists use (cons Head Tail)
 %     [tested: "carries partial applications as the Python wire's expression",
 %     "carries compound edge cases under the shared expression grammar";
-%     commit=WORKTREE]
+%     commit=de332bf69feadc2080254f76a6c278fd6db344bc]
 %   - metta_node_step/2 computes at most one event per call, so a host that
 %     stops pulling leaves the rest of an infinite stream uncomputed
 %     [tested: "leaves an abandoned stream's remaining answers uncomputed"]

@@ -1,7 +1,7 @@
 /**
  * Purpose: exercise the emitted browser package in Chromium over HTTP.
  * Guarantees: boot, wire answers, host callbacks, matching and evaluation status
- *   run in a page, with worker boot checked separately. [tested: npm run test:browser; commit=WORKTREE]
+ *   run in a page, with worker boot checked separately. [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  * Owns resources: closes Chromium and the HTTP server, then removes the
  *   temporary _runtime sources so other suites inspect the checkout only.
  */

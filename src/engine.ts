@@ -12,7 +12,7 @@
  *     protocol documented there
  * Guarantees:
  *   - Node and browser boot share the job and wire implementation
- *     [tested: npm run test:browser; commit=WORKTREE]
+ *     [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  *   - a job computes one event per pull, and abandoning it closes the engine
  *   - a host operation is called from the middle of a reduction, may be async,
  *     and may answer lazily; its rejection becomes the engine's own error

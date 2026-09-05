@@ -1,7 +1,7 @@
 /**
  * Purpose: select the swipl-wasm factory for the executing host.
  * Guarantees: both imports are statically visible to the browser bundler.
- *   [tested: npm run test:browser; commit=WORKTREE]
+ *   [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  */
 import { CapabilityError } from "./errors.ts";
 import type { Swipl } from "./engine.ts";

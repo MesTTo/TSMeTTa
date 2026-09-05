@@ -7,7 +7,7 @@
  *     here either builds a term or asks the engine one
  * Guarantees:
  *   - browser evaluation uses the same surface as Node; host file paths refuse
- *     by name [tested: npm run test:browser; commit=WORKTREE]
+ *     by name [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  *   - `await metta()` is the whole boot: a module may say it at top level
  *   - an ask is lazy, a definition costs no crossing per call, and a scope
  *     restores itself

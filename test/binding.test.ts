@@ -18,6 +18,10 @@
  *     [tested: "keeps portable SHA hashing and refuses crypto-only operations",
  *     "refuses the Redis library before consulting its missing provider";
  *     commit=59792b524568755a2fbfe1c5f7cdb571bd78a3bf]
+ *   - a predicate a platform library lends a builtin's name, library(wasm)'s
+ *     sleep/1 here, stays out of the arity registry on a build that does not
+ *     call it built_in [tested: "keeps a platform library's namesake predicate
+ *     out of the builtin registry"; commit=7eff330776f703cb603d7eea03fc1166d9e08e5e]
  *   - bridge job identifiers never recycle after the live-job table empties,
  *     and allocating one costs the same engine inferences with 0, 200, 400 or
  *     800 jobs already live [tested: "does not recycle an identifier after the
@@ -125,6 +129,36 @@ describe("boot", () => {
       m.refusals.map(({ capability }) => capability).sort(),
       ["concurrency", "crypto", "deadlines", "redis", "subprocess"],
     );
+  });
+
+  // This build's library(wasm) defines sleep/1, an ordinary module predicate
+  // sharing the name of the engine's own sleep/2. Registering its arity made
+  // the boot's registration coverage check refuse with
+  // `unregistered_builtin_spec(sleep/0)` and took every test in this package
+  // with it. The lender is still here, which is what keeps this test honest:
+  // it is the registry that has to tell the two apart, and it cannot do that
+  // by asking whether the build calls the lender built_in, because this one
+  // does not.
+  it("keeps a platform library's namesake predicate out of the builtin registry", () => {
+    // One crossing, every answer bound, because engine.once() raises on a goal
+    // that FAILS and the two guards below are questions whose "no" is the
+    // interesting answer.
+    const seen = m.engine.once(
+      "findall(A, arity(sleep, A), L), " +
+        "( current_predicate(sleep/1) -> Lends = yes ; Lends = no ), " +
+        "( predicate_property(sleep(_), built_in) -> Core = yes ; Core = no )",
+    );
+    assert.equal(
+      String(seen["Lends"]),
+      "yes",
+      "library(wasm) no longer lends sleep/1, so this test proves nothing",
+    );
+    assert.equal(
+      String(seen["Core"]),
+      "no",
+      "this build now calls the lender built_in, so the old rule would have caught it",
+    );
+    assert.deepEqual((seen["L"] as unknown[]).map(Number), [2]);
   });
 
   it("names the library each absence needs, and what it costs", () => {

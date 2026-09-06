@@ -423,8 +423,8 @@ describe("running a program", () => {
   it("answers a call to a definition below it unreduced, as the engine does", () => {
     // prepare_parsed_forms/1 registers the signature, which is what lets the
     // pragma above name a function defined lower down; it does not compile the
-    // clauses early. Evaluation follows LeaTTa's evalSequentialRun: a bang sees
-    // only the preceding prefix, so the call stays data.
+    // clauses early. Evaluation runs the file as a sequence: a bang sees only
+    // the preceding prefix, so the call stays data.
     assert.deepEqual(
       m.run("!(below 1)\n(= (below $x) $x)").map((group) => group.texts),
       [["(below 1)"]],

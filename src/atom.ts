@@ -672,14 +672,13 @@ function groundedText(value: unknown): string {
  *
  * The DIGITS are `Number.prototype.toString`'s, which ECMAScript defines as
  * the shortest decimal that reads back to the same binary64 and which is what
- * SWI's `number_codes/2` and Python's `repr` select too. The LAYOUT is
- * LeaTTa's, and it is neither host's own: with D the significand stripped of
+ * SWI's `number_codes/2` and Python's `repr` select too. The LAYOUT is the
+ * engine's, and it is neither host's own: with D the significand stripped of
  * leading and trailing zeros and KK the exponent making the value `0.D*10^KK`,
  * print positionally while KK is in -4..16 and scientifically otherwise,
  * exponent KK-1, minus sign only, never a plus, never zero-padded
- * [source: engine/parser.pl, metta_float_layout/4 over LeaTTa
- * RyuLean4/Runtime.lean:371-396; the Python seat carries the same five
- * branches at extensions/python/metta/_atoms_core.py, _float_text].
+ * [source: engine/parser.pl, metta_float_layout/4; the Python seat carries the
+ * same five branches at extensions/python/metta/_atoms_core.py, _float_text].
  *
  * JavaScript's own layout is a THIRD spelling, and leaving it in place is what
  * made this seat the odd one out: `String` writes a plus in the exponent

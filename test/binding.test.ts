@@ -40,7 +40,7 @@
 
 import { strict as assert } from "node:assert";
 import { after, before, describe, it } from "node:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -63,6 +63,7 @@ import {
   isError,
   metta,
   packageRoot,
+  repoRoot,
   space,
   sym,
   wireFromAtom,
@@ -469,6 +470,44 @@ describe("running a program", () => {
     assert.throws(() => m.run("!(unclosed"), /missing '\)'/);
   });
 
+  it("walks a program that names a bare space and then another on one engine", async () => {
+    // The consumer's shape: one engine, one space per program, and after each
+    // program a photograph of every registered space. `07` writes through
+    // `(= (space) my_space_name)`, so every walk after it reads a bare name
+    // out of the registry, interns it on the host, and sends it back under p.
+    // These four are the programs a workspace measured drawing nothing once
+    // `07` had run before them [source: pettagrapher ai-notes/ai-issues.md,
+    // "Leads for MeTTa-Kernel, found while moving onto 0.8.0", 2026-09-06].
+    const chapter = join(repoRoot, "examples", "ch04-spaces-and-matching");
+    const later = [
+      "04-01-a-space-is-where-a-program-lives/08-spacefunction.metta",
+      "04-01-a-space-is-where-a-program-lives/09-selfprog.metta",
+      "04-01-a-space-is-where-a-program-lives/10-subtract_atom.metta",
+      "04-02-patterns-and-bindings/01-matchsingle.metta",
+    ];
+    let minted = 0;
+    const walk = async (file: string): Promise<readonly (readonly string[])[]> => {
+      minted += 1;
+      const groups = m
+        .run(readFileSync(join(chapter, file), "utf8"), m.space(`&walk-${String(minted)}`))
+        .map((group) => group.texts);
+      for (const identity of m.spaces()) {
+        await m.eval(S.collapse(S.getAtoms(m.space(identity).handle))).toArray();
+      }
+      return groups;
+    };
+
+    // Each program answers the same on an engine that has seen `07` as on one
+    // that has not, and each runs in a space of its own, so the comparison is
+    // the engine's state rather than the program's.
+    const before: (readonly (readonly string[])[])[] = [];
+    for (const file of later) before.push(await walk(file));
+    await walk("04-01-a-space-is-where-a-program-lives/07-add_atom_fun_space.metta");
+    for (const [at, file] of later.entries()) {
+      assert.deepEqual(await walk(file), before[at], file);
+    }
+  });
+
   it("raises an error rather than printing it", () => {
     // swipl-wasm writes every Prolog exception to the host's console before
     // handing it back and has no switch for it, so bridge.pl catches inside and
@@ -538,6 +577,31 @@ describe("the codec, through the engine", () => {
     await m.eval(first).toArray();
 
     assert.deepEqual(order(), before);
+  });
+
+  it("decodes a space the engine registered without an ampersand", async () => {
+    // Any symbol WRITTEN THROUGH is a space name, here and upstream
+    // [source: engine/spaces/catalog.pl, metta_space_writable_name/1], so a
+    // host that has interned one sends it back under the p tag. The engine's
+    // own decoder demanded the ampersand and a failing decode refuses the
+    // whole WIRE, so `(collapse (get-atoms <space>))` -- the shape a consumer
+    // walking a program writes to photograph a space -- became undecodable
+    // and took every later program on that engine with it.
+    m.run("(= (codec-bare-space) codec_bare_space)");
+    m.run("!(add-atom (codec-bare-space) (bare 1))");
+    const bare = space("codec_bare_space");
+    assert.deepEqual(
+      m.engine.encodeAtom(bare),
+      ["p", "codec_bare_space"],
+      "the host writes a bare registered name under p",
+    );
+    const held = await m.eval(S.collapse(S.getAtoms(bare))).toArray();
+    assert.deepEqual(held.map(String), ["((bare 1))"]);
+    assert.deepEqual(
+      m.run("!(+ 1 2)")[0]!.texts,
+      ["3"],
+      "and the engine still answers, which the refusal cost",
+    );
   });
 
   it("tells a MeTTa integer from a MeTTa float", () => {

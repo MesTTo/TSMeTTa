@@ -3,6 +3,11 @@
  * Assumes: bridge.pl identifies the package root; engine/metta.pl identifies
  *   the runtime root [source: extensions/node/src/platform.ts:findPackageRoot, prepareRuntime;
  *   commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8].
+ * Guarantees: an enclosing checkout is read in preference to the `_runtime/`
+ *   copy packed beside this package, so the engine a developer edits is the
+ *   engine this seat runs even after `npm install` has written that copy
+ *   [tested: extensions/node/check.sh node-dist, which asserts a packed
+ *   package resolves its own `_runtime/`; commit=WORKTREE].
  * Owns resources: synchronous reads close their file descriptors before
  *   returning; the caller owns the destination WebAssembly filesystem.
  */
@@ -43,10 +48,35 @@ function findPackageRoot(from: string): string {
 /** The package containing bridge.pl and package.json. */
 export const packageRoot: string = findPackageRoot(dirname(fileURLToPath(import.meta.url)));
 const bundled = join(packageRoot, "_runtime");
-/** The packed runtime, or the checkout enclosing this package. */
-export const repoRoot: string = existsSync(join(bundled, "engine"))
-  ? bundled
-  : resolve(packageRoot, "..", "..");
+const enclosing = resolve(packageRoot, "..", "..");
+/**
+ * The checkout enclosing this package, or the runtime it was packed with.
+ *
+ * The CHECKOUT first. `_runtime/` is a copy of `engine/` and `lib/` taken when
+ * the package was prepared, and it is the answer only where there is no
+ * enclosing tree to read: an installed package resolves two levels up to the
+ * consumer's own project, which is not a checkout, and falls through to its
+ * copy. Reading it the other way round made the copy shadow the tree it was
+ * taken from, so an engine edit was invisible to this seat's own suite from
+ * the moment anything wrote `_runtime/` -- which is now every `npm install` of
+ * this package, since preparing one is what a consumer installing the
+ * DIRECTORY depends on.
+ */
+export const repoRoot: string = existsSync(join(enclosing, "engine", "metta.pl"))
+  ? enclosing
+  : bundled;
+
+/**
+ * Forget a prepared root, or every one of them.
+ *
+ * Nothing to forget on this host: a Node boot re-checks the checkout and reads
+ * every source from disk as it mounts, so there is no prepared state between
+ * two boots. The door exists because the browser has one and the two platform
+ * modules are the same module to everything above them.
+ */
+export function forgetRuntime(_root?: string): void {
+  // Deliberately empty; see above.
+}
 
 /** Resolve the host path accepted by loadFile and libraryPath. */
 export function resolvePath(path: string): string {

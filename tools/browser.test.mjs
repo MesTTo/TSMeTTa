@@ -2,11 +2,13 @@
  * Purpose: exercise the emitted browser package in Chromium over HTTP.
  * Guarantees: boot, wire answers, host callbacks, matching and evaluation status
  *   run in a page, with worker boot checked separately. [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
- * Owns resources: closes Chromium and the HTTP server, then removes the
- *   temporary _runtime sources so other suites inspect the checkout only.
+ * Owns resources: closes Chromium and the HTTP server. It leaves `_runtime/`
+ *   where the build put it: that directory is what an installed package mounts
+ *   and what `prepare` makes, so removing it after a run left the checkout in
+ *   the state a consumer install fails from.
  */
 import { strict as assert } from "node:assert";
-import { readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, extname, join, resolve } from "node:path";
 import { after, before, test } from "node:test";
@@ -100,11 +102,7 @@ before(async () => {
 after(async () => {
   try { await browser?.close(); }
   finally {
-    try {
-      if (server) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-    } finally {
-      await rm(join(root, "_runtime"), { recursive: true, force: true });
-    }
+    if (server) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   }
 });
 
@@ -293,6 +291,167 @@ test('rejects malformed runtime paths before mounting any source', async () => {
       assert.match(result.message, /manifest/);
       await page.unroute('**/runtime.json');
     }
+  } finally { await page.close(); }
+});
+
+/** Every request a page made for the runtime manifest or a wasm asset. */
+const engineRequests = (fetched) => ({
+  manifest: fetched.filter(path => path.endsWith('/runtime.json')).length,
+  wasm: fetched.filter(path => path.endsWith('.wasm')).length,
+  data: fetched.filter(path => path.endsWith('.data')).length,
+});
+
+test('prepares one root once however many engines boot on it', async () => {
+  // Twelve boots were twelve fetches and twelve validations of a 3.3 MB
+  // manifest, which a workspace booting per document pays every time.
+  const page = await browser.newPage();
+  const fetched = [];
+  page.on('request', request => fetched.push(new URL(request.url()).pathname));
+  try {
+    await page.goto(origin);
+    const answers = await page.evaluate(async () => {
+      const { metta } = await import('/browser/index.js');
+      const said = [];
+      for (let boots = 0; boots < 12; boots += 1) {
+        const m = await metta();
+        try { said.push(m.run('!(+ 20 22)')[0].texts[0]); } finally { m.dispose(); }
+      }
+      return said;
+    });
+    assert.deepEqual(answers, Array.from({ length: 12 }, () => '42'));
+    assert.deepEqual(engineRequests(fetched), { manifest: 1, wasm: 1, data: 1 });
+  } finally { await page.close(); }
+});
+
+test('shares one preparation between concurrent boots', async () => {
+  // The memo holds the PROMISE, so boots that start together wait on one
+  // preparation. Holding the result instead would let twelve concurrent boots
+  // miss and fetch twelve times, which is the case a worker pool hits first.
+  const page = await browser.newPage();
+  const fetched = [];
+  page.on('request', request => fetched.push(new URL(request.url()).pathname));
+  try {
+    await page.goto(origin);
+    const answers = await page.evaluate(async () => {
+      const { metta } = await import('/browser/index.js');
+      const engines = await Promise.all([metta(), metta(), metta(), metta()]);
+      try { return engines.map(m => m.run('!(+ 20 22)')[0].texts[0]); }
+      finally { for (const m of engines) m.dispose(); }
+    });
+    assert.deepEqual(answers, ['42', '42', '42', '42']);
+    assert.deepEqual(engineRequests(fetched), { manifest: 1, wasm: 1, data: 1 });
+  } finally { await page.close(); }
+});
+
+test('asks again after a runtime it refused', async () => {
+  // A refusal is not an answer. Remembering one would make the boot after a
+  // transient failure repeat the failure with no request behind it.
+  const page = await browser.newPage();
+  try {
+    await page.goto(origin);
+    await page.route('**/runtime.json', route => route.fulfill({ json: { version: 1, files: [] } }));
+    const refused = await page.evaluate(async () => {
+      const { metta } = await import('/browser/index.js');
+      try { await metta(); return null; } catch (error) { return error.code; }
+    });
+    assert.equal(refused, 'ERR_METTA_ENGINE');
+    await page.unroute('**/runtime.json');
+    const answer = await page.evaluate(async () => {
+      const { metta } = await import('/browser/index.js');
+      const m = await metta();
+      try { return m.run('!(+ 20 22)')[0].texts[0]; } finally { m.dispose(); }
+    });
+    assert.equal(answer, '42');
+  } finally { await page.close(); }
+});
+
+test('forgets a prepared root when asked to', async () => {
+  const page = await browser.newPage();
+  const fetched = [];
+  page.on('request', request => fetched.push(new URL(request.url()).pathname));
+  try {
+    await page.goto(origin);
+    const answers = await page.evaluate(async () => {
+      const { metta, forgetRuntime } = await import('/browser/index.js');
+      const said = [];
+      for (const forget of [false, true]) {
+        const m = await metta();
+        try { said.push(m.run('!(+ 20 22)')[0].texts[0]); } finally { m.dispose(); }
+        if (forget) forgetRuntime();
+      }
+      const m = await metta();
+      try { said.push(m.run('!(+ 20 22)')[0].texts[0]); } finally { m.dispose(); }
+      return said;
+    });
+    assert.deepEqual(answers, ['42', '42', '42']);
+    assert.deepEqual(engineRequests(fetched), { manifest: 2, wasm: 2, data: 2 });
+  } finally { await page.close(); }
+});
+
+test('compiles the engine from its URL so the browser can cache the compiled code', async () => {
+  // Chrome's WebAssembly code cache keys on the resource URL and is populated
+  // by the streaming calls alone, so bytes handed to the loader in memory are
+  // recompiled on every page load [source: https://v8.dev/blog/wasm-code-caching].
+  const page = await browser.newPage();
+  try {
+    await page.goto(origin);
+    const seen = await page.evaluate(async () => {
+      const counted = { compileStreaming: 0, compile: 0, instantiate: 0 };
+      for (const name of Object.keys(counted)) {
+        const original = WebAssembly[name].bind(WebAssembly);
+        WebAssembly[name] = (...args) => { counted[name] += 1; return original(...args); };
+      }
+      const { metta } = await import('/browser/index.js');
+      const m = await metta();
+      try { return { ...counted, answer: m.run('!(+ 20 22)')[0].texts[0] }; }
+      finally { m.dispose(); }
+    });
+    assert.deepEqual(seen, { compileStreaming: 1, compile: 0, instantiate: 0, answer: '42' });
+  } finally { await page.close(); }
+});
+
+test('compiles the fetched bytes when the response cannot be streamed', async () => {
+  // A server that answers the `.wasm` with any other Content-Type makes the
+  // browser refuse to stream it. That costs the code cache and must not cost
+  // the boot, so the fallback is a real path rather than a comment.
+  const page = await browser.newPage();
+  const bytes = await readFile(join(root, '_runtime', 'wasm', 'swipl-web.wasm'));
+  try {
+    await page.goto(origin);
+    await page.route('**/wasm/swipl-web.wasm', route => route.fulfill({
+      status: 200, contentType: 'application/octet-stream', body: bytes,
+    }));
+    const seen = await page.evaluate(async () => {
+      const counted = { compileStreaming: 0, compile: 0 };
+      for (const name of Object.keys(counted)) {
+        const original = WebAssembly[name].bind(WebAssembly);
+        WebAssembly[name] = (...args) => { counted[name] += 1; return original(...args); };
+      }
+      const { metta } = await import('/browser/index.js');
+      const m = await metta();
+      try { return { ...counted, answer: m.run('!(+ 20 22)')[0].texts[0] }; }
+      finally { m.dispose(); }
+    });
+    assert.deepEqual(seen, { compileStreaming: 1, compile: 1, answer: '42' });
+  } finally { await page.close(); }
+});
+
+test('names a wasm asset it cannot compile rather than aborting inside the loader', async () => {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(String(error)));
+  try {
+    await page.goto(origin);
+    await page.route('**/wasm/swipl-web.wasm', route => route.fulfill({
+      status: 200, contentType: 'application/wasm', body: Buffer.from('not a module'),
+    }));
+    const result = await page.evaluate(async () => {
+      const { metta } = await import('/browser/index.js');
+      try { await metta(); } catch (error) { return { code: error.code, message: error.message }; }
+    });
+    assert.equal(result.code, 'ERR_METTA_ENGINE', JSON.stringify(result));
+    assert.match(result.message, /swipl-web\.wasm is not a WebAssembly module/);
+    assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
 

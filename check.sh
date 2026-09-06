@@ -69,6 +69,13 @@ check_node_bench() {
 # none at all and there is no committed state to compare against. The hazard
 # is a working tree whose dist/ predates its src/, and rebuilding is what ends
 # it. The C seat's install lane is the same shape for the same reason.
+#
+# The build happens inside `npm pack`, which the consumer program runs: packing
+# runs `prepare`, and `prepare` is what makes dist/, browser/ and _runtime/.
+# The lane used to build dist/ here and then read the package through a SYMLINK
+# to this directory, so the packed SHAPE was never what it saw and a package
+# that carried no engine passed it [measured 2026-09-07: 165 of 300 files in a
+# `file:` install, the whole of _runtime/ missing].
 check_node_dist() {
     [ -d "$HERE/extensions/node" ] || return 0
     [ -d "$HERE/extensions/node/node_modules" ] || {
@@ -77,8 +84,7 @@ check will not run; npm ci fetches swipl-wasm and a gate does not reach the \
 network" >&2
         return 0
     }
-    ( cd "$HERE/extensions/node" && bounded npm run --silent build:dist &&
-      bounded node tools/dist-consumer.mjs )
+    ( cd "$HERE/extensions/node" && bounded node tools/dist-consumer.mjs )
 }
 run GATE node-dist check_node_dist
 

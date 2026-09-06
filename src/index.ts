@@ -431,6 +431,7 @@ export {
   type Scope,
   type ValueEvent,
   boot,
+  forgetRuntime,
 } from "./engine.ts";
 
 // The codec.

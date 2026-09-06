@@ -43,7 +43,14 @@
  *   Future Enhancements: None
  */
 
-import { mountInto, packageRoot, prepareRuntime, repoRoot, type RuntimeFS } from "./platform.ts";
+import {
+  forgetRuntime,
+  mountInto,
+  packageRoot,
+  prepareRuntime,
+  repoRoot,
+  type RuntimeFS,
+} from "./platform.ts";
 import { loadSWIPL } from "./wasm.ts";
 
 import { Atom, Expression, G, Grounded, lift } from "./atom.ts";
@@ -70,7 +77,7 @@ import {
   toTransport,
 } from "./wire.ts";
 
-export { packageRoot, repoRoot };
+export { forgetRuntime, packageRoot, repoRoot };
 const REPO_ROOT = repoRoot;
 const VIRTUAL_ROOT = "/metta";
 

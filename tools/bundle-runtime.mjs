@@ -1,22 +1,29 @@
 /**
- * Purpose: copy the engine tree into this package before it is packed, so an
+ * Purpose: copy the engine tree into this package when it is prepared, so an
  *   installed copy carries the engine it mounts.
  *
  * `files` in package.json cannot name a path outside the package directory,
  * and the engine lives at the repository root while this seat lives at
- * `extensions/node/`. So the tarball gets its own copy under `_runtime/`,
- * which src/engine.ts prefers whenever it exists. Without it a published
- * package holds the bridge and not the engine: measured 2026-08-29, a fresh
- * `npm install` on a machine outside any checkout booted into
- * `scandir '<consumer project>\engine'`, because two levels above an
+ * `extensions/node/`. So the package gets its own copy under `_runtime/`,
+ * which src/platform.ts reads when there is no enclosing checkout. Without it
+ * a published package holds the bridge and not the engine: measured
+ * 2026-08-29, a fresh `npm install` on a machine outside any checkout booted
+ * into `scandir '<consumer project>\engine'`, because two levels above an
  * installed package is the consumer's own project.
+ *
+ * This runs from `prepare`, not from `prepack`, and the difference is a whole
+ * class of consumer. npm's directory fetcher runs `prepare` and no other
+ * script when it packs a `file:` dependency
+ * [source: pacote lib/dir.js, "we *only* run prepare"], so an artefact made
+ * for a pack alone was never there for `npm install file:.../extensions/node`:
+ * 135 of the package's 300 files, the whole engine, were missing from what
+ * arrived, and the boot searched the consumer's own project for `engine/`
+ * [measured 2026-09-07; fixture=ai-tmp/consumer-links].
  *
  * Written in Node rather than as a shell line because `npm pack` runs on
  * whatever machine publishes, Windows included.
  *
  * Guarantees:
- *   - `--clean` removes exactly what a bundling run wrote, so a checkout is
- *     left as it was found and `git status` stays quiet after a pack
  *   - build products are excluded by extension: a shipped `.qlf` shadows the
  *     source it was built from and ties the package to one SWI version, and a
  *     host `.so` is meaningless to a WebAssembly engine
@@ -44,11 +51,6 @@ function wanted(source) {
   if (SKIP_DIRS.has(name)) return false;
   const dot = name.lastIndexOf(".");
   return dot < 0 || !SKIP.has(name.slice(dot));
-}
-
-if (process.argv.includes("--clean")) {
-  rmSync(BUNDLE, { recursive: true, force: true });
-  process.exit(0);
 }
 
 rmSync(BUNDLE, { recursive: true, force: true });

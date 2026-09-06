@@ -37,16 +37,30 @@ cd extensions/node && npm pack      # writes metta-node-<version>.tgz
 npm install /path/to/metta-node-<version>.tgz
 ```
 
-`npm pack` runs `tools/bundle-runtime.mjs` first, which copies the engine into
-the tarball, and removes it again afterwards. Without that a published package
-would carry the bridge and not the engine it drives.
+A directory works too, and gets the same package:
 
-`dist/` is a build product, not a checked-in one: `npm run build:dist` writes
-it and npm's `prepare` hook runs that on install. Import `src/` as below while
-working in this checkout, or build first: a `dist/` older than the `src/`
-beside it is a copy of an older codec, and the extension's own suites never load it
-because they compile source into `build/`. `sh check.sh node-dist` builds it
-and runs a consumer through the result.
+```sh
+npm install file:/path/to/PeTTa/extensions/node
+```
+
+`dist/`, `browser/` and `_runtime/` are build products, not checked-in ones,
+and npm's `prepare` hook writes all three. `prepare` rather than `prepack`
+because prepare is the hook a consumer installing the DIRECTORY runs: npm's
+directory fetcher runs it and no other script, so while `_runtime/` was made
+by `prepack` alone a `file:` install carried the bridge and not the engine it
+drives, and the boot went looking for `engine/` in the consumer's own project.
+
+Import `src/` as below while working in this checkout, or build first: a
+`dist/` older than the `src/` beside it is a copy of an older codec, and the
+extension's own suites never load it because they compile source into
+`build/`. `sh check.sh node-dist` packs the package, unpacks it where no
+checkout encloses it, and runs a consumer through the result.
+
+A checkout that has run `npm install` here therefore carries an `_runtime/`
+copy of `engine/` and `lib/`. It is a snapshot, and the enclosing checkout
+wins over it: the engine you edit is the engine this seat runs, and the copy
+answers only where there is no checkout to read, which is what an installed
+package is.
 
 ```ts
 import { metta, S, V } from "./extensions/node/src/index.ts";
@@ -88,6 +102,27 @@ emitted browser files directly, omitting `root` uses their sibling
 `_runtime/` directory. `metta-node/browser` explicitly selects that entry.
 Module workers use the same API. Missing assets reject with
 `ERR_METTA_SOURCE` before allocating the wasm instance.
+
+Each root is fetched, validated and compiled once. The first `metta()` against
+a root reads its `runtime.json`, checks every source path in it and compiles
+`swipl-web.wasm`; every later boot on that root reuses all three, and boots
+that start together share the one preparation rather than repeating it.
+Twelve boots on one root make one request for each asset, where they used to
+make twelve. A boot that FAILS is not remembered, so a transient error does
+not become a permanent one. `forgetRuntime()` drops every prepared root, and
+`forgetRuntime(root)` drops one, for a page that has replaced what a root
+serves without reloading.
+
+Serve `swipl-web.wasm` as `application/wasm`. The engine module is compiled
+with `WebAssembly.compileStreaming` from its URL, which is what lets Chrome
+cache the compiled code rather than compiling the module again on the next
+page load; that cache is keyed by the resource URL and is populated by the
+streaming calls alone. Measured over Chromium's own `v8.wasm` trace events, a
+second page load of a page that has run some MeTTa compiles 1 wasm function
+after streaming and 1062 from bytes, and boots in 785 ms against 1042. A
+response the browser will not stream, and a `root` that is not `http:` or
+`https:`, fall back to compiling the fetched bytes: the boot still works and
+only the cache is lost.
 
 The browser uses the same atoms, matching functions, host operations,
 `evalStatus`, and trace implementation as Node. Browser satellites share

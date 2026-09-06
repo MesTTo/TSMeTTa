@@ -10,8 +10,13 @@
 npm ci --prefix extensions/node
 ```
 
-That fetches swipl-wasm and builds the TypeScript through the package's own
-`prepare` script. Node 22.18 or newer, which is what package.json declares.
+That fetches swipl-wasm and builds the TypeScript, the browser bundle and the
+engine copy the package mounts, through the package's own `prepare` script, so
+a checkout that has run it carries dist/, browser/ and _runtime/. Node 22.18 or
+newer, which is what package.json declares. `prepare` rather than `prepack`
+because it is the one script npm's directory fetcher runs, so
+`npm install file:/path/to/extensions/node` gets a package with the engine in
+it.
 
 ## First call
 

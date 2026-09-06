@@ -72,10 +72,16 @@
 %     and not a rule of the tag: a space operation is built as
 %     `Term =.. [Space, Rel|Args]`, so any symbol written through is a
 %     registered name, and requiring the prefix on the host side made one such
-%     name un-decodable and cost the whole registry read rather than the entry
+%     name un-decodable and cost the whole registry read rather than the entry.
+%     The same demand survived on the ENGINE side, in this file's own decoder,
+%     until a consumer photographing spaces sent `(collapse (get-atoms
+%     my_space_name))` back and lost every later program on that engine
 %     [tested: "decodes a portable space reference into an interned handle",
 %     "reads a space reference back as an interned handle",
-%     "names a space the engine registered without an ampersand"]
+%     "names a space the engine registered without an ampersand",
+%     "decodes a space the engine registered without an ampersand",
+%     "walks a program that names a bare space and then another on one engine";
+%     commit=WORKTREE]
 %   - runnable free variables retain source names in their wire value and host
 %     text [tested: "keeps a source variable's own name in the answer and in
 %     the text"]
@@ -341,8 +347,21 @@ metta_node_decode_([Tag, Payload|R], R, Names, Names, T) :- metta_node_tag(Tag, 
     metta_node_atom(Payload, A), atom_string(A, T).
 metta_node_decode_([Tag, Payload|R], R, Names, Names, T) :- metta_node_tag(Tag, b), !,
     metta_node_atom(Payload, T), ( T == true ; T == false ).
+% A p payload is a space NAME, and any symbol written through is one: a space
+% operation is built as `Term =.. [Space, Rel|Args]`, so `(= (space) my_space)`
+% with a write through it registers `my_space` and the catalogue creates it
+% [source: engine/spaces/catalog.pl, metta_space_name/1]. The prefix is how the
+% built-in spaces are spelled, which is the reading the header states and the
+% host side has taken since the registry read was fixed; this clause was the
+% one place still demanding it. It refused the whole TERM rather than the leaf,
+% because a failing decode raises metta_node_undecodable/1 over the entire
+% wire, so once a host had interned a bare name every later term mentioning it
+% -- `(collapse (get-atoms my_space))`, which is how a consumer photographs a
+% space -- died on that engine
+% [tested: "decodes a space the engine registered without an ampersand",
+% "walks a program that names a bare space and then another on one engine"].
 metta_node_decode_([Tag, Payload|R], R, Names, Names, T) :- metta_node_tag(Tag, p), !,
-    metta_node_atom(Payload, T), sub_atom(T, 0, 1, _, '&').
+    metta_node_atom(Payload, T).
 metta_node_decode_([Tag, Payload|R], R, Names, Names, T) :- metta_node_tag(Tag, o), !,
     metta_node_atom(Payload, A),
     atom_number(A, Id),

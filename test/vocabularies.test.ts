@@ -7,7 +7,7 @@
  *   - the tables are checked against a BOOTED engine rather than against a
  *     copy of the catalog kept here, so the two cannot drift silently
  *     [tested: "every vocabulary here matches the engine's own";
- *     commit=WORKTREE]
+ *     commit=5e0ae6c22d604c4b980766e3cc4811ee545e5c9e]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

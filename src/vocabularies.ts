@@ -13,7 +13,7 @@
  *     commit=bbb512316280110a747e31c26adfc31e8c5104be]
  *   - `AlgebraLaw` publishes every accepted declaration spelling, read from
  *     the same live catalog row [tested: "every vocabulary here matches the
- *     engine's own"; commit=WORKTREE]
+ *     engine's own"; commit=5e0ae6c22d604c4b980766e3cc4811ee545e5c9e]
  *   - a value's KEY is this package's own casing map applied to the word, so
  *     `AnswerPolicy.bestFirst` is `"best-first"`, exactly as `S.bestFirst` is
  *     the symbol `best-first`. A word the map leaves alone keeps its exact

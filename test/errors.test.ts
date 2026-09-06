@@ -182,7 +182,9 @@ describe("the error family", () => {
     assert.match(deep.message, /METTA_STACK_LIMIT/, "the refusal names its own remedy");
     assert.ok(engineError("error(resource_error(stack), _)") instanceof StackLimitError);
 
-    const failed = engineError("assert/2: MeTTa assertion failed: false (MeTTa assertion failed)");
+    // The engine's own wording, culprit included: a failure blames the MeTTa
+    // head the program wrote, never the Prolog predicate that raised.
+    const failed = engineError("assert: MeTTa assertion failed: false (MeTTa assertion failed)");
     assert.ok(failed instanceof AssertionError);
     assert.equal(failed.code, "ERR_METTA_ASSERTION");
 
@@ -268,11 +270,13 @@ describe("an assertion failure crossing the seat", () => {
   // names the missing answers and nothing else. 1 and 2 are both produced here
   // and neither is expected, and this seat replays the message through its own
   // capture window, so the one-sided shape has to survive that too.
-  it("reports a containment one-sidedly", () => {
+  it("reports a containment one-sidedly, blaming the head the program wrote", () => {
     assert.throws(
       () => m.run("!(assertIncludes (superpose (1 2)) (7))"),
       (raised: unknown) => {
         const text = (raised as Error).message;
+        assert.match(text, /assertIncludes: MeTTa assertion failed/);
+        assert.doesNotMatch(text, /assert-includes-answers/);
         assert.match(text, /MeTTa assertion failed: \(assertIncludes \(superpose \(1 2\)\) \(7\)\)/);
         assert.match(text, /missing: \(7\)/);
         assert.doesNotMatch(text, /excess/);

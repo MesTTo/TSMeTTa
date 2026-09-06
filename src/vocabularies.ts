@@ -11,6 +11,9 @@
  *     reads `&metta` rather than reading a copy of this file, so the two
  *     cannot drift [tested: "every vocabulary here matches the engine's own";
  *     commit=bbb512316280110a747e31c26adfc31e8c5104be]
+ *   - `AlgebraLaw` publishes every accepted declaration spelling, read from
+ *     the same live catalog row [tested: "every vocabulary here matches the
+ *     engine's own"; commit=5e0ae6c22d604c4b980766e3cc4811ee545e5c9e]
  *   - a value's KEY is this package's own casing map applied to the word, so
  *     `AnswerPolicy.bestFirst` is `"best-first"`, exactly as `S.bestFirst` is
  *     the symbol `best-first`. A word the map leaves alone keeps its exact
@@ -97,6 +100,28 @@ export const AgendaPolicy = {
 
 /** One value of the `agenda-policy` vocabulary. */
 export type AgendaPolicy = (typeof AgendaPolicy)[keyof typeof AgendaPolicy];
+
+/** The `algebra-law` vocabulary, in the catalog's own order. */
+export const AlgebraLaw = {
+  combineAssociative: "combine-associative",
+  combineCommutative: "combine-commutative",
+  extendAssociative: "extend-associative",
+  extendCommutative: "extend-commutative",
+  leftDistributive: "left-distributive",
+  rightDistributive: "right-distributive",
+  combineIdempotent: "combine-idempotent",
+  combineZeroIdentity: "combine-zero-identity",
+  extendOneIdentity: "extend-one-identity",
+  extendZeroAnnihilates: "extend-zero-annihilates",
+  contraction: "contraction",
+  associative: "associative",
+  commutative: "commutative",
+  distributive: "distributive",
+  idempotent: "idempotent",
+} as const;
+
+/** One value of the `algebra-law` vocabulary. */
+export type AlgebraLaw = (typeof AlgebraLaw)[keyof typeof AlgebraLaw];
 
 /** The `answer-policy` vocabulary, in the catalog's own order. */
 export const AnswerPolicy = {
@@ -381,6 +406,7 @@ export interface Vocabularies {
   readonly "NoMatchEnum": typeof NoMatchEnum;
   readonly "OutOfClausesEnum": typeof OutOfClausesEnum;
   readonly "agenda-policy": typeof AgendaPolicy;
+  readonly "algebra-law": typeof AlgebraLaw;
   readonly "answer-policy": typeof AnswerPolicy;
   readonly "atomicity": typeof Atomicity;
   readonly "cache-mode": typeof CacheMode;
@@ -418,6 +444,7 @@ export const VOCABULARIES: Vocabularies = {
   "NoMatchEnum": NoMatchEnum,
   "OutOfClausesEnum": OutOfClausesEnum,
   "agenda-policy": AgendaPolicy,
+  "algebra-law": AlgebraLaw,
   "answer-policy": AnswerPolicy,
   "atomicity": Atomicity,
   "cache-mode": CacheMode,

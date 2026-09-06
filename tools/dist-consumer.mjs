@@ -50,7 +50,15 @@ const packageRoot = fileURLToPath(new URL("../", import.meta.url));
  * `node:` builtins; importing `metta-node/atom` asks for three, none of them.
  */
 function engineFreeSubpaths() {
-  const scratch = mkdtempSync(join(packageRoot, "ai-tmp", "consumer-"));
+  // `ai-tmp/` is gitignored, so it exists only where somebody has already put
+  // a scratch file in it. This read it and assumed it, so the lane passed in
+  // the checkout its author worked in and failed with ENOENT on every fresh
+  // clone and in CI. The seat's two other repository-local scratch sites
+  // create the root first (test/coverage.test.ts packageTree, and
+  // test/coverage-gaps.test.ts's manifest case), and this is that same line.
+  const scratchRoot = join(packageRoot, "ai-tmp");
+  mkdirSync(scratchRoot, { recursive: true });
+  const scratch = mkdtempSync(join(scratchRoot, "consumer-"));
   try {
     mkdirSync(join(scratch, "node_modules"));
     symlinkSync(packageRoot, join(scratch, "node_modules", "metta-node"), "dir");

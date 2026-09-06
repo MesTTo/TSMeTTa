@@ -11,9 +11,9 @@
  *     racing to repeat it. Twelve boots were twelve fetches and twelve
  *     validations of a 3.3 MB manifest [tested: "prepares one root once
  *     however many engines boot on it", "shares one preparation between
- *     concurrent boots"; commit=WORKTREE]
+ *     concurrent boots"; commit=c478620e8c8a6690212528c64c30012ab69acfa3]
  *   - a refusal is never remembered, so the boot after a failed one asks again
- *     [tested: "asks again after a runtime it refused"; commit=WORKTREE]
+ *     [tested: "asks again after a runtime it refused"; commit=c478620e8c8a6690212528c64c30012ab69acfa3]
  *   - the engine module is compiled from its URL through
  *     WebAssembly.compileStreaming wherever the root is served over HTTP,
  *     which is the only compilation Chrome's code cache keys: it keys on the
@@ -27,12 +27,12 @@
  *     command=node ai-tmp/measure-wasmtrace2.mjs and ai-tmp/measure-codecache.mjs;
  *     fixture=extensions/node/_runtime served over HTTP to one persistent
  *     Chromium profile, six page loads per arm, the module made hot with 4000
- *     directives so V8 reaches its caching threshold; commit=WORKTREE].
+ *     directives so V8 reaches its caching threshold; commit=c478620e8c8a6690212528c64c30012ab69acfa3].
  *     A root that cannot be streamed, and a response the browser refuses to
  *     stream, fall back to compiling the fetched bytes [tested: "compiles the
  *     engine from its URL so the browser can cache the compiled code",
  *     "compiles the fetched bytes when the response cannot be streamed";
- *     commit=WORKTREE]
+ *     commit=c478620e8c8a6690212528c64c30012ab69acfa3]
  * Owns resources: the prepared table holds one root's sources, data image and
  *   compiled module until forgetRuntime drops them; the engine owns the
  *   WebAssembly filesystem receiving the copy.

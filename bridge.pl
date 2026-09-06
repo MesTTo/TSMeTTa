@@ -81,7 +81,7 @@
 %     "names a space the engine registered without an ampersand",
 %     "decodes a space the engine registered without an ampersand",
 %     "walks a program that names a bare space and then another on one engine";
-%     commit=WORKTREE]
+%     commit=c478620e8c8a6690212528c64c30012ab69acfa3]
 %   - runnable free variables retain source names in their wire value and host
 %     text [tested: "keeps a source variable's own name in the answer and in
 %     the text"]

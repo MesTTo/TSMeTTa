@@ -143,14 +143,25 @@ export const Atomicity = {
 /** One value of the `atomicity` vocabulary. */
 export type Atomicity = (typeof Atomicity)[keyof typeof Atomicity];
 
-/** The `cache-mode` vocabulary, in the catalog's own order. */
-export const CacheMode = {
+/** The `cache-policy` vocabulary, in the catalog's own order. */
+export const CachePolicy = {
   force: "force",
   refuse: "refuse",
+  plain: "plain",
+  incremental: "incremental",
+  monotonic: "monotonic",
+  lazy: "lazy",
+  shared: "shared",
+  private: "private",
+  subsumptive: "subsumptive",
+  lattice: "lattice",
+  maxAnswers: "max-answers",
+  subgoalAbstract: "subgoal-abstract",
+  answerAbstract: "answer-abstract",
 } as const;
 
-/** One value of the `cache-mode` vocabulary. */
-export type CacheMode = (typeof CacheMode)[keyof typeof CacheMode];
+/** One value of the `cache-policy` vocabulary. */
+export type CachePolicy = (typeof CachePolicy)[keyof typeof CachePolicy];
 
 /** The `delivery` vocabulary, in the catalog's own order. */
 export const Delivery = {
@@ -409,7 +420,7 @@ export interface Vocabularies {
   readonly "algebra-law": typeof AlgebraLaw;
   readonly "answer-policy": typeof AnswerPolicy;
   readonly "atomicity": typeof Atomicity;
-  readonly "cache-mode": typeof CacheMode;
+  readonly "cache-policy": typeof CachePolicy;
   readonly "delivery": typeof Delivery;
   readonly "determinism": typeof Determinism;
   readonly "effect-class": typeof EffectClass;
@@ -447,7 +458,7 @@ export const VOCABULARIES: Vocabularies = {
   "algebra-law": AlgebraLaw,
   "answer-policy": AnswerPolicy,
   "atomicity": Atomicity,
-  "cache-mode": CacheMode,
+  "cache-policy": CachePolicy,
   "delivery": Delivery,
   "determinism": Determinism,
   "effect-class": EffectClass,

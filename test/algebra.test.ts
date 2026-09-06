@@ -266,8 +266,11 @@ describe("a tagged program", () => {
 
     // An algebra without combine-associative may not fuse, and says so rather
     // than fusing quietly.
+    // Declared in the space that evaluates: an algebra row names its owner and
+    // the engine reads the owner's row before the shipped `global` ones, so a
+    // sibling's declaration is not in scope here.
     const named = `unfused${String(counter++)}`;
-    await declare(m.self, named, { combine: "max", extend: "*", zero: 0, one: 1 });
+    await declare(kb, named, { combine: "max", extend: "*", zero: 0, one: 1 });
     const unfused = await evaluate(kb, S.path(S.a, S.c), { algebra: named });
     assert.equal(unfused.plan[0]?.applied, false);
     assert.deepEqual(unfused.plan[0]?.missingLaws, ["combine-associative"]);
@@ -276,14 +279,14 @@ describe("a tagged program", () => {
 
   it("refuses the second spend of one premise", async () => {
     const named = `linear${String(counter++)}`;
-    await declare(m.self, named, {
+    const kb = fresh();
+    await declare(kb, named, {
       combine: "+",
       extend: "*",
       zero: 0,
       one: 1,
       requires: ["linear"],
     });
-    const kb = fresh();
     kb.add(
       taggedFact(1, S.coin()),
       // One rule that consumes the same premise twice: under a linear algebra
@@ -399,8 +402,9 @@ describe("a tagged program", () => {
       carrier: [0, 1],
     });
     assert.equal(
-      algebra.atom.text,
-      "(algebra readable + * 0 1 (laws combine-associative extend-associative) (carrier 0 1) (requires))",
+      algebra.rowOwnedBy("&self").text,
+      "(algebra readable + * 0 1 (laws combine-associative extend-associative)"
+        + " (carrier 0 1) (requires) &self)",
     );
   });
 
@@ -423,8 +427,8 @@ describe("a tagged program", () => {
       requires: [astral, high],
     });
     assert.equal(
-      algebra.atom.text,
-      `(algebra ordered + * 0 1 (laws) (carrier) (requires ${high} ${astral}))`,
+      algebra.rowOwnedBy("&self").text,
+      `(algebra ordered + * 0 1 (laws) (carrier) (requires ${high} ${astral}) &self)`,
     );
     // Declaration order does not decide it either way.
     const other = new Algebra("ordered", {
@@ -434,6 +438,6 @@ describe("a tagged program", () => {
       one: 1,
       requires: [high, astral],
     });
-    assert.equal(other.atom.text, algebra.atom.text);
+    assert.equal(other.rowOwnedBy("&self").text, algebra.rowOwnedBy("&self").text);
   });
 });

@@ -377,8 +377,15 @@ export class Algebra {
     return this.apply(space, this.extend, left, right);
   }
 
-  /** The `(algebra ...)` row this declaration is, as data. */
-  get atom(): Atom {
+  /**
+   * The `(algebra ...)` row this declaration is, as data, owned by one space.
+   *
+   * The owner is the row's last field and the engine reads it: a declaration
+   * is found from the context that made it, with the shipped presets' `global`
+   * as the fallback, so a row written without one would be visible from every
+   * space [source: engine/metta/effects.pl, metta_algebra_descriptor_fresh/9].
+   */
+  rowOwnedBy(owner: string): Atom {
     return expr(
       sym("algebra"),
       sym(this.name),
@@ -395,6 +402,7 @@ export class Algebra {
       expr(sym("laws"), ...[...this.laws].sort(byCodePoint).map((law) => sym(law))),
       expr(sym("carrier"), ...this.carrier),
       expr(sym("requires"), ...[...this.requires].sort(byCodePoint).map((each) => sym(each))),
+      sym(owner),
     );
   }
 
@@ -508,15 +516,23 @@ function carrierName(carrier: Carrier): string {
 }
 
 /** The algebra one name resolves to here, or nothing. */
-export async function algebraOf(catalog: Space, name: string): Promise<Algebra | undefined> {
+export async function algebraOf(
+  catalog: Space,
+  name: string,
+  owner?: string,
+): Promise<Algebra | undefined> {
   const shipped = Object.hasOwn(PRESETS, name) ? PRESETS[name] : undefined;
   if (shipped !== undefined) return shipped;
-  return catalogDeclaration(catalog, name);
+  return catalogDeclaration(catalog, name, owner);
 }
 
 /** The algebra one name resolves to here, or a refusal naming the presets. */
-export async function requireAlgebra(catalog: Space, name: string): Promise<Algebra> {
-  const found = await algebraOf(catalog, name);
+export async function requireAlgebra(
+  catalog: Space,
+  name: string,
+  owner?: string,
+): Promise<Algebra> {
+  const found = await algebraOf(catalog, name, owner);
   if (found !== undefined) return found;
   throw new AlgebraDeclarationError(
     `algebra_not_declared(${name}); shipped presets are ${Object.keys(PRESETS).join(", ")}, ` +
@@ -524,13 +540,17 @@ export async function requireAlgebra(catalog: Space, name: string): Promise<Alge
   );
 }
 
-/** Resolve any carrier spelling against one runtime catalog. */
-export async function resolve(catalog: Space, carrier: Carrier): Promise<Algebra> {
+/** Resolve any carrier spelling against one runtime catalog, for one owner. */
+export async function resolve(
+  catalog: Space,
+  carrier: Carrier,
+  owner?: string,
+): Promise<Algebra> {
   if (carrier instanceof Algebra) {
-    const registered = await algebraOf(catalog, carrier.name);
+    const registered = await algebraOf(catalog, carrier.name, owner);
     return registered ?? carrier;
   }
-  return requireAlgebra(catalog, carrierName(carrier));
+  return requireAlgebra(catalog, carrierName(carrier), owner);
 }
 
 function headed(atom: Atom, name: string): atom is Expression {
@@ -547,29 +567,49 @@ function namesIn(atom: Atom | undefined, head: string): string[] {
   return atom.items.slice(1).filter((item): item is Sym => item instanceof Sym).map((s) => s.name);
 }
 
-async function catalogDeclaration(catalog: Space, name: string): Promise<Algebra | undefined> {
+async function catalogDeclaration(
+  catalog: Space,
+  name: string,
+  owner?: string,
+): Promise<Algebra | undefined> {
+  // Rows are collected rather than taken on sight: a name may have one row per
+  // owning context, and which of them answers depends on who is asking. A
+  // caller that names its space reads that space's row and then the shipped
+  // `global` one, which is the engine's own order; a caller holding only the
+  // catalog has no context to prefer, so it reads `global` and then whatever
+  // is there, which is what this answered before rows had owners at all.
+  const rows: { owner: string; atom: Expression }[] = [];
   for await (const atom of catalog.atoms()) {
-    if (!headed(atom, "algebra") || atom.items.length !== 9) continue;
+    if (!headed(atom, "algebra") || atom.items.length !== 10) continue;
     const declared = atom.items[1];
     if (!(declared instanceof Sym) || declared.name !== name) continue;
-    const combine = atom.items[2];
-    const extend = atom.items[3];
-    if (!(combine instanceof Sym) || !(extend instanceof Sym)) {
-      throw new AlgebraDeclarationError(`algebra_catalog_operations_malformed(${name})`);
-    }
-    const carrier = atom.items[7];
-    return new Algebra(name, {
-      combine: combine.name,
-      extend: extend.name,
-      zero: atom.items[4] as Atom,
-      one: atom.items[5] as Atom,
-      laws: namesIn(atom.items[6], "laws"),
-      carrier: headed(carrier as Atom, "carrier") ? (carrier as Expression).items.slice(1) : [],
-      requires: namesIn(atom.items[8], "requires"),
-      ...(await catalogOrder(catalog, name)),
-    });
+    // By TEXT, not by class: a space name is an ordinary symbol in the row a
+    // preset writes and a space operand in the row a declaration writes, and
+    // both spell the owner the same way.
+    rows.push({ owner: (atom.items[9] as Atom).text, atom: atom as Expression });
   }
-  return undefined;
+  const chosen =
+    (owner === undefined ? undefined : rows.find((row) => row.owner === owner)) ??
+    rows.find((row) => row.owner === "global") ??
+    (owner === undefined ? rows[0] : undefined);
+  if (chosen === undefined) return undefined;
+  const items = chosen.atom.items;
+  const combine = items[2];
+  const extend = items[3];
+  if (!(combine instanceof Sym) || !(extend instanceof Sym)) {
+    throw new AlgebraDeclarationError(`algebra_catalog_operations_malformed(${name})`);
+  }
+  const carrier = items[7];
+  return new Algebra(name, {
+    combine: combine.name,
+    extend: extend.name,
+    zero: items[4] as Atom,
+    one: items[5] as Atom,
+    laws: namesIn(items[6], "laws"),
+    carrier: headed(carrier as Atom, "carrier") ? (carrier as Expression).items.slice(1) : [],
+    requires: namesIn(items[8], "requires"),
+    ...(await catalogOrder(catalog, name)),
+  });
 }
 
 async function catalogOrder(
@@ -603,7 +643,7 @@ export async function declare(
 ): Promise<Atom> {
   const catalog = space.catalog;
   if (name === "") throw new AlgebraDeclarationError("algebra_name_must_be_a_nonempty_symbol");
-  if ((await algebraOf(catalog, name)) !== undefined) {
+  if ((await algebraOf(catalog, name, space.name)) !== undefined) {
     throw new AlgebraDeclarationError(`algebra_already_declared(${name})`);
   }
   if (declaration.combine === "") {
@@ -615,10 +655,12 @@ export async function declare(
   const algebra = new Algebra(name, declaration);
   // The laws are checked in the SPACE, because a declared operation may be an
   // equation that space holds; the row lands in the catalog, because that is
-  // where the engine reads it from.
+  // where the engine reads it from, and it names this space as its owner so
+  // the engine finds it here and not from a sibling.
   validateLaws(space, algebra);
-  catalog.add(algebra.atom);
-  return algebra.atom;
+  const row = algebra.rowOwnedBy(space.name);
+  catalog.add(row);
+  return row;
 }
 
 function counterexample(
@@ -871,7 +913,7 @@ export class TaggedAnswer {
         "this answer carries no owning space for algebra reinterpretation",
       );
     }
-    const algebra = await resolve(space, carrier);
+    const algebra = await resolve(space, carrier, space.name);
     const traces = this.#derivations.length > 0 ? this.#derivations : [trace(-1, this.tag)];
     return new TaggedAnswer(
       this.value,
@@ -1137,7 +1179,7 @@ export async function evaluate(
   options: EvaluateOptions,
 ): Promise<AlgebraEvaluation> {
   const catalog = options.catalog ?? space.catalog;
-  const algebra = await resolve(catalog, options.algebra);
+  const algebra = await resolve(catalog, options.algebra, space.name);
   await requireContextCapabilities(catalog, space, algebra);
   const goal = toAtom(query);
   const stored = await space.atoms().toArray();

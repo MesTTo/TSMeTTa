@@ -672,8 +672,8 @@ function groundedText(value: unknown): string {
  *
  * The DIGITS are `Number.prototype.toString`'s, which ECMAScript defines as
  * the shortest decimal that reads back to the same binary64 and which is what
- * SWI's `number_codes/2` and Python's `repr` select too. The LAYOUT is the
- * arbiter's, and it is neither host's own: with D the significand stripped of
+ * SWI's `number_codes/2` and Python's `repr` select too. The LAYOUT is
+ * LeaTTa's, and it is neither host's own: with D the significand stripped of
  * leading and trailing zeros and KK the exponent making the value `0.D*10^KK`,
  * print positionally while KK is in -4..16 and scientifically otherwise,
  * exponent KK-1, minus sign only, never a plus, never zero-padded

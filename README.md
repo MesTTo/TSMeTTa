@@ -680,7 +680,7 @@ resolves both subpaths through Node's own resolver].
 | `metta-node/tokens` | reader classes of the host's own |
 | `metta-node/testing` | atom generators, a property runner, the conformance checks |
 | `metta-node/version` | the version this build declares |
-| `metta-node/vocabularies` | all 32 of the engine's closed value sets, as unions |
+| `metta-node/vocabularies` | the engine's closed value sets, as unions |
 | `metta-node/wire` | the codec, for a conformance kit |
 
 ## How a host type crosses

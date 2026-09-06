@@ -138,7 +138,7 @@ subpaths and costs nothing unimported: `metta-node/ambient` (a lazily booted
 default engine), `/spaces`, `/structures` (`AlphaSet`, `PatternMap`,
 `MatchIndex`, `ClosureView`, `TabledMap`), `/matching` (unification and alpha
 keys, no engine needed), `/testing` (generators and a shrinking property
-runner), `/vocabularies` (the engine's 32 closed value sets, checked against
+runner), `/vocabularies` (the engine's closed value sets, checked against
 `&metta`), `/strategies`, `/paths`, `/parallel`, `/subscribe`, `/derivation`,
 `/provider`, `/wire`, `/convert`, `/integrate`, `/algebra`, `/remote`,
 `/arrays`, `/tables`, `/tokens`, `/saga`, `/lint`, `/manifest`, `/events`,

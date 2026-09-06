@@ -6,6 +6,8 @@
  * Guarantees:
  *   - the tables are checked against a BOOTED engine rather than against a
  *     copy of the catalog kept here, so the two cannot drift silently
+ *     [tested: "every vocabulary here matches the engine's own";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

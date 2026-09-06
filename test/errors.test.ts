@@ -263,4 +263,21 @@ describe("an assertion failure crossing the seat", () => {
       },
     );
   });
+
+  // A containment allows an answer in excess of its expectation, so its report
+  // names the missing answers and nothing else. 1 and 2 are both produced here
+  // and neither is expected, and this seat replays the message through its own
+  // capture window, so the one-sided shape has to survive that too.
+  it("reports a containment one-sidedly", () => {
+    assert.throws(
+      () => m.run("!(assertIncludes (superpose (1 2)) (7))"),
+      (raised: unknown) => {
+        const text = (raised as Error).message;
+        assert.match(text, /MeTTa assertion failed: \(assertIncludes \(superpose \(1 2\)\) \(7\)\)/);
+        assert.match(text, /missing: \(7\)/);
+        assert.doesNotMatch(text, /excess/);
+        return true;
+      },
+    );
+  });
 });

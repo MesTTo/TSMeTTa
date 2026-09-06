@@ -9,6 +9,12 @@
  *     [tested: "discovers every published condition and its producer";
  *     "contains no retired strict-scope conditions";
  *     commit=f634a8072585acef6195994b1220cb822575822e]
+ *   - a failing assertion arrives here WHOLE: the two bag lines are
+ *     continuation lines of one engine message, so the capture window that
+ *     renders a ball is asked for the text as well as the class
+ *     [tested: "carries the answers that were missing and in excess";
+ *     "prints no bag line for a form that compared no answers";
+ *     commit=71de27a76dd16684941e3e090de0d17299d96493]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -18,7 +24,9 @@
 import { strict as assert } from "node:assert";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { after, before, describe, it } from "node:test";
+
+import { type MeTTa, metta } from "../src/index.ts";
 
 import * as errors from "../src/errors.ts";
 
@@ -198,5 +206,61 @@ describe("the error family", () => {
     assert.ok(refusal instanceof NameError);
     assert.match(refusal.message, /did you mean fib\?/);
     assert.doesNotMatch(unknownName("zzz", ["fib"], "no such head").message, /did you mean/);
+  });
+});
+
+describe("an assertion failure crossing the seat", () => {
+  let m: MeTTa;
+
+  before(async () => {
+    m = await metta();
+  });
+
+  after(() => {
+    m.dispose();
+  });
+
+  // The two bag lines are CONTINUATION lines of one print_message/2 message,
+  // and this seat renders an engine ball by replaying print_message inside a
+  // user:message_hook/3 capture window (bridge.pl). A window that kept the
+  // headline and dropped the rest would still satisfy the classifier above
+  // and lose the whole diagnosis, so the classification and the text are
+  // asked separately here.
+  it("carries the answers that were missing and in excess", () => {
+    assert.throws(
+      () => m.run("!(assertEqual (+ 1 1) 3)"),
+      (raised: unknown) => {
+        assert.ok(raised instanceof AssertionError);
+        assert.equal((raised as AssertionError).code, "ERR_METTA_ASSERTION");
+        const text = (raised as Error).message;
+        assert.match(text, /MeTTa assertion failed: \(assertEqual \(\+ 1 1\) 3\)/);
+        assert.match(text, /missing: \(3\)/);
+        assert.match(text, /excess: \(2\)/);
+        return true;
+      },
+    );
+  });
+
+  // Both bags empty is the permutation diagnosis rather than a puzzle, and it
+  // is the one thing assertEqual's term equality fails on while the answers
+  // themselves agree.
+  it("says when the answers agree and only their order differs", () => {
+    assert.throws(
+      () => m.run("!(assertEqual (superpose (1 2)) (superpose (2 1)))"),
+      /differ only in order/,
+    );
+  });
+
+  // assert takes a verdict, so there is no bag comparison and no bag line.
+  it("prints no bag line for a form that compared no answers", () => {
+    assert.throws(
+      () => m.run("!(assert (== 1 2))"),
+      (raised: unknown) => {
+        const text = (raised as Error).message;
+        assert.match(text, /MeTTa assertion failed/);
+        assert.doesNotMatch(text, /missing:/);
+        return true;
+      },
+    );
   });
 });

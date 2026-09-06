@@ -14,16 +14,31 @@
  *     exactly that rule on exactly that form, so a deliberate shape is
  *     annotated once rather than the rule being turned off everywhere
  *     [tested: "an ok comment suppresses only its own rule"]
- * Decides: five rules, each one a question a reader would ask of the source
+ *   - `unimplemented-head` names a call this BUILD cannot run and the five
+ *     other rules cannot see: a head the engine declares with an arrow whose
+ *     result is `%Undefined%` and that the engine cannot reduce here. Over the
+ *     whole example corpus that is exactly eight heads, the seven `py-` doors
+ *     and `Kwargs`, and no constructor. `Error` is declared
+ *     `(-> Atom Atom ErrorType)` and is equally unreducible: the arrow's RESULT
+ *     is what tells a door with no implementation from a term that stands for
+ *     itself, because a constructor names the type it builds and `%Undefined%`
+ *     is the engine's own word for a result it cannot describe
+ *     [tested: "names a head this build declares and cannot run",
+ *     "says nothing about a constructor the engine declares",
+ *     "says nothing about the arrow in a type declaration",
+ *     "flags exactly the doors the corpus needs a host for"; commit=WORKTREE]
+ * Decides: six rules, each one a question a reader would ask of the source
  *   anyway. It is not a type checker: the engine has one, and a linter that
- *   guessed at types would disagree with it.
+ *   guessed at types would disagree with it. Five read the source alone;
+ *   `unimplemented-head` asks the ENGINE two questions per head, because
+ *   whether a build implements a declared name is not in the text.
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
  *   Future Enhancements: None
  */
 
-import { Atom, Expression, Sym, Var } from "./atom.ts";
+import { Atom, Expression, Sym, Var, expr, sym } from "./atom.ts";
 import { alphaKey, isGround } from "./matching.ts";
 import type { Form, MeTTa } from "./metta.ts";
 import { readTextFile } from "./platform.ts";
@@ -36,7 +51,8 @@ export type Rule =
   | "arity-disagreement"
   | "duplicate-equation"
   | "unused-variable"
-  | "undeclared-type";
+  | "undeclared-type"
+  | "unimplemented-head";
 
 /** Every rule this linter carries. */
 export const RULES: readonly Rule[] = Object.freeze([
@@ -45,6 +61,7 @@ export const RULES: readonly Rule[] = Object.freeze([
   "duplicate-equation",
   "unused-variable",
   "undeclared-type",
+  "unimplemented-head",
 ]);
 
 /** One thing worth saying about one form. */
@@ -98,6 +115,20 @@ function isEquation(atom: Atom): atom is Expression {
 
 function isDeclaration(atom: Atom): atom is Expression {
   return headOf(atom)?.name === ":" && (atom as Expression).items.length === 3;
+}
+
+/**
+ * What an arrow type answers, or undefined when the type is not an arrow.
+ *
+ * Read structurally rather than by regex over the rendering, because
+ * `(-> Atom Atom ErrorType)` and `(-> Atom Atom %Undefined%)` differ in one
+ * element and agree in every character before it.
+ */
+function arrowResult(type: Atom): Atom | undefined {
+  if (!(type instanceof Expression) || type.items.length < 2) return undefined;
+  const head = type.items[0];
+  if (!(head instanceof Sym) || head.name !== "->") return undefined;
+  return type.items[type.items.length - 1];
 }
 
 /** Every named variable in a term, with how many times it appears. */
@@ -200,13 +231,64 @@ export async function lint(
     }
   }
 
+  // The one question in this file the SOURCE cannot answer: whether this build
+  // implements a name its own standard library declares. Two engine reads per
+  // distinct head, memoised, and neither of them runs anything: `get-type`
+  // reduces a declaration lookup and `reducible` is the engine's own
+  // `metta_reducible_head/2`.
+  const where = options.space ?? surface.self;
+  const foreignHead = new Map<string, Atom | undefined>();
+  const declaredElsewhere = (name: string): Atom | undefined => {
+    const held = foreignHead.get(name);
+    if (held !== undefined || foreignHead.has(name)) return held;
+    let found: Atom | undefined;
+    for (const row of surface.evalStatus(expr(sym("get-type"), sym(name)), where)) {
+      const result = arrowResult(row.answer);
+      if (result instanceof Sym && result.name === "%Undefined%") {
+        found = row.answer;
+        break;
+      }
+    }
+    foreignHead.set(name, found);
+    return found;
+  };
+
   forms.forEach((form, index) => {
     const position = index + 1;
     const off = suppressed(source, form);
+    // Calls this build has no implementation for, gathered before the rules
+    // below so `unknown-head` does not also report them under the weaker
+    // diagnosis "nothing here defines it".
+    const unimplemented = new Set<Expression>();
     const say = (rule: Rule, message: string): void => {
       if (!wanted.has(rule) || off.has(rule)) return;
       findings.push(new Finding(rule, position, message, form.text));
     };
+
+    // Where a call RUNS: a `!` directive, and the body of an equation. A type
+    // in a `(: name Type)` declaration is not a call, which is what keeps the
+    // arrow constructor itself -- `(-> Number Number)` is an expression whose
+    // head is `->` -- out of a rule about heads that do not run.
+    const running = form.kind === "runnable"
+      ? form.atom
+      : isEquation(form.atom)
+        ? (form.atom.items[2] as Atom)
+        : undefined;
+    if (running !== undefined && (wanted.has("unimplemented-head") || wanted.has("unknown-head"))) {
+      for (const call of calls(running)) {
+        const called = headOf(call) as Sym;
+        if (defined.has(called.name) || declared.has(called.name)) continue;
+        const declaration = declaredElsewhere(called.name);
+        if (declaration === undefined || surface.reducible(call, where)) continue;
+        unimplemented.add(call);
+        say(
+          "unimplemented-head",
+          `${called.name} is declared ${declaration.text} and nothing in this build ` +
+            `implements it, so the call answers itself unreduced instead of running; ` +
+            `it needs a seat this build does not carry`,
+        );
+      }
+    }
 
     if (isEquation(form.atom)) {
       const head = form.atom.items[1] as Atom;
@@ -262,6 +344,10 @@ export async function lint(
         const called = headOf(call) as Sym;
         if (defined.has(called.name) || declared.has(called.name)) continue;
         if (BUILTIN_HEADS.has(called.name) || !isGround(call)) continue;
+        // A head `unimplemented-head` already named is not undefined, it is
+        // unimplemented HERE, and saying both puts two diagnoses on one call
+        // of which the weaker one is wrong.
+        if (unimplemented.has(call)) continue;
         say("unknown-head", `nothing here defines ${called.name}`);
         break;
       }

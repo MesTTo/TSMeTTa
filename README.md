@@ -146,6 +146,27 @@ npx playwright install chromium
 npm run test:browser
 ```
 
+### The kit the documentation site ships
+
+`website/` serves this build. `website/scripts/bundle-browser.mjs` copies
+`browser/` and the three files a browser actually fetches out of `_runtime/`
+-- `runtime.json` and the two `wasm/` assets, 7.8 MB together -- into the
+site's `public/metta/`, and refuses the site build when they have not been
+made, naming `npm run build:browser`. `website/public/metta/worker.js` boots
+one engine there per page and answers `{ id, groups, stderr, ms, bootMs }` to
+`{ id, source, inferences }`, and a `::: run <example>` container in any page
+puts a Run button over a `metta` fence and prints the answer groups under it.
+
+Two things that seat gives the site are worth knowing here, because a page is
+not the only consumer that meets them. Every run is bounded by an inference
+budget, which is the bound a WebAssembly build has: `library(time)` is absent,
+so `metta_node_scope(inferences, ...)` is the only ceiling the engine can
+enforce on itself. And a call to a door this build DECLARES and does not
+implement answers itself rather than refusing: `!(py-atom "1 + 1")` answers
+`(py-atom "1 + 1")` in an engine with no Python seat behind it. `lint`'s
+`unimplemented-head` rule is what names that before it runs, and the worker
+raises the seat's `UnsupportedError` from its findings.
+
 ## Atoms
 
 An atom is an interned, frozen value, so `===` is structural and `Set`, `Map`
@@ -698,7 +719,7 @@ resolves both subpaths through Node's own resolver].
 | `metta-node/errors` | the error classes, which `metta-node/atom` throws |
 | `metta-node/events` | the fold over a space's writes |
 | `metta-node/integrate` | the library interface, discovery, wrapping, reflection |
-| `metta-node/lint` | five rules over MeTTa source, with suppression |
+| `metta-node/lint` | six rules over MeTTa source, with suppression; `unimplemented-head` is the one that asks the ENGINE, and names a call this build declares and cannot make |
 | `metta-node/manifest` | a whole setup as one declarative record |
 | `metta-node/matching` | unification, one-way matching, alpha keys, renaming |
 | `metta-node/parallel` | the coordination verbs |

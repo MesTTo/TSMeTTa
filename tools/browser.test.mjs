@@ -12,7 +12,7 @@
  *     fixture cannot show
  *     [tested: npm run test:browser --prefix extensions/node, "answers the site's fences through
  *     one worker", "runs a fence in a mounted component and prints its answer";
- *     commit=WORKTREE]
+ *     commit=a8b50dae12518adb626bf2594258eeaaf4a7f76d]
  * Assumes: the site's `public/metta/worker.js` and the component beside it are
  *   two directories up, and the website's own `vite`, `@vitejs/plugin-vue` and
  *   `vue` are installed, which is what compiles the component here. The

@@ -26,7 +26,7 @@
  *     [tested: "names a head this build declares and cannot run",
  *     "says nothing about a constructor the engine declares",
  *     "says nothing about the arrow in a type declaration",
- *     "flags exactly the doors the corpus needs a host for"; commit=WORKTREE]
+ *     "flags exactly the doors the corpus needs a host for"; commit=a8b50dae12518adb626bf2594258eeaaf4a7f76d]
  * Decides: six rules, each one a question a reader would ask of the source
  *   anyway. It is not a type checker: the engine has one, and a linter that
  *   guessed at types would disagree with it. Five read the source alone;

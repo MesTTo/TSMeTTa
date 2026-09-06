@@ -27,7 +27,7 @@
  *     outside a `_fixtures/` directory, less what
  *     `tests/data/example_skips.txt` names, so this and the gate cannot
  *     disagree about what an example is
- *     [source: test.sh, the find and the SKIPS read; commit=WORKTREE]
+ *     [source: test.sh, the find and the SKIPS read; commit=a8b50dae12518adb626bf2594258eeaaf4a7f76d]
  */
 
 import { existsSync, readdirSync } from "node:fs";

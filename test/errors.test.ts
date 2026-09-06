@@ -14,7 +14,7 @@
  *     renders a ball is asked for the text as well as the class
  *     [tested: "carries the answers that were missing and in excess";
  *     "prints no bag line for a form that compared no answers";
- *     commit=WORKTREE]
+ *     commit=71de27a76dd16684941e3e090de0d17299d96493]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

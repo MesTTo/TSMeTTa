@@ -13,6 +13,11 @@ What this file adds is the part the shared harness cannot know: how to reach a
 Node workload, which of the two counters decides each case, and the V8 flags an
 instruction measurement on this seat needs to be worth reading at all.
 Guarantees:
+  - a box that would not count is told apart from a tree that moved: this
+    lane exits 0 with a named skip on a developer's box and 1 where CI=true,
+    and never reports a refused measurement as a moved row
+    [tested: test_a_benchmark_lane_skips_a_refusal_locally_and_refuses_it_in_ci;
+    commit=WORKTREE]
   - a regression in one case never hides another: every selected case is
     measured and every failure is reported before the nonzero exit, the shape
     benchmarks/check_instructions.py settled after a stop-at-first-failure
@@ -66,7 +71,11 @@ sys.path.insert(0, str(HERE))
 
 from configuration import V8_FLAGS, counter_configuration  # noqa: E402
 
-from metta.testing import BenchmarkBaseline, measure_instructions  # noqa: E402
+from metta.testing import (  # noqa: E402
+    BenchmarkBaseline,
+    measure_instructions,
+    measured_main,
+)
 
 BASELINE = HERE / "baseline.json"
 RUNNER = SEAT / "build" / "benchmarks" / "run.js"
@@ -294,4 +303,4 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(measured_main(main))

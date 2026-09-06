@@ -10,7 +10,7 @@
  *     engine's own `(vocabulary ...)` rows, beside the Python module the same
  *     tool writes; edit the presets in engine/spaces/catalog.pl and rerun it
  *     with --write, never this file, and the `vocab-sync` lane fails on any
- *     drift [tested: test_the_vocabulary_module_is_generated; commit=WORKTREE]
+ *     drift [tested: test_the_vocabulary_module_is_generated; commit=a376df6dff8099d6145ace55132c7e30922ea1de]
  *   - every table here matches its catalog row exactly, values in the
  *     catalog's own order, and the test that checks it BOOTS the engine and
  *     reads `&metta` rather than reading a copy of this file, so the two

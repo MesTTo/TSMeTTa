@@ -7,7 +7,8 @@
  *   copy packed beside this package, so the engine a developer edits is the
  *   engine this seat runs even after `npm install` has written that copy
  *   [tested: extensions/node/check.sh node-dist, which asserts a packed
- *   package resolves its own `_runtime/`; commit=c478620e8c8a6690212528c64c30012ab69acfa3].
+ *   package resolves the runtime copy packed beside it;
+ *   commit=c478620e8c8a6690212528c64c30012ab69acfa3].
  * Owns resources: synchronous reads close their file descriptors before
  *   returning; the caller owns the destination WebAssembly filesystem.
  */

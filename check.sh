@@ -35,6 +35,17 @@ check_node_binding() {
 }
 run GATE node-binding check_node_binding
 
+# The extension claim, proved rather than asserted: an npm package this
+# repository has never heard of is written, installed beside the seat and used
+# to extend it through six doors, one of which is a point the package DECLARED
+# for itself. It carries the same skip protocol as the suite above, since it
+# reaches the same built seat.
+check_stranger_node() {
+    [ -d "$HERE/extensions/node" ] || return 0
+    bounded sh "$HERE/tests/shell/test_a_stranger_extends_the_node_seat.sh"
+}
+run GATE stranger-node check_stranger_node
+
 # What this seat's surface costs, against committed baselines.
 #
 # The same skip protocol, with two more steps it can name: this one also needs

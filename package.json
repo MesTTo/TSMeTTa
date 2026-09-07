@@ -108,6 +108,11 @@
       "types": "./dist/remote.d.ts",
       "default": "./dist/remote.js"
     },
+    "./seam": {
+      "types": "./dist/seam.d.ts",
+      "browser": "./browser/seam.js",
+      "default": "./dist/seam.js"
+    },
     "./saga": {
       "types": "./dist/saga.d.ts",
       "browser": "./browser/saga.js",

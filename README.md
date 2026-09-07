@@ -776,6 +776,66 @@ cross transparent; an ITERATOR stays opaque however short it is, because
 measuring or converting one drains it, and draining is a side effect no image
 choice is allowed to have.
 
+## Extending this seat without forking it
+
+`metta-node/seam` is this seat's one extension table, the seat-level twin of
+`engine/ext_points.pl`. Every point a library can plug into is DECLARED with a
+kind and its fields, a registrant is a ROW against a declared point, and both
+read back as data.
+
+```ts
+import { seam } from "metta-node";
+
+seam.declared();              // every point, with its kind and its fields
+seam.rows();                  // every registration, from any of them
+seam.at("type").table();      // one point's rows, as data
+```
+
+Four kinds, the engine's own less the `host_service` split a seat has no
+audience for. A `declaration` point's rows are all read; an `ownership` point's
+are consulted in registration order and the first whose `claims(...)` answers
+wins; an `event` point runs every row; a `service` is what the seat publishes
+for a registrant to CALL.
+
+A package registers from its own module body and advertises the same call under
+an `extensions` group in its `package.json`, beside the three groups this seat
+already reads:
+
+```json
+{ "metta": { "extensions": { "solars": "./index.js#register" } } }
+```
+
+```ts
+export function register() {
+  seam.type.register("Star", { constructor: Star, toAtom: ..., fromAtom: ... });
+  seam.repr.register("Star", { constructor: Star, text: (s) => `(star "${s.id}")` });
+  seam.reflector.register("solars", { claims: ..., lower: ... });
+}
+```
+
+`seam.advertised()` answers the names without importing any of it, and
+`await seam.discover()` loads them. Loading is explicit here rather than on
+first dispatch, which is the one place this seam differs from the Python
+seat's: ESM `import()` is asynchronous and a synchronous dispatch cannot await
+one. A package that registers from its own module body needs neither call.
+
+The points are `type`, `repr`, `reflector`, `provider`, `library` and
+`integration`; the first three keep the storage `registerType`, `registerRepr`
+and `registerReflector` always used and the last three are what packages
+advertise, read unloaded. `seam.point(...)` declares one of your own, which is
+`seam:kind/2` being multifile one level out, and the seat dispatches it like
+any other. `seam.services()` is the other direction: `term` and `name`, so a
+registrant never reaches into a private module.
+
+This seat names no third-party library anywhere, so there is nothing here to
+move into a row: its two non-relative imports are swipl-wasm, the engine it
+mounts, and acorn, the parser its own `define` lowering uses. It declares no
+`frame` point and no `array` point either, deliberately. It has no frame notion
+at all, and its array notion is the platform's own `TypedArray` family, which
+every numeric library in this runtime already produces, so there is no class of
+libraries for either point to admit. The `no-hardcoded-integration` gate lane
+checks that all of this stays true.
+
 ## Integrating a library
 
 `integrate` is what a TypeScript library implements to work with MeTTa, and it

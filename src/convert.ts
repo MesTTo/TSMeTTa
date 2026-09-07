@@ -173,6 +173,24 @@ export function declarations(): readonly string[] {
   return [...byName.keys()];
 }
 
+/**
+ * Every registration as data: its MeTTa name, its constructor and its image.
+ *
+ * The seam reads this rather than the private maps, so "what types cross here"
+ * is a query and the storage stays where it is.
+ */
+export function registrations(): readonly {
+  readonly name: string;
+  readonly constructor: Function;
+  readonly image: string;
+}[] {
+  return [...byName.entries()].map(([name, entry]) => ({
+    name,
+    constructor: entry.constructor,
+    image: entry.projection.image ?? "expression",
+  }));
+}
+
 /** Whether a value's own type is registered, or projects itself. */
 export function isProjectable(value: unknown): boolean {
   if (value === null || typeof value !== "object") return false;

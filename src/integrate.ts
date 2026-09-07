@@ -461,6 +461,19 @@ export function registerReflector(claims: (value: unknown) => boolean, lower: Re
   reflectors.push({ claims, lower });
 }
 
+/**
+ * Every registered reflector as data, in registration order.
+ *
+ * The seam reads this rather than the private array, so "what lowers into
+ * facts here" is a query and the storage stays where it is.
+ */
+export function reflectorRows(): readonly {
+  readonly claims: (value: unknown) => boolean;
+  readonly lower: Reflector;
+}[] {
+  return reflectors.map((held) => ({ claims: held.claims, lower: held.lower }));
+}
+
 /** Remove the latest reflector registered for those exact two functions. */
 export function unregisterReflector(
   claims: (value: unknown) => boolean,

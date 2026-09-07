@@ -10,7 +10,7 @@
  *     one shared vector tests/fixtures/space_digest_vector.json, so a seat
  *     whose wire codec built different atoms from the same text is caught
  *     [tested: "answers the shared vector's digest for the shared vector's
- *     program"; commit=WORKTREE]
+ *     program"; commit=8d67307403c1e41ccf058bd3c8d4c079dd7cf7d5]
  *   - embedding removal leaves survivor identity and stable result order
  *     intact without rewriting later index entries
  *     [tested: "removes from the ordered index without rewriting every later

@@ -172,6 +172,19 @@ export const CachePolicy = {
 /** One value of the `cache-policy` vocabulary. */
 export type CachePolicy = (typeof CachePolicy)[keyof typeof CachePolicy];
 
+/** The `cost-class` vocabulary, in the catalog's own order. */
+export const CostClass = {
+  constant: "constant",
+  log: "log",
+  linear: "linear",
+  linearithmic: "linearithmic",
+  quadratic: "quadratic",
+  exponential: "exponential",
+} as const;
+
+/** One value of the `cost-class` vocabulary. */
+export type CostClass = (typeof CostClass)[keyof typeof CostClass];
+
 /** The `delivery` vocabulary, in the catalog's own order. */
 export const Delivery = {
   atMostOnce: "at-most-once",
@@ -448,6 +461,7 @@ export interface Vocabularies {
   readonly "answer-policy": typeof AnswerPolicy;
   readonly "atomicity": typeof Atomicity;
   readonly "cache-policy": typeof CachePolicy;
+  readonly "cost-class": typeof CostClass;
   readonly "delivery": typeof Delivery;
   readonly "determinism": typeof Determinism;
   readonly "effect-class": typeof EffectClass;
@@ -487,6 +501,7 @@ export const VOCABULARIES: Vocabularies = {
   "answer-policy": AnswerPolicy,
   "atomicity": Atomicity,
   "cache-policy": CachePolicy,
+  "cost-class": CostClass,
   "delivery": Delivery,
   "determinism": Determinism,
   "effect-class": EffectClass,

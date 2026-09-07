@@ -644,7 +644,11 @@ describe("the codec, through the engine", () => {
           "!(collapse (match &node-alignment-effects (dup $x) $x))\n" +
           "!(remove-atom &node-alignment-effects missing)",
       ).map((group) => group.texts),
-      [["true"], ["true"], ["true"], ["()"], ["true"]],
+      // The last group is empty: upstream PeTTa at the parity pin answers
+      // nothing for `remove-atom` of a bare symbol (measured 2026-09-07 for
+      // `()`, a symbol and a number; only an expression with a head answers
+      // `true`), and this engine takes that domain.
+      [["true"], ["true"], ["true"], ["()"], []],
       "effects answer true and removal drains every unifying occurrence",
     );
 

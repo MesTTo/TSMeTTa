@@ -320,10 +320,6 @@ export {
   unregisterProvider,
 } from "./provider.ts";
 
-// This seat's one extension seam: every point a library can plug into, with
-// its kind and its fields, and every registration against one, as data.
-export * as seam from "./seam.ts";
-
 // The live view of a host collection, which is the shortest useful provider.
 // The rest of the space algebra is the `metta-node/spaces` satellite.
 export { view } from "./spaces.ts";

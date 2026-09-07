@@ -784,7 +784,7 @@ kind and its fields, a registrant is a ROW against a declared point, and both
 read back as data.
 
 ```ts
-import { seam } from "metta-node";
+import * as seam from "metta-node/seam";
 
 seam.declared();              // every point, with its kind and its fields
 seam.rows();                  // every registration, from any of them
@@ -826,6 +826,12 @@ advertise, read unloaded. `seam.point(...)` declares one of your own, which is
 `seam:kind/2` being multifile one level out, and the seat dispatches it like
 any other. `seam.services()` is the other direction: `term` and `name`, so a
 registrant never reaches into a private module.
+
+`metta-node/seam` is a Node-only subpath, beside `metta-node/integrate` and for
+its reason: it reads a `package.json` to answer what packages advertise, and a
+browser page has no filesystem to read one from and no installed packages to
+discover. `registerType` and `registerRepr` stay reachable in a browser through
+`metta-node/convert` and `metta-node/atom`.
 
 This seat names no third-party library anywhere, so there is nothing here to
 move into a row: its two non-relative imports are swipl-wasm, the engine it

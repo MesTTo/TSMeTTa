@@ -234,6 +234,9 @@ importing anything and `await seam.discover()` loads them. Loading is explicit
 rather than on first dispatch because ESM `import()` is asynchronous; a package
 that registers from its own module body needs neither call.
 
+`metta-node/seam` is a Node-only subpath, beside `metta-node/integrate` and for
+its reason: it reads a `package.json`, which a browser page has neither of.
+
 This seat declares NO `frame` point and NO `array` point: it has no frame
 notion, and its array notion is the platform's own `TypedArray` family, which
 every numeric library in this runtime already produces. It names no third-party

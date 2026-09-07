@@ -110,7 +110,6 @@
     },
     "./seam": {
       "types": "./dist/seam.d.ts",
-      "browser": "./browser/seam.js",
       "default": "./dist/seam.js"
     },
     "./saga": {

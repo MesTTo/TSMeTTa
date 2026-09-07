@@ -89,10 +89,18 @@ check_node_bench() {
 # `file:` install, the whole of _runtime/ missing].
 check_node_dist() {
     [ -d "$HERE/extensions/node" ] || return 0
-    [ -d "$HERE/extensions/node/node_modules" ] || {
-        echo "note: extensions/node/node_modules is absent, the built-package \
-check will not run; npm ci fetches swipl-wasm and a gate does not reach the \
-network" >&2
+    # The DIRECTORY is not the question, the build's own dependency is. A
+    # `npm install --omit=dev` leaves node_modules present with swipl-wasm and
+    # acorn in it and esbuild absent, which passed a bare -d test and then died
+    # inside the pack step on `Cannot find package 'esbuild'` -- a lane that
+    # skips for a missing install reporting a build failure instead. Both this
+    # checkout and the repository root are in exactly that state.
+    # tools/build-browser.mjs imports esbuild, `prepare` runs it, and `npm pack`
+    # runs `prepare`, so this is the name the failure would carry.
+    [ -d "$HERE/extensions/node/node_modules/esbuild" ] || {
+        echo "note: extensions/node/node_modules has no esbuild, so the \
+built-package check will not run; \`npm ci\` in extensions/node fetches it \
+along with swipl-wasm, and a gate does not reach the network" >&2
         return 0
     }
     ( cd "$HERE/extensions/node" && bounded node tools/dist-consumer.mjs )

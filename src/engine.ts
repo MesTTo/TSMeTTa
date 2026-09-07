@@ -60,8 +60,11 @@ import {
   CapabilityError,
   ClosedError,
   EngineError,
+  type Ground,
   MettaError,
+  type MettaErrorOptions,
   NameError,
+  type Remedy,
   TransportError,
   UnsupportedError,
   engineError,
@@ -80,12 +83,15 @@ import {
 export { forgetRuntime, packageRoot, repoRoot };
 
 /**
- * The refusal an `[error, text, kind, fields]` outcome names.
+ * The refusal an `[error, text, kind, fields, ground, remedy]` outcome names.
  *
  * bridge.pl reads the KIND off the raised ball, through the engine's own
  * refusal table, so the classification crosses as data instead of being
  * recovered from the sentence on this side. The fields are flat, name then
- * text, which is the shape that crosses at constant depth.
+ * text, which is the shape that crosses at constant depth, and the ground and
+ * the remedy are the engine's own `(refusal ...)` row for that kind with the
+ * remedy's `<field>` holes already filled from this refusal. Both are empty
+ * arrays where the kind carries no row.
  */
 function refusal(outcome: readonly unknown[], where?: string): MettaError {
   const said = hostText(outcome[1]).trimEnd();
@@ -94,7 +100,32 @@ function refusal(outcome: readonly unknown[], where?: string): MettaError {
   for (let at = 0; at + 1 < flat.length; at += 2) {
     fields[hostText(flat[at])] = hostText(flat[at + 1]);
   }
-  return engineError(where === undefined ? said : `${said}\n${where}`, hostText(outcome[2]), fields);
+  return engineError(
+    where === undefined ? said : `${said}\n${where}`,
+    hostText(outcome[2]),
+    fields,
+    declared(outcome[4], outcome[5]),
+  );
+}
+
+/** The `(ground ...)` and `(remedy ...)` halves of one refusal row, as options. */
+function declared(ground: unknown, remedy: unknown): MettaErrorOptions {
+  const carried: { ground?: Ground; remedy?: Remedy } = {};
+  const authority = (ground ?? []) as readonly unknown[];
+  if (authority.length === 2) {
+    carried.ground = { kind: hostText(authority[0]), citation: hostText(authority[1]) };
+  }
+  const repair = (remedy ?? []) as readonly unknown[];
+  if (repair.length === 4) {
+    const edit = hostText(repair[3]);
+    carried.remedy = {
+      title: hostText(repair[0]),
+      kind: hostText(repair[1]),
+      applicability: hostText(repair[2]),
+      ...(edit === "" ? {} : { edit }),
+    };
+  }
+  return carried;
 }
 const REPO_ROOT = repoRoot;
 const VIRTUAL_ROOT = "/metta";

@@ -75,6 +75,8 @@ interface KindRow {
     readonly error: string;
     readonly code: Code;
     readonly attributes: Readonly<Record<string, string>>;
+    /** What this seat spells instead of the row's class, where it does. */
+    readonly why?: string;
   };
 }
 
@@ -359,6 +361,108 @@ describe("every kind the engine publishes, over a live engine", () => {
         kind,
       );
     }
+  });
+
+  // The (refusal ...) rows, read as ORDINARY DATA out of the catalog space,
+  // which is the point of them being rows: nothing here parses a private
+  // shape, and a MeTTa program can ask the same question.
+  it("raises the class each row names, or the shared list says why", () => {
+    const rows = new Map<string, string>();
+    for (const group of m.run("!(match &metta (refusal $k $class $g $r) ($k $class))")) {
+      for (const answer of group.answers.map(String)) {
+        const [kind, named] = answer.replace(/^\(|\)$/g, "").split(" ");
+        if (kind !== undefined && named !== undefined) rows.set(kind, named);
+      }
+    }
+    assert.equal(rows.size, Object.keys(KINDS).length, "one row per kind");
+    for (const [kind, row] of Object.entries(KINDS)) {
+      const declared = rows.get(kind);
+      if (row.node.error === declared) continue;
+      assert.ok(
+        row.node.why,
+        `this seat raises ${row.node.error} for ${kind} where the row names ` +
+          `${String(declared)}, and tests/data/error-kinds.json says no why`,
+      );
+    }
+  });
+
+  // The engine renders the remedy once, with this refusal's own fields in it,
+  // and every seat reads that one sentence. A hole left in a title would be a
+  // field the ball carried and the renderer did not fill.
+  it("carries the ground and the filled remedy of every kind", () => {
+    for (const [kind, row] of Object.entries(KINDS)) {
+      assert.throws(
+        () => m.engine.once(`throw(${row.ball})`),
+        (raised: unknown) => {
+          const error = raised as MettaError;
+          assert.ok(error.ground, `${kind} arrived with no ground`);
+          assert.ok(error.ground?.citation, `${kind}'s ground cites nothing`);
+          assert.ok(error.remedy, `${kind} arrived with no remedy`);
+          for (const field of Object.keys(row.expects)) {
+            assert.ok(
+              !error.remedy?.title.includes(`<${field}>`),
+              `${kind} left <${field}> in its remedy although the ball carried it`,
+            );
+          }
+          return true;
+        },
+        kind,
+      );
+    }
+  });
+
+  // The row is what this seat READS, not a copy of it: rewriting one in the
+  // catalog changes what a refusal carries here with no TypeScript change at
+  // all. The Python seat's own suite plants the same row for the same reason.
+  it("carries a row rewritten in the catalog, with no change to this seat", () => {
+    const shipped = String(
+      m.run("!(match &metta (refusal engine $c $g $r) (refusal engine $c $g $r))")[0]?.answers[0],
+    );
+    const planted =
+      '(refusal engine EngineError (ground metta-law "HostLaws: a planted row") ' +
+      '(remedy "planted repair for <nothing>" refactor prose))';
+    const rewrite = (row: string): void => {
+      m.run(`!(remove-atom &metta ${shipped})`);
+      m.run(`!(add-atom &metta ${row})`);
+    };
+    rewrite(planted);
+    try {
+      assert.throws(
+        () => m.engine.once(`throw(${KINDS["engine"]?.ball})`),
+        (raised: unknown) => {
+          const error = raised as MettaError;
+          assert.equal(error.remedy?.title, "planted repair for <nothing>");
+          assert.equal(error.remedy?.kind, "refactor");
+          assert.equal(error.ground?.citation, "HostLaws: a planted row");
+          return true;
+        },
+      );
+    } finally {
+      m.run(`!(remove-atom &metta ${planted})`);
+      m.run(`!(add-atom &metta ${shipped})`);
+    }
+    assert.throws(
+      () => m.engine.once(`throw(${KINDS["engine"]?.ball})`),
+      (raised: unknown) => {
+        assert.match((raised as MettaError).remedy?.title ?? "", /report the ball/);
+        return true;
+      },
+    );
+  });
+
+  // A capability refusal is the one whose whole edit the ball can fill, so it
+  // is the one that reaches this seat as an atom a program can write back.
+  it("carries a filled edit where every hole was a field", () => {
+    assert.throws(
+      () => m.engine.once(`throw(${KINDS["capability"]?.ball})`),
+      (raised: unknown) => {
+        const error = raised as MettaError;
+        assert.equal(error.remedy?.applicability, "maybe");
+        assert.equal(error.remedy?.edit, "(edit (grants &restricted process))");
+        assert.deepEqual(JSON.parse(JSON.stringify(error)).remedy, error.remedy);
+        return true;
+      },
+    );
   });
 
   // The restraint a program declared for its own table, tripped by asking for

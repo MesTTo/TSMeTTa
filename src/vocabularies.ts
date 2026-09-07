@@ -172,6 +172,19 @@ export const CachePolicy = {
 /** One value of the `cache-policy` vocabulary. */
 export type CachePolicy = (typeof CachePolicy)[keyof typeof CachePolicy];
 
+/** The `cost-class` vocabulary, in the catalog's own order. */
+export const CostClass = {
+  constant: "constant",
+  log: "log",
+  linear: "linear",
+  linearithmic: "linearithmic",
+  quadratic: "quadratic",
+  exponential: "exponential",
+} as const;
+
+/** One value of the `cost-class` vocabulary. */
+export type CostClass = (typeof CostClass)[keyof typeof CostClass];
+
 /** The `delivery` vocabulary, in the catalog's own order. */
 export const Delivery = {
   atMostOnce: "at-most-once",
@@ -181,6 +194,16 @@ export const Delivery = {
 
 /** One value of the `delivery` vocabulary. */
 export type Delivery = (typeof Delivery)[keyof typeof Delivery];
+
+/** The `delta-kind` vocabulary, in the catalog's own order. */
+export const DeltaKind = {
+  add: "add",
+  remove: "remove",
+  progress: "progress",
+} as const;
+
+/** One value of the `delta-kind` vocabulary. */
+export type DeltaKind = (typeof DeltaKind)[keyof typeof DeltaKind];
 
 /** The `determinism` vocabulary, in the catalog's own order. */
 export const Determinism = {
@@ -245,6 +268,16 @@ export const Limit = {
 
 /** One value of the `limit` vocabulary. */
 export type Limit = (typeof Limit)[keyof typeof Limit];
+
+/** The `live-strategy` vocabulary, in the catalog's own order. */
+export const LiveStrategy = {
+  pattern: "pattern",
+  heads: "heads",
+  tabled: "tabled",
+} as const;
+
+/** One value of the `live-strategy` vocabulary. */
+export type LiveStrategy = (typeof LiveStrategy)[keyof typeof LiveStrategy];
 
 /** The `memo-aggregate` vocabulary, in the catalog's own order. */
 export const MemoAggregate = {
@@ -448,13 +481,16 @@ export interface Vocabularies {
   readonly "answer-policy": typeof AnswerPolicy;
   readonly "atomicity": typeof Atomicity;
   readonly "cache-policy": typeof CachePolicy;
+  readonly "cost-class": typeof CostClass;
   readonly "delivery": typeof Delivery;
+  readonly "delta-kind": typeof DeltaKind;
   readonly "determinism": typeof Determinism;
   readonly "effect-class": typeof EffectClass;
   readonly "event-order": typeof EventOrder;
   readonly "fidelity": typeof Fidelity;
   readonly "image-mode": typeof ImageMode;
   readonly "limit": typeof Limit;
+  readonly "live-strategy": typeof LiveStrategy;
   readonly "memo-aggregate": typeof MemoAggregate;
   readonly "memo-strategy": typeof MemoStrategy;
   readonly "numeric-type": typeof NumericType;
@@ -487,13 +523,16 @@ export const VOCABULARIES: Vocabularies = {
   "answer-policy": AnswerPolicy,
   "atomicity": Atomicity,
   "cache-policy": CachePolicy,
+  "cost-class": CostClass,
   "delivery": Delivery,
+  "delta-kind": DeltaKind,
   "determinism": Determinism,
   "effect-class": EffectClass,
   "event-order": EventOrder,
   "fidelity": Fidelity,
   "image-mode": ImageMode,
   "limit": Limit,
+  "live-strategy": LiveStrategy,
   "memo-aggregate": MemoAggregate,
   "memo-strategy": MemoStrategy,
   "numeric-type": NumericType,

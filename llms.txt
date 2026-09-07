@@ -64,6 +64,29 @@ two rows.
 await m.eval(term).until(AbortSignal.timeout(50));
 ```
 
+## What a refusal is
+
+The engine says which refusal it raised and this seat raises that class, so a
+caller never matches the message. One class per kind the engine publishes:
+`syntax` (`MettaSyntaxError.line`), `time_limit` and `inference_limit`
+(`TimeLimitError.limit`, `InferenceLimitError.limit`), `restraint`
+(`RestraintError.restraint`, `.limit`, `.call`), `interrupted`
+(`InterruptedError`), `value` and `type` (`WireError`, `CastError`),
+`assertion` (`AssertionError.operation`), `capability`
+(`CapabilityError.space`, `.operation`, `.capability`), `operation`
+(`OperationError.operation`, `.kind`, `.expected`, `.culprit`), `stack`
+(`StackLimitError.limit`) and `source` (`SourceNotFoundError.source`); anything
+else is `EngineError`. A `limit` is `undefined` where a budget expired inside a
+nested query, which is the one case the engine cannot name the number. The list
+is `tests/data/error-kinds.json`, shared with the Python seat.
+
+```ts
+try { m.run("!(collapse (upto 10))"); }        // (cache upto (max-answers 2))
+catch (e) {
+  if (e instanceof RestraintError) console.log(e.restraint, e.limit, e.call);
+}
+```
+
 ## Spaces
 
 ```ts

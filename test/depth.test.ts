@@ -73,6 +73,6 @@ describe("the far end of a term's depth", () => {
   it("leaves the session usable after that refusal", () => {
     assert.equal(m.parse("(f 1)").text, "(f 1)");
     assert.deepEqual(m.run("!(+ 1 2)")[0]?.texts, ["3"]);
-    assert.ok(MettaError.is(new StackLimitError("x", 1), "ERR_METTA_STACK"));
+    assert.ok(MettaError.is(new StackLimitError("x", { limit: 1 }), "ERR_METTA_STACK"));
   });
 });

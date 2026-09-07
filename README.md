@@ -1279,8 +1279,9 @@ catch (error) {
 
 `EngineError`, `MettaSyntaxError`, `WireError`, `ResultError`, `NameError`,
 `CapabilityError`, `CompileError`, `ClosedError`, `UnsupportedError`,
-`CastError`, `AssertionError`, `SourceNotFoundError`, `InferenceLimitError`,
-`TimeLimitError`, `StackLimitError`, `ProviderError`, `SubscriberError`,
+`CastError`, `AssertionError`, `OperationError`, `InterruptedError`,
+`SourceNotFoundError`, `InferenceLimitError`, `TimeLimitError`,
+`RestraintError`, `StackLimitError`, `ProviderError`, `SubscriberError`,
 `TransportError`. All sit under `MettaError` with `cause` and `toJSON`, and
 every one of them is raised by something: a class nobody produces is a `catch`
 branch a caller cannot take, so there is no such class here.
@@ -1289,6 +1290,46 @@ A deadline is NOT one of them: `AbortSignal.timeout` aborts with the platform's
 own `TimeoutError`, which is what every other async API raises, and inventing a
 second one to catch instead would be the wrong kindness. `InferenceLimitError`
 is a different thing: the engine stopping ITSELF inside a reduction.
+
+The engine says WHICH refusal it raised, and the class you catch is that
+answer rather than a reading of the sentence. It publishes one kind word per
+refusal a caller can act on differently, and each one carries the parts you
+would otherwise parse out of the message:
+
+| kind | class | what it carries |
+|---|---|---|
+| `syntax` | `MettaSyntaxError` | `line`, when a file reader named one |
+| `time_limit` | `TimeLimitError` | `limit`, the seconds a scope declared |
+| `inference_limit` | `InferenceLimitError` | `limit`, the inferences it declared |
+| `restraint` | `RestraintError` | `restraint`, `limit` (the row's bound), `call` |
+| `interrupted` | `InterruptedError` | the evaluation was stopped from outside |
+| `value` | `WireError` | the codec would not carry the value |
+| `type` | `CastError` | the value was the wrong type for the codec |
+| `assertion` | `AssertionError` | `operation`, the form: `assert` or `test` |
+| `capability` | `CapabilityError` | `space`, `operation`, `capability` |
+| `operation` | `OperationError` | `operation`, `kind`, `expected`, `culprit` |
+| `stack` | `StackLimitError` | `limit`, the ceiling in bytes, and the remedy |
+| `source` | `SourceNotFoundError` | `source`, the path it could not open |
+
+```ts
+try {
+  m.run("!(collapse (upto 10))");   // (cache upto (max-answers 2))
+} catch (error) {
+  if (error instanceof RestraintError) {
+    console.log(error.restraint, error.limit, error.call);  // max-answers 2 (upto 10)
+  }
+}
+```
+
+A resource `limit` is `undefined` where the engine could not name it, which
+happens when a budget expires inside a nested query: the number lives in the
+frame that installed it and that frame has already unwound. The kinds
+themselves are `tests/data/error-kinds.json`, which the Python seat's suite
+reads against its own map, so the two seats cannot drift apart on which
+refusals have a class. Two kinds are spelled differently there on purpose:
+`value` and `type` are the codec refusing your own data, which Python raises as
+its own `ValueError` and `TypeError` and this seat keeps inside the family, so
+catching `MettaError` still catches every refusal here.
 
 ## Nothing reaches your console
 

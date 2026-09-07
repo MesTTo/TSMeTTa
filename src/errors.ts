@@ -19,6 +19,16 @@
  *     [tested: "discovers every published condition and its producer";
  *     "contains no retired strict-scope conditions";
  *     commit=f634a8072585acef6195994b1220cb822575822e]
+ *   - a refusal is classified from the KIND the engine read off the raised
+ *     ball, never from the rendered sentence, and this seat maps every kind
+ *     the engine's own table publishes: the list is
+ *     `tests/data/error-kinds.json`, which the Python seat's suite reads
+ *     against its own map
+ *     [tested: "covers every kind the engine publishes";
+ *     "classifies every kind the engine publishes, from a real ball";
+ *     commit=WORKTREE]
+ *   - a bound the engine could not name is `undefined` rather than 0
+ *     [tested: "carries a limit on a resource refusal"; commit=WORKTREE]
  *   - a reduction that failed across several nondeterministic branches raises
  *     the platform's own `AggregateError` with one `cause`-chained entry per
  *     branch, rather than an error shape invented here
@@ -28,6 +38,10 @@
  *   `AbortSignal.timeout` already aborts with, so there is no class here to
  *   catch instead of the one every other async API raises. `TimeLimitError` is
  *   a different thing: the ENGINE's own budget, thrown from inside a reduction.
+ *   The engine's two CODEC kinds stay inside this family as `WireError` and
+ *   `CastError` where the Python seat spells them with the language's own
+ *   `ValueError` and `TypeError`: each seat spells a meaning its host's way,
+ *   and this host's way is one family every refusal is inside.
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -66,6 +80,12 @@ export type Code =
   | "ERR_METTA_TIME"
   /** The engine's own stack limit ran out building or reading a term. */
   | "ERR_METTA_STACK"
+  /** A restraint the program declared for one of its own tables tripped. */
+  | "ERR_METTA_RESTRAINT"
+  /** The evaluation was stopped from outside, mid-goal. */
+  | "ERR_METTA_INTERRUPTED"
+  /** A builtin refused a value, naming the operation the source wrote. */
+  | "ERR_METTA_OPERATION"
   /** A space implemented in TypeScript raised, or refused. */
   | "ERR_METTA_PROVIDER"
   /** A standing query's own callback raised, or its queue overflowed. */
@@ -135,9 +155,29 @@ export class EngineError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_ENGINE";
 }
 
+/** What a reader failure knows about itself, beyond its sentence. */
+export interface MettaSyntaxErrorOptions extends MettaErrorOptions {
+  /** The 1-based line the reader stopped at. */
+  readonly line?: number | undefined;
+}
+
 /** Source text the engine's own reader would not read. */
 export class MettaSyntaxError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_SYNTAX";
+
+  /**
+   * The 1-based line the reader stopped at, where it named one.
+   *
+   * A file reader records the line in the refusal itself; a single form read
+   * out of a string has no line to record, and this is then undefined rather
+   * than a guessed 1.
+   */
+  readonly line: number | undefined;
+
+  constructor(message: string, options: MettaSyntaxErrorOptions = {}) {
+    super(message, options);
+    this.line = options.line;
+  }
 }
 
 /** A term could not cross the wire in the shape the codec requires. */
@@ -161,9 +201,40 @@ export class NameError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_NAME";
 }
 
-/** A capability this deployment, or this restricted space, does not have. */
+/** What a restricted space was asked for, and the capability it lacks. */
+export interface CapabilityErrorOptions extends MettaErrorOptions {
+  /** The restricted space the operation ran in. */
+  readonly space?: string | undefined;
+  /** The operation it tried. */
+  readonly operation?: string | undefined;
+  /** The capability its creation did not grant. */
+  readonly capability?: string | undefined;
+}
+
+/**
+ * A capability this deployment, or this restricted space, does not have.
+ *
+ * A refusal from a restricted space carries the three parts the engine names,
+ * so a caller grants the missing capability without reading the sentence. A
+ * refusal about the BUILD (a platform library this deployment was made
+ * without) names none of them and carries its message alone.
+ */
 export class CapabilityError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_CAPABILITY";
+
+  /** The restricted space, when a space is what refused. */
+  readonly space: string | undefined;
+  /** The operation that was refused. */
+  readonly operation: string | undefined;
+  /** The capability that would have allowed it. */
+  readonly capability: string | undefined;
+
+  constructor(message: string, options: CapabilityErrorOptions = {}) {
+    super(message, options);
+    this.space = options.space;
+    this.operation = options.operation;
+    this.capability = options.capability;
+  }
 }
 
 /**
@@ -193,16 +264,30 @@ export class CastError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_CAST";
 }
 
+/** The ceiling a resource refusal names. */
+export interface ResourceLimitErrorOptions extends MettaErrorOptions {
+  /** The bound that was exceeded, in the unit the scope declared it in. */
+  readonly limit?: number | undefined;
+}
+
 /** A budget the engine enforces inside a reduction ran out. */
 export class ResourceLimitError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_INFERENCES";
 
-  /** The bound that was exceeded, in the unit the scope declared it in. */
-  readonly limit: number;
+  /**
+   * The bound that was exceeded, in the unit the scope declared it in.
+   *
+   * Undefined where the engine could not name it: a budget that expires
+   * inside a NESTED query raises SWI's own resource ball, which says which
+   * resource ran out and not what the number was, because the number lives in
+   * the frame that installed it and that frame has already unwound. It used
+   * to arrive here as 0, which reads as a bound of zero.
+   */
+  readonly limit: number | undefined;
 
-  constructor(message: string, limit: number, options: MettaErrorOptions = {}) {
+  constructor(message: string, options: ResourceLimitErrorOptions = {}) {
     super(message, options);
-    this.limit = limit;
+    this.limit = options.limit;
   }
 }
 
@@ -235,6 +320,94 @@ export class StackLimitError extends ResourceLimitError {
   static override readonly defaultCode: Code = "ERR_METTA_STACK";
 }
 
+/** The three parts a tripped restraint names. */
+export interface RestraintErrorOptions extends MettaErrorOptions {
+  /** The restraint word the row declared. */
+  readonly restraint?: string | undefined;
+  /** The bound that row set, which is this refusal's `limit`. */
+  readonly bound?: number | undefined;
+  /** The tabled call the engine was evaluating, as MeTTa text. */
+  readonly call?: string | undefined;
+}
+
+/**
+ * A restraint the program declared for one of its own tables tripped.
+ *
+ * The bound is the program's own `(cache f (max-answers 2))`,
+ * `(subgoal-abstract n)` or `(answer-abstract n)` row rather than a caller's
+ * scope, which is the one difference from the two limits above; `limit` is
+ * that bound, under the family's own name for the ceiling that was exceeded.
+ * Whatever the goal completed before the stop stands, and the table keeps the
+ * answers it had, so the same call signals again until the table is cleared.
+ */
+export class RestraintError extends ResourceLimitError {
+  static override readonly defaultCode: Code = "ERR_METTA_RESTRAINT";
+
+  /** `max-answers`, `subgoal-abstract` or `answer-abstract`. */
+  readonly restraint: string | undefined;
+  /** The tabled call the engine was evaluating, as the MeTTa the program wrote. */
+  readonly call: string | undefined;
+
+  constructor(message: string, options: RestraintErrorOptions = {}) {
+    super(message, { ...options, limit: options.bound });
+    this.restraint = options.restraint;
+    this.call = options.call;
+  }
+}
+
+/**
+ * The evaluation was stopped from outside, mid-goal.
+ *
+ * Whatever the goal completed before the stop, writes included, stands, which
+ * is what stopping a computation mid-way means everywhere. Distinct from a
+ * budget: nothing was exceeded, something asked for the stop.
+ */
+export class InterruptedError extends MettaError {
+  static override readonly defaultCode: Code = "ERR_METTA_INTERRUPTED";
+}
+
+/** What a builtin refusal names about itself. */
+export interface OperationErrorOptions extends MettaErrorOptions {
+  /** The MeTTa operation as the source wrote it. */
+  readonly operation?: string | undefined;
+  /** The formal's own word: `type_error`, `domain_error`, `evaluation_error`. */
+  readonly kind?: string | undefined;
+  /** The type it wanted, where the formal names one. */
+  readonly expected?: string | undefined;
+  /** The value it got, where the formal names one. */
+  readonly culprit?: string | undefined;
+}
+
+/**
+ * A builtin refused a value, naming the operation the source wrote.
+ *
+ * `(+ 1 "a")` answers an error ATOM by default, which is data; this is what a
+ * caller who asked to be interrupted instead is interrupted with, and it
+ * names the MeTTa the program wrote rather than the Prolog predicate that
+ * raised. `expected` and `culprit` are present only where the formal carries
+ * them, which is every type error and nothing else.
+ */
+export class OperationError extends MettaError {
+  static override readonly defaultCode: Code = "ERR_METTA_OPERATION";
+
+  /** The MeTTa operation as the source wrote it. */
+  readonly operation: string | undefined;
+  /** The formal's own word. */
+  readonly kind: string | undefined;
+  /** The type it wanted. */
+  readonly expected: string | undefined;
+  /** The value it got. */
+  readonly culprit: string | undefined;
+
+  constructor(message: string, options: OperationErrorOptions = {}) {
+    super(message, options);
+    this.operation = options.operation;
+    this.kind = options.kind;
+    this.expected = options.expected;
+    this.culprit = options.culprit;
+  }
+}
+
 /** A space implemented in TypeScript raised, or refused a capability. */
 export class ProviderError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_PROVIDER";
@@ -250,6 +423,12 @@ export class TransportError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_TRANSPORT";
 }
 
+/** Which assertion form failed. */
+export interface AssertionErrorOptions extends MettaErrorOptions {
+  /** The form the engine reports through, `assert` or `test`. */
+  readonly operation?: string | undefined;
+}
+
 /**
  * A test assertion a MeTTa program made did not hold.
  *
@@ -258,11 +437,39 @@ export class TransportError extends MettaError {
  */
 export class AssertionError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_ASSERTION";
+
+  /**
+   * The assertion form that failed, `assert` or `test`.
+   *
+   * The form, not the head: `assertEqual`, `assertIncludes` and a program's
+   * own assertion over answer bags all report through `assert`, and the
+   * message names the head the program actually wrote.
+   */
+  readonly operation: string | undefined;
+
+  constructor(message: string, options: AssertionErrorOptions = {}) {
+    super(message, options);
+    this.operation = options.operation;
+  }
+}
+
+/** Which source a program named. */
+export interface SourceNotFoundErrorOptions extends MettaErrorOptions {
+  /** The path the engine could not open, as the program named it. */
+  readonly source?: string | undefined;
 }
 
 /** A file, module or library a program named is not there. */
 export class SourceNotFoundError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_SOURCE";
+
+  /** The path the engine could not open, as the program named it. */
+  readonly source: string | undefined;
+
+  constructor(message: string, options: SourceNotFoundErrorOptions = {}) {
+    super(message, options);
+    this.source = options.source;
+  }
 }
 
 /**
@@ -275,68 +482,124 @@ export function isTransportError(value: unknown): value is TransportError {
   return value instanceof TransportError;
 }
 
-/** How many bytes each unit SWI spells a stack ceiling in stands for. */
-const STACK_UNITS: Readonly<Record<string, number>> = {
-  b: 1,
-  Kb: 1024,
-  Mb: 1024 * 1024,
-  Gb: 1024 * 1024 * 1024,
-};
+/** The engine's own kind word for a refusal, one per row of its table. */
+export type RefusalKind =
+  /** Source text the engine's reader would not read. */
+  | "syntax"
+  /** A time budget a scope declared ran out. */
+  | "time_limit"
+  /** An inference budget a scope declared ran out. */
+  | "inference_limit"
+  /** A restraint a `(cache ...)` row declared for a table tripped. */
+  | "restraint"
+  /** The evaluation was stopped from outside. */
+  | "interrupted"
+  /** A value the engine's codec would not carry. */
+  | "value"
+  /** A value of the wrong type for what the codec was asked to do with it. */
+  | "type"
+  /** A `test` or `assert` a MeTTa program made did not hold. */
+  | "assertion"
+  /** A restricted space lacks the capability an operation needed. */
+  | "capability"
+  /** A builtin refused a value, naming the operation the source wrote. */
+  | "operation"
+  /** The engine's own Prolog stack ran out. */
+  | "stack"
+  /** A file, module or library a program named is not there. */
+  | "source"
+  /** A ball the engine did not shape, which is the honest default. */
+  | "engine";
+
+/** One refusal's fields, by the engine's own name for each, as text. */
+export type Fields = Readonly<Record<string, string>>;
+
+/** A numeric field, or undefined where the refusal did not carry one. */
+function measure(fields: Fields, name: string): number | undefined {
+  const text = fields[name];
+  return text === undefined ? undefined : Number(text);
+}
 
 /**
- * The class the engine's own signal names, so an engine refusal arrives as the
- * condition it is rather than as generic prose.
+ * The class this seat raises for each kind the engine publishes.
  *
- * The engine writes a control signal into its error term before the text
- * reaches this side; the bridge renders it, and this reads the rendering back.
- * Beside the two control signals it reads three of the engine's own wordings:
- * a stack ceiling, a failed MeTTa assertion and a source it could not open,
- * each of which has a class here and used to arrive as generic prose. A text
- * with none of them in it is an `EngineError`, which is the honest default.
+ * One row per kind, and the compiler requires the set to be complete: a kind
+ * added to {@link RefusalKind} with no row here does not build. The kinds and
+ * their fields are the ENGINE's, declared once in
+ * `engine/metta/registration.pl` as `metta_host_error_kind_row/3`;
+ * `tests/data/error-kinds.json` carries that list with this seat's class and
+ * the Python seat's beside each, and each seat's suite reads it against its
+ * own map, so the two cannot drift apart in silence.
+ *
+ * Two rows spell the same kind differently from the Python seat on purpose.
+ * `value` and `type` are the codec refusing the caller's own data, which
+ * Python spells with the language's own `ValueError` and `TypeError`; this
+ * seat's family already has a class for each of those meanings, and keeping
+ * them inside it is what makes "catch `MettaError` and you have caught every
+ * refusal" true here.
  */
-export function engineError(text: string): MettaError {
-  const trimmed = text.trimEnd();
-  // The engine names its own control signal in the rendered message, either as
-  // the raw term or as the parenthesised word its message writer appends:
-  // "the evaluation passed its 500 inference bound and was stopped
-  // (inference_limit)". Both spellings are read, because a host that matched
-  // only the raw term would classify the shipped wording as generic prose.
-  const signal = /metta_control_signal\((\w+)|\((inference_limit|time_limit)\)/.exec(trimmed);
-  if (signal !== null) {
-    const named = signal[1] ?? signal[2];
-    const bound = /\bits (\d+)\b|metta_control_signal\(\w+,\s*(\d+)/.exec(trimmed);
-    const limit = Number(bound?.[1] ?? bound?.[2] ?? 0);
-    if (named === "inference_limit") return new InferenceLimitError(trimmed, limit);
-    if (named === "time_limit") return new TimeLimitError(trimmed, limit);
-  }
-  // SWI's own wording for its stacks running out, which is what bounds a
-  // term's DEPTH now that nothing on this side recurses per level: a term
-  // 500,000 deep crosses and a million raises this
-  // [measured 2026-08-31, see C47].
-  const stack = /Stack limit \(([\d.]+)(b|Kb|Mb|Gb)\) exceeded|resource_error\(stack\)/.exec(
-    trimmed,
-  );
-  if (stack !== null) {
-    const size = Number(stack[1] ?? 0) * (STACK_UNITS[stack[2] ?? "b"] ?? 1);
-    return new StackLimitError(
-      `${trimmed}\nthe term was deeper or larger than the engine's own stack; raise ` +
+const KINDS: Readonly<Record<RefusalKind, (text: string, fields: Fields) => MettaError>> = {
+  syntax: (text, fields) => new MettaSyntaxError(text, { line: measure(fields, "line") }),
+  time_limit: (text, fields) => new TimeLimitError(text, { limit: measure(fields, "limit") }),
+  inference_limit: (text, fields) =>
+    new InferenceLimitError(text, { limit: measure(fields, "limit") }),
+  restraint: (text, fields) =>
+    new RestraintError(text, {
+      restraint: fields["restraint"],
+      bound: measure(fields, "bound"),
+      call: fields["call"],
+    }),
+  interrupted: (text) => new InterruptedError(text),
+  value: (text) => new WireError(text),
+  type: (text) => new CastError(text),
+  assertion: (text, fields) => new AssertionError(text, { operation: fields["operation"] }),
+  capability: (text, fields) =>
+    new CapabilityError(text, {
+      space: fields["space"],
+      operation: fields["operation"],
+      capability: fields["capability"],
+    }),
+  operation: (text, fields) =>
+    new OperationError(text, {
+      operation: fields["operation"],
+      kind: fields["kind"],
+      expected: fields["expected"],
+      culprit: fields["culprit"],
+    }),
+  // The one refusal that says more than the engine did: the ceiling is a
+  // startup setting here, so the remedy is not in the engine's own message.
+  stack: (text, fields) =>
+    new StackLimitError(
+      `${text}\nthe term was deeper or larger than the engine's own stack; raise ` +
         `METTA_STACK_LIMIT (or config.configure({ stackLimit }) before the first boot), ` +
         `which a 32-bit WebAssembly build must still fit in its address space`,
-      size,
-    );
-  }
-  // A MeTTa program's own assertion, which the engine raises rather than
-  // answering as data, so a caller who wants to catch a failed assertEqual
-  // has a class for it rather than a prose match.
-  if (/MeTTa assertion failed/.test(trimmed)) return new AssertionError(trimmed);
-  if (/^ERROR:.*[Ss]yntax|cannot be read|operator expected/.test(trimmed)) {
-    return new MettaSyntaxError(trimmed);
-  }
-  // The engine's own words for a file it could not open. `source_sink` is
-  // SWI's existence-error culprit and `does not exist` is its message.
-  if (/source_sink|does not exist/.test(trimmed)) return new SourceNotFoundError(trimmed);
-  if (/\bcapabilit/.test(trimmed)) return new CapabilityError(trimmed);
-  return new EngineError(trimmed);
+      { limit: measure(fields, "limit") },
+    ),
+  source: (text, fields) => new SourceNotFoundError(text, { source: fields["source"] }),
+  engine: (text) => new EngineError(text),
+};
+
+/** Every kind this seat maps, which is every kind the engine publishes. */
+export const REFUSAL_KINDS: readonly RefusalKind[] = Object.keys(KINDS) as RefusalKind[];
+
+/**
+ * The class the engine's own classification names.
+ *
+ * `bridge.pl` reads the KIND off the raised ball through the engine's own
+ * refusal table and sends it with the rendered sentence and the fields that
+ * kind carries; this turns that into the condition it is. It used to read the
+ * sentence instead and knew seven kinds that way, so a tripped restraint, an
+ * interrupt, a builtin's own refusal and both codec kinds arrived as a generic
+ * `EngineError` and no field survived at all.
+ *
+ * A kind this seat does not know is an `EngineError` carrying the engine's
+ * own sentence, which loses nothing a caller had before; the drift itself is
+ * caught by the suite that reads the shared kind list rather than by
+ * replacing a real refusal with a complaint about the wire.
+ */
+export function engineError(text: string, kind: string, fields: Fields = {}): MettaError {
+  const build = Object.hasOwn(KINDS, kind) ? KINDS[kind as RefusalKind] : undefined;
+  return build === undefined ? new EngineError(text) : build(text, fields);
 }
 
 /**

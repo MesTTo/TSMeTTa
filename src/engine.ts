@@ -78,6 +78,24 @@ import {
 } from "./wire.ts";
 
 export { forgetRuntime, packageRoot, repoRoot };
+
+/**
+ * The refusal an `[error, text, kind, fields]` outcome names.
+ *
+ * bridge.pl reads the KIND off the raised ball, through the engine's own
+ * refusal table, so the classification crosses as data instead of being
+ * recovered from the sentence on this side. The fields are flat, name then
+ * text, which is the shape that crosses at constant depth.
+ */
+function refusal(outcome: readonly unknown[], where?: string): MettaError {
+  const said = hostText(outcome[1]).trimEnd();
+  const flat = (outcome[3] ?? []) as readonly unknown[];
+  const fields: Record<string, string> = {};
+  for (let at = 0; at + 1 < flat.length; at += 2) {
+    fields[hostText(flat[at])] = hostText(flat[at + 1]);
+  }
+  return engineError(where === undefined ? said : `${said}\n${where}`, hostText(outcome[2]), fields);
+}
 const REPO_ROOT = repoRoot;
 const VIRTUAL_ROOT = "/metta";
 
@@ -413,7 +431,7 @@ export class Job {
       }
       if (tag === "error") {
         this.close();
-        throw engineError(hostText(event[1]));
+        throw refusal(event);
       }
       if (tag !== "call" && tag !== "pull") {
         return { done: true, event: this.#engine.decodeEvent(tag, event) };
@@ -682,7 +700,7 @@ export class Engine {
     }
     const outcome = result["Outcome"] as readonly unknown[];
     const kind = hostText(outcome[0]);
-    if (kind === "error") throw engineError(`${hostText(outcome[1]).trimEnd()}\nrunning ${goal}`);
+    if (kind === "error") throw refusal(outcome, `running ${goal}`);
     if (kind !== "ok") throw new EngineError(`the engine goal failed: ${goal}`);
     return result;
   }

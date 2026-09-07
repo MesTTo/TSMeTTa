@@ -51,6 +51,11 @@
 %     through metta_node_do/2 and every job body through metta_node_guarded/2,
 %     so the outcome crosses as data
 %     [tested: "raises an error rather than printing it"]
+%   - an error outcome carries the engine's own KIND for the ball and the
+%     fields that kind holds, beside the rendered sentence, so the host
+%     classifies a refusal without matching prose
+%     [tested: "classifies every kind the engine publishes, from a real ball";
+%     commit=WORKTREE]
 %   - a host operation's dispatch clause refuses with its own diagnostic when
 %     it is reached outside an engine, rather than with SWI's vmi message
 %     [tested: "refuses a host operation reached where the engine cannot
@@ -117,13 +122,60 @@
 % cannot fix, so no exception crosses the boundary: the outcome is DATA and
 % the JavaScript side raises from it.
 %
-% [ok], [fail] or [error, Text]. A goal that fails rather than raising is a
-% bug in this file, not an answer, and the host says so; MeTTa's own "no
-% answers" is an empty group, which is a success here.
+% [ok], [fail] or [error, Text, Kind, Fields]. A goal that fails rather than
+% raising is a bug in this file, not an answer, and the host says so; MeTTa's
+% own "no answers" is an empty group, which is a success here.
 metta_node_do(Goal, Outcome) :-
     catch(( call(Goal) -> Outcome = [ok] ; Outcome = [fail] ),
           Ball,
-          ( metta_node_render(Ball, Text), Outcome = [error, Text] )).
+          metta_node_error(Ball, Outcome)).
+
+% What an engine refusal crosses as: the rendered sentence, the KIND word the
+% engine's own refusal table names for that ball, and the fields that kind
+% carries in it.
+%
+% The kind is read from the BALL rather than from the sentence. This seat used
+% to match the rendered message for the seven kinds it knew -- the two control
+% signals, a stack ceiling, a failed assertion, a syntax refusal, a missing
+% source and the letters "capabilit" -- so a tripped tabling restraint, an
+% interrupt, a builtin's own refusal and both codec kinds all arrived as a
+% generic EngineError, and the two seats disagreed about which refusals had a
+% class at all.
+% engine/metta/registration.pl holds the one table both seats now read
+% [tested: "classifies every kind the engine publishes, from a real ball";
+% commit=WORKTREE].
+%
+% The fields cross FLAT and as TEXT, name then value, the same decision the
+% number payload takes and for the same reason: this is the shape that goes
+% through swipl-wasm's toJSON at constant depth, and a field is a name and an
+% atomic value by construction. A compound value crosses as the MeTTa its
+% writer would print, which is what makes a restraint's `call` read back as
+% the call the program wrote.
+%
+% The classification runs inside a catch of its own because it runs inside
+% metta_node_do/2's RECOVERY, where a second exception is no longer guarded
+% and would reach the WebAssembly boundary -- the one thing this file exists
+% to prevent. An unclassifiable ball is `engine`, which is what every ball was
+% before this table existed.
+metta_node_error(Ball, [error, Text, Kind, Fields]) :-
+    metta_node_render(Ball, Text),
+    (   catch(metta_host_error_kind(Ball, Classified, Pairs), _, fail)
+    ->  Kind = Classified,
+        metta_node_error_fields(Pairs, Fields)
+    ;   Kind = engine,
+        Fields = []
+    ).
+
+metta_node_error_fields([], []).
+metta_node_error_fields([Name-Value|Pairs], [Name, Text|Fields]) :-
+    metta_node_field_text(Value, Text),
+    metta_node_error_fields(Pairs, Fields).
+
+metta_node_field_text(Value, Text) :- number(Value), !,
+    metta_node_number_text(Value, Text).
+metta_node_field_text(Value, Text) :- atom(Value), !, atom_string(Value, Text).
+metta_node_field_text(Value, Text) :- string(Value), !, Text = Value.
+metta_node_field_text(Value, Text) :- sdisplay(Value, Text).
 
 % The message is SWI's own: print_message/2 renders it through exactly the
 % machinery the console would have used, and the hook below takes the lines
@@ -638,7 +690,7 @@ metta_node_guarded(Command, Event) :-
     statistics(inferences, Before),
     (   catch(metta_node_perform(Command, Event),
               Ball,
-              ( metta_node_render(Ball, Text), Event = [error, Text] ))
+              metta_node_error(Ball, Event))
     ;   statistics(inferences, After),
         Spent is After - Before,
         metta_node_number_text(Spent, Text),

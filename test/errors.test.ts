@@ -26,7 +26,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { type MeTTa, metta } from "../src/index.ts";
+import { type MeTTa, metta, repoRoot } from "../src/index.ts";
 
 import * as errors from "../src/errors.ts";
 
@@ -39,12 +39,15 @@ import {
   CompileError,
   EngineError,
   InferenceLimitError,
+  InterruptedError,
   MettaError,
   MettaSyntaxError,
   NameError,
+  OperationError,
   ProviderError,
   ResourceLimitError,
   ResultError,
+  RestraintError,
   SourceNotFoundError,
   StackLimitError,
   SubscriberError,
@@ -53,11 +56,33 @@ import {
   UnsupportedError,
   WireError,
   branchFailure,
-  engineError,
   nearest,
   unknownName,
 } from "../src/index.ts";
+// The classifier is the transport's own door rather than a caller's: its
+// input is what the bridge read off the ball. The conditions above are the
+// package's surface; this is not.
+import { REFUSAL_KINDS, engineError } from "../src/errors.ts";
 import { packageRoot } from "../src/engine.ts";
+
+/** The kind list both seats read, and each seat's class for each kind. */
+interface KindRow {
+  readonly origin: string;
+  readonly fields: readonly string[];
+  readonly ball: string;
+  readonly expects: Readonly<Record<string, string>>;
+  readonly node: {
+    readonly error: string;
+    readonly code: Code;
+    readonly attributes: Readonly<Record<string, string>>;
+  };
+}
+
+const KINDS = (
+  JSON.parse(readFileSync(join(repoRoot, "tests", "data", "error-kinds.json"), "utf8")) as {
+    kinds: Record<string, KindRow>;
+  }
+).kinds;
 
 const EXPECTED_CODES: Readonly<Record<string, Code>> = {
   AssertionError: "ERR_METTA_ASSERTION",
@@ -67,9 +92,12 @@ const EXPECTED_CODES: Readonly<Record<string, Code>> = {
   CompileError: "ERR_METTA_LOWER",
   EngineError: "ERR_METTA_ENGINE",
   InferenceLimitError: "ERR_METTA_INFERENCES",
+  InterruptedError: "ERR_METTA_INTERRUPTED",
   MettaSyntaxError: "ERR_METTA_SYNTAX",
   NameError: "ERR_METTA_NAME",
+  OperationError: "ERR_METTA_OPERATION",
   ProviderError: "ERR_METTA_PROVIDER",
+  RestraintError: "ERR_METTA_RESTRAINT",
   ResultError: "ERR_METTA_ABSENT",
   SourceNotFoundError: "ERR_METTA_SOURCE",
   StackLimitError: "ERR_METTA_STACK",
@@ -113,8 +141,9 @@ describe("the error family", () => {
     );
     for (const Kind of CONDITIONS) {
       const code = EXPECTED_CODES[Kind.name] as Code;
-      const args = Kind.prototype instanceof ResourceLimitError ? ["something", 1] : ["something"];
-      const raised = Reflect.construct(Kind, args) as MettaError;
+      // One shape for every condition: the message, then that condition's own
+      // parts in an options bag, all of them optional.
+      const raised = Reflect.construct(Kind, ["something"]) as MettaError;
       assert.equal(raised.code, code, Kind.name);
       assert.equal(raised.name, Kind.name);
       assert.ok(raised instanceof MettaError, `${Kind.name} is in the family`);
@@ -125,12 +154,23 @@ describe("the error family", () => {
   });
 
   it("carries a limit on a resource refusal", () => {
-    const raised = new InferenceLimitError("too much", 500);
+    const raised = new InferenceLimitError("too much", { limit: 500 });
     assert.equal(raised.limit, 500);
     assert.ok(raised instanceof ResourceLimitError);
-    assert.equal(new TimeLimitError("too slow", 2).code, "ERR_METTA_TIME");
-    assert.equal(new StackLimitError("too deep", 1024).code, "ERR_METTA_STACK");
-    assert.ok(new StackLimitError("too deep", 1024) instanceof ResourceLimitError);
+    assert.equal(new TimeLimitError("too slow", { limit: 2 }).code, "ERR_METTA_TIME");
+    assert.equal(new StackLimitError("too deep", { limit: 1024 }).code, "ERR_METTA_STACK");
+    assert.ok(new StackLimitError("too deep", { limit: 1024 }) instanceof ResourceLimitError);
+    // A budget that expired inside a nested query knows its resource and not
+    // its number, and says so rather than reporting a bound of zero.
+    assert.equal(new InferenceLimitError("spent").limit, undefined);
+    // The restraint's bound IS the family's limit, under the family's name.
+    const tripped = new RestraintError("stopped", {
+      restraint: "max-answers",
+      bound: 2,
+      call: "(f 1)",
+    });
+    assert.ok(tripped instanceof ResourceLimitError);
+    assert.deepEqual([tripped.restraint, tripped.limit, tripped.call], ["max-answers", 2, "(f 1)"]);
   });
 
   it("discovers every published condition and its producer", () => {
@@ -157,40 +197,40 @@ describe("the error family", () => {
     assert.ok(!MettaError.is(new WireError("x"), "ERR_METTA_ENGINE"));
   });
 
-  it("classifies the engine's own control signals", () => {
-    const inferences = engineError(
-      "metta: the evaluation passed its 500 inference bound and was stopped (inference_limit)",
-    );
-    assert.ok(inferences instanceof InferenceLimitError);
-    assert.equal(inferences.code, "ERR_METTA_INFERENCES");
-    assert.equal((inferences as InferenceLimitError).limit, 500);
-
-    const raw = engineError("error(metta_control_signal(time_limit, 3), context(x, y))");
-    assert.ok(raw instanceof TimeLimitError);
-    assert.equal((raw as TimeLimitError).limit, 3);
-
-    assert.ok(engineError("something else entirely") instanceof EngineError);
+  it("covers every kind the engine publishes", () => {
+    // The shared list, which the Python seat's own suite reads against its
+    // map. A kind added to one seat and forgotten in the other fails here.
+    assert.deepEqual([...REFUSAL_KINDS].sort(), Object.keys(KINDS).sort());
+    for (const [kind, row] of Object.entries(KINDS)) {
+      const raised = engineError("said", kind, row.expects);
+      assert.equal(raised.constructor.name, row.node.error, kind);
+      assert.equal(raised.code, row.node.code, kind);
+      for (const [field, attribute] of Object.entries(row.node.attributes)) {
+        const held = (raised as unknown as Record<string, unknown>)[attribute];
+        assert.equal(String(held), row.expects[field], `${kind}.${field}`);
+      }
+    }
   });
 
-  it("classifies the three engine wordings that used to arrive as prose", () => {
-    // Each of these was a generic `EngineError` until 2026-08-31, so a caller
-    // who wanted to act on one had to match the prose [C51].
-    const deep = engineError("Stack limit (1.0Gb) exceeded\n  Stack sizes: local: 0.6Gb");
+  it("reads the kind the engine sent, never the sentence", () => {
+    // The exact wording that used to be matched here, sent with the kind the
+    // engine actually read: the prose no longer decides anything.
+    const said = "metta: the evaluation passed its 500 inference bound and was stopped";
+    assert.ok(engineError(said, "engine", {}) instanceof EngineError);
+    assert.ok(engineError("nothing about a limit", "inference_limit", { limit: "9" }) instanceof
+      InferenceLimitError);
+    // A kind this seat does not know keeps the engine's own sentence rather
+    // than being replaced by a complaint about the wire.
+    const unknown = engineError("said", "a-kind-from-a-newer-engine", {});
+    assert.ok(unknown instanceof EngineError);
+    assert.equal(unknown.message, "said");
+  });
+
+  it("names its own remedy for a stack ceiling", () => {
+    const deep = engineError("Stack limit (1.0Gb) exceeded", "stack", { limit: "1073741824" });
     assert.ok(deep instanceof StackLimitError);
-    assert.equal(deep.code, "ERR_METTA_STACK");
     assert.equal((deep as StackLimitError).limit, 1024 * 1024 * 1024);
     assert.match(deep.message, /METTA_STACK_LIMIT/, "the refusal names its own remedy");
-    assert.ok(engineError("error(resource_error(stack), _)") instanceof StackLimitError);
-
-    // The engine's own wording, culprit included: a failure blames the MeTTa
-    // head the program wrote, never the Prolog predicate that raised.
-    const failed = engineError("assert: MeTTa assertion failed: false (MeTTa assertion failed)");
-    assert.ok(failed instanceof AssertionError);
-    assert.equal(failed.code, "ERR_METTA_ASSERTION");
-
-    const absent = engineError("source_sink `'/no/such.metta'' does not exist");
-    assert.ok(absent instanceof SourceNotFoundError);
-    assert.equal(absent.code, "ERR_METTA_SOURCE");
   });
 
   it("gathers several branch failures the way the platform names it", () => {
@@ -280,6 +320,65 @@ describe("an assertion failure crossing the seat", () => {
         assert.match(text, /MeTTa assertion failed: \(assertIncludes \(superpose \(1 2\)\) \(7\)\)/);
         assert.match(text, /missing: \(7\)/);
         assert.doesNotMatch(text, /excess/);
+        return true;
+      },
+    );
+  });
+});
+
+describe("every kind the engine publishes, over a live engine", () => {
+  let m: MeTTa;
+
+  before(async () => {
+    m = await metta();
+  });
+
+  after(() => {
+    m.dispose();
+  });
+
+  // The differential the shared list is for: the same ball the Python seat's
+  // own suite throws, raised inside this engine, classified by the engine's
+  // table, carried over this seat's wire and read back as a condition. Before
+  // 2026-09-07 this side matched six words in the rendered sentence, so eight
+  // of these thirteen arrived as a generic EngineError with no field at all.
+  it("classifies every kind the engine publishes, from a real ball", () => {
+    for (const [kind, row] of Object.entries(KINDS)) {
+      assert.throws(
+        () => m.engine.once(`throw(${row.ball})`),
+        (raised: unknown) => {
+          const error = raised as MettaError;
+          assert.equal(error.constructor.name, row.node.error, kind);
+          assert.equal(error.code, row.node.code, kind);
+          for (const [field, attribute] of Object.entries(row.node.attributes)) {
+            const held = (error as unknown as Record<string, unknown>)[attribute];
+            assert.equal(String(held), row.expects[field], `${kind}.${field}`);
+          }
+          return true;
+        },
+        kind,
+      );
+    }
+  });
+
+  // The restraint a program declared for its own table, tripped by asking for
+  // more answers than the row allows. Three fields: the word, the bound and
+  // the tabled call as the program wrote it.
+  it("carries the word, the bound and the call of a tripped restraint", () => {
+    m.run("!(import! &self (library lib_tabling))");
+    m.run("(= (nx-upto $n) (superpose (1 2 3 4 5 6 7 8 9 10)))");
+    m.run("!(add-atom &metta (cache nx-upto (max-answers 2)))");
+    assert.throws(
+      () => m.run("!(collapse (nx-upto 10))"),
+      (raised: unknown) => {
+        assert.ok(raised instanceof RestraintError, `${String(raised)} is not a RestraintError`);
+        const tripped = raised as RestraintError;
+        assert.ok(tripped instanceof ResourceLimitError, "a restraint is a resource bound");
+        assert.equal(tripped.code, "ERR_METTA_RESTRAINT");
+        assert.equal(tripped.restraint, "max-answers");
+        assert.equal(tripped.limit, 2);
+        assert.equal(tripped.call, "(nx-upto 10)");
+        assert.match(tripped.message, /\(max-answers 2\) restraint/);
         return true;
       },
     );

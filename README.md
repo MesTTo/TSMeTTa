@@ -1331,6 +1331,31 @@ refusals have a class. Two kinds are spelled differently there on purpose:
 its own `ValueError` and `TypeError` and this seat keeps inside the family, so
 catching `MettaError` still catches every refusal here.
 
+### What to do about one
+
+Every refusal carries `.remedy` and `.ground` beside its message, read off the
+engine's own `(refusal ...)` catalog row for its kind and rendered by the
+engine with this refusal's own fields already in it:
+
+```ts
+try { m.run("!(pragma! max-time 0.05) !(spin 1)"); }
+catch (e) {
+  if (e instanceof TimeLimitError) {
+    console.log(e.remedy?.title);          // raise the bound past 0.05 seconds, or narrow the query
+    console.log(e.remedy?.applicability);  // prose: the new bound is your choice
+    console.log(e.remedy?.edit);           // (edit (pragma! max-time <seconds>))
+    console.log(e.ground?.kind);           // metta-law
+  }
+}
+```
+
+`applicability` is rustc's: `machine` is definitely right, `maybe` is valid
+but may not be what you meant, `prose` still has a `<placeholder>` in it.
+`edit` is MeTTa source, so `m.parse(e.remedy.edit)` is the atom. A capability
+refusal is the one whose every hole the engine can fill, so it arrives `maybe`
+carrying `(edit (grants &restricted process))`. `toJSON()` carries both, and
+`website/reference/refusals.md` is the whole table.
+
 ## Nothing reaches your console
 
 An embedded engine that prints is printing over whatever the host was saying,

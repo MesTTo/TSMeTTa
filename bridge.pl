@@ -1,3 +1,8 @@
+% Guarantees: an engine refusal crosses as [error, Text, Kind, Fields, Ground,
+%   Remedy], the last two being the engine's own (refusal ...) row for that
+%   kind with the remedy's <field> holes already filled, both flat and as text
+%   [tested: extensions/node/test/errors.test.ts,
+%   "carries the ground and the filled remedy of every kind"; commit=WORKTREE].
 % Purpose: the Prolog half of the Node binding's transport. It runs MeTTa
 %   inside an SWI engine that can suspend, so answers arrive one at a time and
 %   a host operation written in TypeScript is called from the middle of a
@@ -157,13 +162,51 @@ metta_node_do(Goal, Outcome) :-
 % and would reach the WebAssembly boundary -- the one thing this file exists
 % to prevent. An unclassifiable ball is `engine`, which is what every ball was
 % before this table existed.
-metta_node_error(Ball, [error, Text, Kind, Fields]) :-
+metta_node_error(Ball, [error, Text, Kind, Fields, Ground, Remedy]) :-
     metta_node_render(Ball, Text),
     (   catch(metta_host_error_kind(Ball, Classified, Pairs), _, fail)
     ->  Kind = Classified,
         metta_node_error_fields(Pairs, Fields)
     ;   Kind = engine,
         Fields = []
+    ),
+    metta_node_error_reading(Ball, Ground, Remedy).
+
+% The catalog's declaration for this refusal, rendered once by the engine and
+% carried beside the sentence: the authority the refusal stands on, and the
+% repair with the remedy template's <field> holes already filled from this
+% ball. Both cross FLAT and as TEXT, for the same reason the fields do.
+%
+% A remedy's ACTS cross as the MeTTa a program would write, one string, which
+% is the rung below this seat's Remedy: a caller hands it to `m.parse` when it
+% wants the atom. Rendering them here rather than on the JavaScript side keeps
+% the engine's own writer the only thing that spells an atom.
+%
+% Empty where the kind carries no row, which the row lane forbids and a
+% program that removed the row can still produce; the JavaScript side then
+% raises the condition it already had, with no ground and no remedy.
+metta_node_error_reading(Ball, Ground, Remedy) :-
+    (   catch(metta_host_refusal(Ball, _, _, _, GroundRow, RemedyRow), _, fail)
+    ->  metta_node_ground_wire(GroundRow, Ground),
+        metta_node_remedy_wire(RemedyRow, Remedy)
+    ;   Ground = [],
+        Remedy = []
+    ).
+
+metta_node_ground_wire([ground, Authority, Citation], [AuthorityText, CitationText]) :-
+    metta_node_field_text(Authority, AuthorityText),
+    metta_node_field_text(Citation, CitationText).
+
+metta_node_remedy_wire([remedy, Title, Kind, Applicability|Acts],
+                       [TitleText, KindText, ApplicabilityText, ActsText]) :-
+    metta_node_field_text(Title, TitleText),
+    metta_node_field_text(Kind, KindText),
+    metta_node_field_text(Applicability, ApplicabilityText),
+    (   Acts == []
+    ->  ActsText = ""
+    ;   maplist(sdisplay, Acts, Rendered),
+        atomic_list_concat(Rendered, ' ', Joined),
+        atom_string(Joined, ActsText)
     ).
 
 metta_node_error_fields([], []).

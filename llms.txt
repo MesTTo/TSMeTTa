@@ -80,6 +80,15 @@ else is `EngineError`. A `limit` is `undefined` where a budget expired inside a
 nested query, which is the one case the engine cannot name the number. The list
 is `tests/data/error-kinds.json`, shared with the Python seat.
 
+Every refusal also carries `.ground` and `.remedy`, read off the engine's own
+`(refusal ...)` catalog row for its kind and rendered by the engine with this
+refusal's own fields in it: `error.remedy.title` is one line saying what to do
+(`raise the bound past 0.05 seconds, or narrow the query`), `.applicability` is
+rustc's (`machine`, `maybe`, `prose`) and `.edit` is the MeTTa to write, as
+source text for `m.parse`. `.ground.kind` is `metta-law` or `arbiter` and
+`.citation` names the place. `toJSON()` carries both, so a structured log keeps
+them. `website/reference/refusals.md` is the whole table.
+
 ```ts
 try { m.run("!(collapse (upto 10))"); }        // (cache upto (max-answers 2))
 catch (e) {

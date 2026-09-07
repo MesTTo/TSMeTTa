@@ -27,6 +27,16 @@
  *     [tested: "covers every kind the engine publishes";
  *     "classifies every kind the engine publishes, from a real ball";
  *     commit=52e95b50cc5acdc0e41f97b444ab244ad1301433]
+ *   - every refusal carries the `ground` and the `remedy` of its kind's own
+ *     `(refusal ...)` catalog row, rendered by the engine with this refusal's
+ *     fields already in them, and `toJSON` carries both
+ *     [tested: "carries the ground and the filled remedy of every kind";
+ *     "carries a filled edit where every hole was a field"; commit=WORKTREE]
+ *   - the kind union is the GENERATED `refusal-kind` vocabulary, so a kind
+ *     added to the catalog reaches this seat through vocabgen rather than by
+ *     being written out here beside the map it would be checked against
+ *     [tested: "raises the class each row names, or the shared list says why";
+ *     commit=WORKTREE]
  *   - a bound the engine could not name is `undefined` rather than 0
  *     [tested: "carries a limit on a resource refusal"; commit=52e95b50cc5acdc0e41f97b444ab244ad1301433]
  *   - a reduction that failed across several nondeterministic branches raises
@@ -47,6 +57,8 @@
  *   Hacks: None
  *   Future Enhancements: None
  */
+
+import type { RefusalKind } from "./vocabularies.ts";
 
 /** The stable codes. Match on these; the prose beside them is free to change. */
 export type Code =
@@ -97,10 +109,51 @@ export type Code =
   /** A source a program named is not there. */
   | "ERR_METTA_SOURCE";
 
+/**
+ * The authority one refusal stands on.
+ *
+ * `kind` is `metta-law` for a law this engine states, `arbiter` for a
+ * measured answer of upstream PeTTa under `tests/conformance/petta/`, and
+ * `host-reference` for the host language's own specification, which only a
+ * seat's own refusals cite. `citation` names the place.
+ * Its longhand is reading the message, which never changes for its presence.
+ */
+export interface Ground {
+  /** Which authority: `metta-law`, `arbiter` or `host-reference`. */
+  readonly kind: string;
+  /** The exact place that authority states it. */
+  readonly citation: string;
+}
+
+/**
+ * The repair, as data rather than a sentence to parse.
+ *
+ * `kind` is LSP's CodeActionKind (`quickfix`, `refactor`, `source`) and
+ * `applicability` is rustc's: `machine` is definitely right, `maybe` is valid
+ * but may not be what was meant, `prose` still carries a `<placeholder>` for
+ * a reader to fill. `edit` is the MeTTa the repair names, as source text, so
+ * `m.parse(remedy.edit)` is the atom; a remedy whose repair is a decision
+ * carries a title and no edit at all.
+ */
+export interface Remedy {
+  /** The one line an editor puts in its menu. */
+  readonly title: string;
+  /** LSP's CodeActionKind: `quickfix`, `refactor` or `source`. */
+  readonly kind: string;
+  /** rustc's Applicability: `machine`, `maybe` or `prose`. */
+  readonly applicability: string;
+  /** The MeTTa the repair names, as its own source text. */
+  readonly edit?: string;
+}
+
 /** What every constructor in the family accepts. */
 export interface MettaErrorOptions extends ErrorOptions {
   /** Override the subclass's own default code. */
   readonly code?: Code;
+  /** The authority this refusal stands on, where the engine declared one. */
+  readonly ground?: Ground;
+  /** The repair, where the engine's catalog names one. */
+  readonly remedy?: Remedy;
 }
 
 /**
@@ -123,12 +176,26 @@ export class MettaError extends Error {
   /** The stable code. Match on this, never on the prose. */
   readonly code: Code;
 
+  /**
+   * The authority this refusal stands on, where one is declared.
+   *
+   * Read off the engine's own `(refusal ...)` catalog row at the crossing,
+   * beside the kind, so both seats say the same thing about the same refusal
+   * [source: engine/spaces/catalog.pl, metta_refusal_declaration/4].
+   */
+  readonly ground: Ground | undefined;
+
+  /** The repair, with the row's `<field>` holes filled from this refusal. */
+  readonly remedy: Remedy | undefined;
+
   constructor(message: string, options: MettaErrorOptions = {}) {
     super(message, "cause" in options ? { cause: options.cause } : undefined);
     // `new.target.name` rather than a literal: every subclass then names
     // itself in a stack trace without restating its own name in a constructor.
     this.name = new.target.name;
     this.code = options.code ?? (new.target as typeof MettaError).defaultCode;
+    this.ground = options.ground;
+    this.remedy = options.remedy;
   }
 
   /** The code instances of this class carry unless told otherwise. */
@@ -145,8 +212,19 @@ export class MettaError extends Error {
   }
 
   /** The wire shape, so a refusal survives a structured log. */
-  toJSON(): { name: string; code: Code; message: string } {
-    return { name: this.name, code: this.code, message: this.message };
+  toJSON(): {
+    name: string;
+    code: Code;
+    message: string;
+    ground?: Ground;
+    remedy?: Remedy;
+  } {
+    const carried = { name: this.name, code: this.code, message: this.message };
+    return {
+      ...carried,
+      ...(this.ground === undefined ? {} : { ground: this.ground }),
+      ...(this.remedy === undefined ? {} : { remedy: this.remedy }),
+    };
   }
 }
 
@@ -482,34 +560,17 @@ export function isTransportError(value: unknown): value is TransportError {
   return value instanceof TransportError;
 }
 
-/** The engine's own kind word for a refusal, one per row of its table. */
-export type RefusalKind =
-  /** Source text the engine's reader would not read. */
-  | "syntax"
-  /** A time budget a scope declared ran out. */
-  | "time_limit"
-  /** An inference budget a scope declared ran out. */
-  | "inference_limit"
-  /** A restraint a `(cache ...)` row declared for a table tripped. */
-  | "restraint"
-  /** The evaluation was stopped from outside. */
-  | "interrupted"
-  /** A value the engine's codec would not carry. */
-  | "value"
-  /** A value of the wrong type for what the codec was asked to do with it. */
-  | "type"
-  /** A `test` or `assert` a MeTTa program made did not hold. */
-  | "assertion"
-  /** A restricted space lacks the capability an operation needed. */
-  | "capability"
-  /** A builtin refused a value, naming the operation the source wrote. */
-  | "operation"
-  /** The engine's own Prolog stack ran out. */
-  | "stack"
-  /** A file, module or library a program named is not there. */
-  | "source"
-  /** A ball the engine did not shape, which is the honest default. */
-  | "engine";
+/**
+ * The engine's own kind word for a refusal, one per row of its table.
+ *
+ * Re-exported from the GENERATED vocabulary rather than written here: the
+ * `refusal-kind` row in `&metta` derives from the same `(refusal ...)`
+ * declarations the classes below map, so a kind added to the engine reaches
+ * this seat when `vocabgen` runs and the `vocab-sync` lane fails until it
+ * does. The union used to be written out by hand beside `KINDS`, and one list
+ * checking another list in the same file is not a check.
+ */
+export type { RefusalKind };
 
 /** One refusal's fields, by the engine's own name for each, as text. */
 export type Fields = Readonly<Record<string, string>>;
@@ -538,29 +599,37 @@ function measure(fields: Fields, name: string): number | undefined {
  * them inside it is what makes "catch `MettaError` and you have caught every
  * refusal" true here.
  */
-const KINDS: Readonly<Record<RefusalKind, (text: string, fields: Fields) => MettaError>> = {
-  syntax: (text, fields) => new MettaSyntaxError(text, { line: measure(fields, "line") }),
-  time_limit: (text, fields) => new TimeLimitError(text, { limit: measure(fields, "limit") }),
-  inference_limit: (text, fields) =>
-    new InferenceLimitError(text, { limit: measure(fields, "limit") }),
-  restraint: (text, fields) =>
+const KINDS: Readonly<
+  Record<RefusalKind, (text: string, fields: Fields, carried: MettaErrorOptions) => MettaError>
+> = {
+  syntax: (text, fields, carried) =>
+    new MettaSyntaxError(text, { ...carried, line: measure(fields, "line") }),
+  time_limit: (text, fields, carried) =>
+    new TimeLimitError(text, { ...carried, limit: measure(fields, "limit") }),
+  inference_limit: (text, fields, carried) =>
+    new InferenceLimitError(text, { ...carried, limit: measure(fields, "limit") }),
+  restraint: (text, fields, carried) =>
     new RestraintError(text, {
+      ...carried,
       restraint: fields["restraint"],
       bound: measure(fields, "bound"),
       call: fields["call"],
     }),
-  interrupted: (text) => new InterruptedError(text),
-  value: (text) => new WireError(text),
-  type: (text) => new CastError(text),
-  assertion: (text, fields) => new AssertionError(text, { operation: fields["operation"] }),
-  capability: (text, fields) =>
+  interrupted: (text, _fields, carried) => new InterruptedError(text, carried),
+  value: (text, _fields, carried) => new WireError(text, carried),
+  type: (text, _fields, carried) => new CastError(text, carried),
+  assertion: (text, fields, carried) =>
+    new AssertionError(text, { ...carried, operation: fields["operation"] }),
+  capability: (text, fields, carried) =>
     new CapabilityError(text, {
+      ...carried,
       space: fields["space"],
       operation: fields["operation"],
       capability: fields["capability"],
     }),
-  operation: (text, fields) =>
+  operation: (text, fields, carried) =>
     new OperationError(text, {
+      ...carried,
       operation: fields["operation"],
       kind: fields["kind"],
       expected: fields["expected"],
@@ -568,15 +637,16 @@ const KINDS: Readonly<Record<RefusalKind, (text: string, fields: Fields) => Mett
     }),
   // The one refusal that says more than the engine did: the ceiling is a
   // startup setting here, so the remedy is not in the engine's own message.
-  stack: (text, fields) =>
+  stack: (text, fields, carried) =>
     new StackLimitError(
       `${text}\nthe term was deeper or larger than the engine's own stack; raise ` +
         `METTA_STACK_LIMIT (or config.configure({ stackLimit }) before the first boot), ` +
         `which a 32-bit WebAssembly build must still fit in its address space`,
-      { limit: measure(fields, "limit") },
+      { ...carried, limit: measure(fields, "limit") },
     ),
-  source: (text, fields) => new SourceNotFoundError(text, { source: fields["source"] }),
-  engine: (text) => new EngineError(text),
+  source: (text, fields, carried) =>
+    new SourceNotFoundError(text, { ...carried, source: fields["source"] }),
+  engine: (text, _fields, carried) => new EngineError(text, carried),
 };
 
 /** Every kind this seat maps, which is every kind the engine publishes. */
@@ -597,9 +667,14 @@ export const REFUSAL_KINDS: readonly RefusalKind[] = Object.keys(KINDS) as Refus
  * caught by the suite that reads the shared kind list rather than by
  * replacing a real refusal with a complaint about the wire.
  */
-export function engineError(text: string, kind: string, fields: Fields = {}): MettaError {
+export function engineError(
+  text: string,
+  kind: string,
+  fields: Fields = {},
+  carried: MettaErrorOptions = {},
+): MettaError {
   const build = Object.hasOwn(KINDS, kind) ? KINDS[kind as RefusalKind] : undefined;
-  return build === undefined ? new EngineError(text) : build(text, fields);
+  return build === undefined ? new EngineError(text, carried) : build(text, fields, carried);
 }
 
 /**

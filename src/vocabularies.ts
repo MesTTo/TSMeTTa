@@ -142,6 +142,16 @@ export const AnswerPolicy = {
 /** One value of the `answer-policy` vocabulary. */
 export type AnswerPolicy = (typeof AnswerPolicy)[keyof typeof AnswerPolicy];
 
+/** The `applicability` vocabulary, in the catalog's own order. */
+export const Applicability = {
+  machine: "machine",
+  maybe: "maybe",
+  prose: "prose",
+} as const;
+
+/** One value of the `applicability` vocabulary. */
+export type Applicability = (typeof Applicability)[keyof typeof Applicability];
+
 /** The `atomicity` vocabulary, in the catalog's own order. */
 export const Atomicity = {
   transactional: "transactional",
@@ -237,6 +247,16 @@ export const Fidelity = {
 /** One value of the `fidelity` vocabulary. */
 export type Fidelity = (typeof Fidelity)[keyof typeof Fidelity];
 
+/** The `ground-kind` vocabulary, in the catalog's own order. */
+export const GroundKind = {
+  hostReference: "host-reference",
+  mettaLaw: "metta-law",
+  arbiter: "arbiter",
+} as const;
+
+/** One value of the `ground-kind` vocabulary. */
+export type GroundKind = (typeof GroundKind)[keyof typeof GroundKind];
+
 /** The `image-mode` vocabulary, in the catalog's own order. */
 export const ImageMode = {
   opaque: "opaque",
@@ -329,6 +349,26 @@ export const Refinement = {
 /** One value of the `refinement` vocabulary. */
 export type Refinement = (typeof Refinement)[keyof typeof Refinement];
 
+/** The `refusal-kind` vocabulary, in the catalog's own order. */
+export const RefusalKind = {
+  syntax: "syntax",
+  time_limit: "time_limit",
+  inference_limit: "inference_limit",
+  restraint: "restraint",
+  interrupted: "interrupted",
+  value: "value",
+  type: "type",
+  assertion: "assertion",
+  capability: "capability",
+  operation: "operation",
+  stack: "stack",
+  source: "source",
+  engine: "engine",
+} as const;
+
+/** One value of the `refusal-kind` vocabulary. */
+export type RefusalKind = (typeof RefusalKind)[keyof typeof RefusalKind];
+
 /** The `registry-image` vocabulary, in the catalog's own order. */
 export const RegistryImage = {
   expression: "expression",
@@ -339,6 +379,16 @@ export const RegistryImage = {
 
 /** One value of the `registry-image` vocabulary. */
 export type RegistryImage = (typeof RegistryImage)[keyof typeof RegistryImage];
+
+/** The `remedy-kind` vocabulary, in the catalog's own order. */
+export const RemedyKind = {
+  quickfix: "quickfix",
+  refactor: "refactor",
+  source: "source",
+} as const;
+
+/** One value of the `remedy-kind` vocabulary. */
+export type RemedyKind = (typeof RemedyKind)[keyof typeof RemedyKind];
 
 /** The `route-key` vocabulary, in the catalog's own order. */
 export const RouteKey = {
@@ -459,6 +509,7 @@ export interface Vocabularies {
   readonly "agenda-policy": typeof AgendaPolicy;
   readonly "algebra-law": typeof AlgebraLaw;
   readonly "answer-policy": typeof AnswerPolicy;
+  readonly "applicability": typeof Applicability;
   readonly "atomicity": typeof Atomicity;
   readonly "cache-policy": typeof CachePolicy;
   readonly "cost-class": typeof CostClass;
@@ -467,6 +518,7 @@ export interface Vocabularies {
   readonly "effect-class": typeof EffectClass;
   readonly "event-order": typeof EventOrder;
   readonly "fidelity": typeof Fidelity;
+  readonly "ground-kind": typeof GroundKind;
   readonly "image-mode": typeof ImageMode;
   readonly "limit": typeof Limit;
   readonly "memo-aggregate": typeof MemoAggregate;
@@ -475,7 +527,9 @@ export interface Vocabularies {
   readonly "on-error-mode": typeof OnErrorMode;
   readonly "op-kind": typeof OpKind;
   readonly "refinement": typeof Refinement;
+  readonly "refusal-kind": typeof RefusalKind;
   readonly "registry-image": typeof RegistryImage;
+  readonly "remedy-kind": typeof RemedyKind;
   readonly "route-key": typeof RouteKey;
   readonly "save-format": typeof SaveFormat;
   readonly "semiring": typeof Semiring;
@@ -499,6 +553,7 @@ export const VOCABULARIES: Vocabularies = {
   "agenda-policy": AgendaPolicy,
   "algebra-law": AlgebraLaw,
   "answer-policy": AnswerPolicy,
+  "applicability": Applicability,
   "atomicity": Atomicity,
   "cache-policy": CachePolicy,
   "cost-class": CostClass,
@@ -507,6 +562,7 @@ export const VOCABULARIES: Vocabularies = {
   "effect-class": EffectClass,
   "event-order": EventOrder,
   "fidelity": Fidelity,
+  "ground-kind": GroundKind,
   "image-mode": ImageMode,
   "limit": Limit,
   "memo-aggregate": MemoAggregate,
@@ -515,7 +571,9 @@ export const VOCABULARIES: Vocabularies = {
   "on-error-mode": OnErrorMode,
   "op-kind": OpKind,
   "refinement": Refinement,
+  "refusal-kind": RefusalKind,
   "registry-image": RegistryImage,
+  "remedy-kind": RemedyKind,
   "route-key": RouteKey,
   "save-format": SaveFormat,
   "semiring": Semiring,

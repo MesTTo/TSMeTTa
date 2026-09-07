@@ -41,7 +41,7 @@
 %     and a provider declaring a word neither shipped nor registered is
 %     refused [tested: "names every capability the engine's own row carries",
 %     catalog_vocabulary_words:an_unknown_capability_word_is_refused;
-%     commit=WORKTREE]
+%     commit=7f9c810e5f4a2023ad98de34e848667dd72bc4a7]
 %   - partial/2 and other compounds use Python's expression tag, with the
 %     functor followed by its arguments; improper lists use (cons Head Tail)
 %     [tested: "carries partial applications as the Python wire's expression",

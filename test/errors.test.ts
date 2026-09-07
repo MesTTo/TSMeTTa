@@ -411,6 +411,45 @@ describe("every kind the engine publishes, over a live engine", () => {
     }
   });
 
+  // The row is what this seat READS, not a copy of it: rewriting one in the
+  // catalog changes what a refusal carries here with no TypeScript change at
+  // all. The Python seat's own suite plants the same row for the same reason.
+  it("carries a row rewritten in the catalog, with no change to this seat", () => {
+    const shipped = String(
+      m.run("!(match &metta (refusal engine $c $g $r) (refusal engine $c $g $r))")[0]?.answers[0],
+    );
+    const planted =
+      '(refusal engine EngineError (ground metta-law "HostLaws: a planted row") ' +
+      '(remedy "planted repair for <nothing>" refactor prose))';
+    const rewrite = (row: string): void => {
+      m.run(`!(remove-atom &metta ${shipped})`);
+      m.run(`!(add-atom &metta ${row})`);
+    };
+    rewrite(planted);
+    try {
+      assert.throws(
+        () => m.engine.once(`throw(${KINDS["engine"]?.ball})`),
+        (raised: unknown) => {
+          const error = raised as MettaError;
+          assert.equal(error.remedy?.title, "planted repair for <nothing>");
+          assert.equal(error.remedy?.kind, "refactor");
+          assert.equal(error.ground?.citation, "HostLaws: a planted row");
+          return true;
+        },
+      );
+    } finally {
+      m.run(`!(remove-atom &metta ${planted})`);
+      m.run(`!(add-atom &metta ${shipped})`);
+    }
+    assert.throws(
+      () => m.engine.once(`throw(${KINDS["engine"]?.ball})`),
+      (raised: unknown) => {
+        assert.match((raised as MettaError).remedy?.title ?? "", /report the ball/);
+        return true;
+      },
+    );
+  });
+
   // A capability refusal is the one whose whole edit the ball can fill, so it
   // is the one that reaches this seat as an atom a program can write back.
   it("carries a filled edit where every hole was a field", () => {

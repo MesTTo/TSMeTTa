@@ -35,6 +35,13 @@
 %     PeTTa@ae66fa8e41dcd5539d614706bd4e5cfb34f9608d src/metta.pl,
 %     eval_20/6 clauses for '==' and '!='].
 % Guarantees:
+%   - the three capability words this seat gates its own seam clauses on and
+%     the engine names nowhere -- bounded, pushdown and transactional -- are
+%     registered against the catalog's OPEN provider-capability row at load,
+%     and a provider declaring a word neither shipped nor registered is
+%     refused [tested: "names every capability the engine's own row carries",
+%     catalog_vocabulary_words:an_unknown_capability_word_is_refused;
+%     commit=WORKTREE]
 %   - partial/2 and other compounds use Python's expression tag, with the
 %     functor followed by its arguments; improper lists use (cons Head Tail)
 %     [tested: "carries partial applications as the Python wire's expression",
@@ -1198,6 +1205,7 @@ metta_node_command(provider, [Space0, Caps0, Delivery0], [value, [s, "ok"]]) :-
     retractall(metta_node_capability(Space, _)),
     forall(member(Cap0, Caps0),
            ( metta_node_atom(Cap0, Cap),
+             metta_require_foreign_capability(Space, Cap),
              assertz(metta_node_capability(Space, Cap)) )),
     metta_node_declare_delivery(Space, Delivery0).
 
@@ -1772,6 +1780,23 @@ metta_node_leaf(_, Goal, [[builtin, Text]]) :- term_string(Goal, Text).
 
 :- dynamic metta_node_foreign/1.
 :- dynamic metta_node_capability/2.
+
+% Three capability words this seat gates its own seam clauses on and the
+% engine names nowhere: `bounded` for the take bound a matcher can push into
+% its own query, `pushdown` for the filtering claim seam:foreign_pushdown/3
+% asks, and `transactional` for the begin/commit/rollback trio. They are
+% registered through the catalog's own door rather than written into the
+% engine's row, because that is what an OPEN vocabulary is for: the engine
+% ships the words it acts on, and a seat declaring a hook of its own declares
+% the word beside it. The Node provider surface's own list is held to the row
+% plus these three by extensions/node/test/vocabularies.test.ts.
+:- forall(member(Capability, ['bounded', 'pushdown', 'transactional']),
+          (   metta_vocabulary_value('provider-capability', Capability)
+          ->  true
+          ;   add_sexp('&metta',
+                       ['vocabulary-member', 'provider-capability', Capability],
+                       _)
+          )).
 
 % The ownership seam carries NO clause from this file, and registration
 % asserts one.

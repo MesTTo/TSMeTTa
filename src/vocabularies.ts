@@ -152,6 +152,15 @@ export const Applicability = {
 /** One value of the `applicability` vocabulary. */
 export type Applicability = (typeof Applicability)[keyof typeof Applicability];
 
+/** The `argument-delivery` vocabulary, in the catalog's own order. */
+export const ArgumentDelivery = {
+  atoms: "atoms",
+  values: "values",
+} as const;
+
+/** One value of the `argument-delivery` vocabulary. */
+export type ArgumentDelivery = (typeof ArgumentDelivery)[keyof typeof ArgumentDelivery];
+
 /** The `atomicity` vocabulary, in the catalog's own order. */
 export const Atomicity = {
   transactional: "transactional",
@@ -330,14 +339,14 @@ export const NumericType = {
 export type NumericType = (typeof NumericType)[keyof typeof NumericType];
 
 /** The `on-error-mode` vocabulary, in the catalog's own order. */
-export const OnErrorMode = {
+export const OnError = {
   keep: "keep",
   empty: "empty",
   abort: "abort",
 } as const;
 
 /** One value of the `on-error-mode` vocabulary. */
-export type OnErrorMode = (typeof OnErrorMode)[keyof typeof OnErrorMode];
+export type OnError = (typeof OnError)[keyof typeof OnError];
 
 /** The `op-kind` vocabulary, in the catalog's own order. */
 export const OpKind = {
@@ -350,6 +359,28 @@ export const OpKind = {
 
 /** One value of the `op-kind` vocabulary. */
 export type OpKind = (typeof OpKind)[keyof typeof OpKind];
+
+/**
+ * The `provider-capability` vocabulary, in the catalog's own order.
+ *
+ * The engine declares this vocabulary OPEN, so the type also admits a
+ * word registered through `(add-atom &metta (vocabulary-member
+ * provider-capability <word>))`; the words below are the ones it ships.
+ */
+export const ProviderCapability = {
+  match: "match",
+  enumerate: "enumerate",
+  add: "add",
+  addMany: "add-many",
+  remove: "remove",
+  clear: "clear",
+  subscribe: "subscribe",
+  plan: "plan",
+  rules: "rules",
+} as const;
+
+/** One value of the `provider-capability` vocabulary. */
+export type ProviderCapability = (typeof ProviderCapability)[keyof typeof ProviderCapability] | (string & {});
 
 /** The `refinement` vocabulary, in the catalog's own order. */
 export const Refinement = {
@@ -428,7 +459,13 @@ export const SaveFormat = {
 /** One value of the `save-format` vocabulary. */
 export type SaveFormat = (typeof SaveFormat)[keyof typeof SaveFormat];
 
-/** The `semiring` vocabulary, in the catalog's own order. */
+/**
+ * The `semiring` vocabulary, in the catalog's own order.
+ *
+ * The engine declares this vocabulary OPEN, so the type also admits a
+ * word registered through `(add-atom &metta (vocabulary-member
+ * semiring <word>))`; the words below are the ones it ships.
+ */
 export const Semiring = {
   bool: "bool",
   bag: "bag",
@@ -443,7 +480,7 @@ export const Semiring = {
 } as const;
 
 /** One value of the `semiring` vocabulary. */
-export type Semiring = (typeof Semiring)[keyof typeof Semiring];
+export type Semiring = (typeof Semiring)[keyof typeof Semiring] | (string & {});
 
 /** The `semiring-order` vocabulary, in the catalog's own order. */
 export const SemiringOrder = {
@@ -503,6 +540,33 @@ export const Volatility = {
 /** One value of the `volatility` vocabulary. */
 export type Volatility = (typeof Volatility)[keyof typeof Volatility];
 
+/** The `wire-class` vocabulary, in the catalog's own order. */
+export const WireClass = {
+  term: "term",
+  frame: "frame",
+  reply: "reply",
+} as const;
+
+/** One value of the `wire-class` vocabulary. */
+export type WireClass = (typeof WireClass)[keyof typeof WireClass];
+
+/** The `wire-payload` vocabulary, in the catalog's own order. */
+export const WirePayload = {
+  text: "text",
+  number: "number",
+  boolean: "boolean",
+  term: "term",
+  terms: "terms",
+  host: "host",
+  handle: "handle",
+  truth: "truth",
+  bindings: "bindings",
+  control: "control",
+} as const;
+
+/** One value of the `wire-payload` vocabulary. */
+export type WirePayload = (typeof WirePayload)[keyof typeof WirePayload];
+
 /** The `world` vocabulary, in the catalog's own order. */
 export const World = {
   closedWorld: "closed-world",
@@ -530,6 +594,7 @@ export interface Vocabularies {
   readonly "algebra-law": typeof AlgebraLaw;
   readonly "answer-policy": typeof AnswerPolicy;
   readonly "applicability": typeof Applicability;
+  readonly "argument-delivery": typeof ArgumentDelivery;
   readonly "atomicity": typeof Atomicity;
   readonly "cache-policy": typeof CachePolicy;
   readonly "cost-class": typeof CostClass;
@@ -546,8 +611,9 @@ export interface Vocabularies {
   readonly "memo-aggregate": typeof MemoAggregate;
   readonly "memo-strategy": typeof MemoStrategy;
   readonly "numeric-type": typeof NumericType;
-  readonly "on-error-mode": typeof OnErrorMode;
+  readonly "on-error-mode": typeof OnError;
   readonly "op-kind": typeof OpKind;
+  readonly "provider-capability": typeof ProviderCapability;
   readonly "refinement": typeof Refinement;
   readonly "refusal-kind": typeof RefusalKind;
   readonly "registry-image": typeof RegistryImage;
@@ -561,6 +627,8 @@ export interface Vocabularies {
   readonly "subscription-edge": typeof SubscriptionEdge;
   readonly "visibility": typeof Visibility;
   readonly "volatility": typeof Volatility;
+  readonly "wire-class": typeof WireClass;
+  readonly "wire-payload": typeof WirePayload;
   readonly "world": typeof World;
 }
 
@@ -576,6 +644,7 @@ export const VOCABULARIES: Vocabularies = {
   "algebra-law": AlgebraLaw,
   "answer-policy": AnswerPolicy,
   "applicability": Applicability,
+  "argument-delivery": ArgumentDelivery,
   "atomicity": Atomicity,
   "cache-policy": CachePolicy,
   "cost-class": CostClass,
@@ -592,8 +661,9 @@ export const VOCABULARIES: Vocabularies = {
   "memo-aggregate": MemoAggregate,
   "memo-strategy": MemoStrategy,
   "numeric-type": NumericType,
-  "on-error-mode": OnErrorMode,
+  "on-error-mode": OnError,
   "op-kind": OpKind,
+  "provider-capability": ProviderCapability,
   "refinement": Refinement,
   "refusal-kind": RefusalKind,
   "registry-image": RegistryImage,
@@ -607,6 +677,8 @@ export const VOCABULARIES: Vocabularies = {
   "subscription-edge": SubscriptionEdge,
   "visibility": Visibility,
   "volatility": Volatility,
+  "wire-class": WireClass,
+  "wire-payload": WirePayload,
   "world": World,
 };
 

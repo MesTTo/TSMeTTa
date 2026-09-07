@@ -205,6 +205,16 @@ export const Delivery = {
 /** One value of the `delivery` vocabulary. */
 export type Delivery = (typeof Delivery)[keyof typeof Delivery];
 
+/** The `delta-kind` vocabulary, in the catalog's own order. */
+export const DeltaKind = {
+  add: "add",
+  remove: "remove",
+  progress: "progress",
+} as const;
+
+/** One value of the `delta-kind` vocabulary. */
+export type DeltaKind = (typeof DeltaKind)[keyof typeof DeltaKind];
+
 /** The `determinism` vocabulary, in the catalog's own order. */
 export const Determinism = {
   det: "det",
@@ -278,6 +288,16 @@ export const Limit = {
 
 /** One value of the `limit` vocabulary. */
 export type Limit = (typeof Limit)[keyof typeof Limit];
+
+/** The `live-strategy` vocabulary, in the catalog's own order. */
+export const LiveStrategy = {
+  pattern: "pattern",
+  heads: "heads",
+  tabled: "tabled",
+} as const;
+
+/** One value of the `live-strategy` vocabulary. */
+export type LiveStrategy = (typeof LiveStrategy)[keyof typeof LiveStrategy];
 
 /** The `memo-aggregate` vocabulary, in the catalog's own order. */
 export const MemoAggregate = {
@@ -514,6 +534,7 @@ export interface Vocabularies {
   readonly "cache-policy": typeof CachePolicy;
   readonly "cost-class": typeof CostClass;
   readonly "delivery": typeof Delivery;
+  readonly "delta-kind": typeof DeltaKind;
   readonly "determinism": typeof Determinism;
   readonly "effect-class": typeof EffectClass;
   readonly "event-order": typeof EventOrder;
@@ -521,6 +542,7 @@ export interface Vocabularies {
   readonly "ground-kind": typeof GroundKind;
   readonly "image-mode": typeof ImageMode;
   readonly "limit": typeof Limit;
+  readonly "live-strategy": typeof LiveStrategy;
   readonly "memo-aggregate": typeof MemoAggregate;
   readonly "memo-strategy": typeof MemoStrategy;
   readonly "numeric-type": typeof NumericType;
@@ -558,6 +580,7 @@ export const VOCABULARIES: Vocabularies = {
   "cache-policy": CachePolicy,
   "cost-class": CostClass,
   "delivery": Delivery,
+  "delta-kind": DeltaKind,
   "determinism": Determinism,
   "effect-class": EffectClass,
   "event-order": EventOrder,
@@ -565,6 +588,7 @@ export const VOCABULARIES: Vocabularies = {
   "ground-kind": GroundKind,
   "image-mode": ImageMode,
   "limit": Limit,
+  "live-strategy": LiveStrategy,
   "memo-aggregate": MemoAggregate,
   "memo-strategy": MemoStrategy,
   "numeric-type": NumericType,

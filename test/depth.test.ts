@@ -4,8 +4,21 @@
  * Assumes:
  *   - `node --test` gives this file its own process, which is what lets it set
  *     a startup setting the rest of the suite must not see: `stackLimit` is
- *     frozen once an engine exists, and 64 MiB reaches the refusal at 50,000
- *     levels instead of the 2,000,000 the build's own 1 GiB ceiling needs
+ *     frozen once an engine exists, and 64 MiB reaches the refusal in tens of
+ *     thousands of levels instead of the 2,000,000 the build's own 1 GiB
+ *     ceiling needs
+ *   - the refused depth is FAR past the boundary, not just past it. The
+ *     boundary is where the engine's boot footprint shows: measured by
+ *     bisection after the same 10,000-level warm-up, 64 MiB accepts 45,038 and
+ *     refuses 45,800 levels, and whether one particular depth lands on either
+ *     side of that also depends on how the stacks grew getting there. The
+ *     refusal case used to ask for 50,000, one warm-up away from the boundary,
+ *     and one prelude equation was enough to flip it: measured 2026-09-07 in
+ *     this file's own sequence, 50,000 refused before the one-sided assertion
+ *     door landed and was ACCEPTED after, while 60,000 and up refused on both
+ *     trees. 200,000 is four times the boundary, and it is also the faster
+ *     case, refusing in 6.0 s where 50,000 spent 17.7 s building the term it
+ *     then accepted
  * Guarantees:
  *   - the refusal is this package's own `StackLimitError` carrying the ceiling
  *     in bytes and naming its remedy, not a `RangeError` out of a library
@@ -44,7 +57,7 @@ describe("the far end of a term's depth", () => {
   });
 
   it("refuses a deeper one by name, with the ceiling and the remedy", () => {
-    const source = `${"(f ".repeat(50_000)}1${")".repeat(50_000)}`;
+    const source = `${"(f ".repeat(200_000)}1${")".repeat(200_000)}`;
     assert.throws(
       () => m.parse(source),
       (error: unknown) => {

@@ -175,10 +175,28 @@ function stoppedAt(word: string): Limit | null {
   return word as Limit;
 }
 
-/** One event of a reduction trace. */
+/**
+ * One event of a reduction trace.
+ *
+ * `seq` numbers the events of one trace from 0 and `time` is the wall
+ * nanoseconds since the run began, so an event says both where it is in the
+ * order and how far into the run it happened.
+ *
+ * A reduction reaches exactly one of three outcomes: `exit` once per answer,
+ * `fail` when it answered nothing, or neither when a bound cut the run before
+ * it finished. Only an exit carries an answer.
+ */
 export type TraceEvent =
-  | { readonly depth: number; readonly kind: "call"; readonly term: Atom }
   | {
+      readonly seq: number;
+      readonly time: number;
+      readonly depth: number;
+      readonly kind: "call" | "fail";
+      readonly term: Atom;
+    }
+  | {
+      readonly seq: number;
+      readonly time: number;
       readonly depth: number;
       readonly kind: "exit";
       readonly term: Atom;
@@ -796,11 +814,14 @@ export class MeTTa implements Disposable {
     const rows = rowsAtom;
     return cut(rows.items.map((row) => {
       const parts = (row as Expression).items;
-      const kind = String(parts[1]) === "exit" ? "exit" : "call";
-      const term = parts[2] as Atom;
-      return kind === "exit"
-        ? { depth: Number(hostValue(parts[0] as Atom)), kind, term, answer: parts[3] as Atom }
-        : { depth: Number(hostValue(parts[0] as Atom)), kind, term };
+      const seq = Number(hostValue(parts[0] as Atom));
+      const time = Number(hostValue(parts[1] as Atom));
+      const depth = Number(hostValue(parts[2] as Atom));
+      const word = String(parts[3]);
+      const term = parts[4] as Atom;
+      return word === "exit"
+        ? { seq, time, depth, kind: "exit" as const, term, answer: parts[5] as Atom }
+        : { seq, time, depth, kind: word === "fail" ? ("fail" as const) : ("call" as const), term };
     }), truncated);
   }
 

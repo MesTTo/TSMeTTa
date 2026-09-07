@@ -13,12 +13,14 @@ import { after, before, describe, it } from "node:test";
 import {
   type Atom,
   CAPABILITIES,
+  Expression,
   Fold,
   type MeTTa,
   S,
   SubscriberError,
   type Space,
   type SpaceProvider,
+  Sym,
   V,
   capabilitiesOf,
   fold,
@@ -142,21 +144,30 @@ describe("a fold over writes", () => {
 });
 
 describe("the rest of the provider seam", () => {
-  it("names every capability the seam has", () => {
-    assert.deepEqual([...CAPABILITIES].sort(), [
-      "add",
-      "add-many",
-      "bounded",
-      "clear",
-      "enumerate",
-      "match",
-      "plan",
-      "pushdown",
-      "remove",
-      "rules",
-      "subscribe",
-      "transactional",
-    ]);
+  it("names every capability the engine's own row carries", async () => {
+    // The words are the engine's, not this package's: nine ship on the
+    // `(vocabulary provider-capability ...)` row and `bridge.pl` registers
+    // `bounded`, `pushdown` and `transactional` through the catalog's
+    // `(vocabulary-member ...)` door, because those three gate seam clauses
+    // this seat implements and the engine names nowhere. Read from a booted
+    // catalog rather than written out, so the list here cannot drift from the
+    // rows in either direction.
+    const declared = new Set<string>();
+    for await (const atom of m.catalog.atoms()) {
+      if (!(atom instanceof Expression)) continue;
+      const head = atom.items[0];
+      if (!(head instanceof Sym)) continue;
+      if (head.name === "vocabulary" && String(atom.items[1]) === "provider-capability") {
+        for (const item of atom.items.slice(2)) declared.add(String(item));
+      }
+      if (
+        head.name === "vocabulary-member" &&
+        String(atom.items[1]) === "provider-capability"
+      ) {
+        declared.add(String(atom.items[2]));
+      }
+    }
+    assert.deepEqual([...CAPABILITIES].sort(), [...declared].sort());
   });
 
   it("derives the new capabilities from the new methods", () => {

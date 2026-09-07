@@ -1172,15 +1172,26 @@ metta_node_status_row([Status, Answer], Row) :-
     metta_node_answer(Answer, [Wire, Text]),
     metta_node_expr_wire([[s, Word], Wire, [g, Text]], Row).
 
-metta_node_trace_row(event(Depth, call, Term, _, Names), Row) :- !,
-    metta_node_number_text(Depth, DepthText),
-    metta_node_encode_with_names(Names, Term, Encoded),
-    metta_node_expr_wire([[n, DepthText], [s, "call"], Encoded], Row).
-metta_node_trace_row(event(Depth, exit, Term, Answer, Names), Row) :-
+% An exit carries the answer and nothing else does, so the shape splits there
+% rather than once per kind: a `fail` row is a `call` row wearing its own word.
+% The sequence number and the wall nanoseconds since the run began lead the
+% depth, in the tracer's own field order, so the two seats read one shape.
+metta_node_trace_row(event(Seq, Time, Depth, exit, Term, Answer, Names), Row) :- !,
+    metta_node_number_text(Seq, SeqText),
+    metta_node_number_text(Time, TimeText),
     metta_node_number_text(Depth, DepthText),
     metta_node_encode_with_names(Names, Term, Encoded),
     metta_node_encode_with_names(Names, Answer, EncodedAnswer),
-    metta_node_expr_wire([[n, DepthText], [s, "exit"], Encoded, EncodedAnswer], Row).
+    metta_node_expr_wire([[n, SeqText], [n, TimeText], [n, DepthText],
+                          [s, "exit"], Encoded, EncodedAnswer], Row).
+metta_node_trace_row(event(Seq, Time, Depth, Kind, Term, _, Names), Row) :-
+    metta_node_number_text(Seq, SeqText),
+    metta_node_number_text(Time, TimeText),
+    metta_node_number_text(Depth, DepthText),
+    metta_node_atom_text(Kind, KindText),
+    metta_node_encode_with_names(Names, Term, Encoded),
+    metta_node_expr_wire([[n, SeqText], [n, TimeText], [n, DepthText],
+                          [s, KindText], Encoded], Row).
 
 metta_node_form_row([Kind, Text], Row) :-
     metta_node_atom_text(Kind, KindText),

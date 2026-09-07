@@ -136,6 +136,34 @@ describe("asking the engine about itself", () => {
     assert.equal(last?.kind === "exit" ? last.answer.text : "", "12");
   });
 
+  it("numbers every event and dates it, on the same shape the Python seat reads", () => {
+    // seq is the recording's own index and time is the wall nanoseconds since
+    // the run began; both are monotone across one trace, and the engine
+    // records them once for every seat rather than per seat.
+    const events = m.trace("!(quad 3)", { maxEvents: 200 });
+    assert.deepEqual(
+      events.map((event) => event.seq),
+      events.map((_event, index) => index),
+    );
+    let previous = -1;
+    for (const event of events) {
+      assert.ok(event.time >= previous, `${event.time} came before ${previous}`);
+      previous = event.time;
+    }
+  });
+
+  it("records a fail port for a reduction that answers nothing", () => {
+    // A reduction's outcome is one of three: an exit per answer, one fail when
+    // it answered none, or neither when a bound cut the run.
+    m.run("(= (only-one 1) yes)");
+    const events = m.trace("!(only-one 2)", { maxEvents: 200 });
+    assert.deepEqual(
+      events.map((event) => event.kind),
+      ["call", "fail"],
+    );
+    assert.equal(events[1]?.term.text, "(only-one 2)");
+  });
+
   it("says when the bound cut a trace short, and when it did not", () => {
     // Reaching maxEvents used to RAISE and discard every event with it, so a
     // caller that asked for a bounded trace of a large program got no trace at

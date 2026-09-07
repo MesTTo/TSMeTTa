@@ -1,18 +1,35 @@
 /**
- * Purpose: exercise the emitted browser package in Chromium over HTTP.
- * Guarantees: boot, wire answers, host callbacks, matching and evaluation status
- *   run in a page, with worker boot checked separately. [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
+ * Purpose: exercise the emitted browser package in Chromium over HTTP, and the
+ *   documentation site's runnable fences on top of it.
+ * Guarantees:
+ *   - boot, wire answers, host callbacks, matching and evaluation status run in
+ *     a page, with worker boot checked separately
+ *     [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
+ *   - the site's worker and its `MettaRun` component are driven in the LAYOUT
+ *     the site serves them in, under a base that is not `/`, because the worker
+ *     resolves the kit against its own URL and the component resolves the
+ *     worker against the site's base, and both are wrong in a way a root-served
+ *     fixture cannot show
+ *     [tested: npm run test:browser --prefix extensions/node, "answers the site's fences through
+ *     one worker", "runs a fence in a mounted component and prints its answer";
+ *     commit=a8b50dae12518adb626bf2594258eeaaf4a7f76d]
+ * Assumes: the site's `public/metta/worker.js` and the component beside it are
+ *   two directories up, and the website's own `vite`, `@vitejs/plugin-vue` and
+ *   `vue` are installed, which is what compiles the component here. The
+ *   component tests SKIP by name when they are not, the same way this file's
+ *   subject skips when `browser/` has not been built.
  * Owns resources: closes Chromium and the HTTP server. It leaves `_runtime/`
  *   where the build put it: that directory is what an installed package mounts
  *   and what `prepare` makes, so removing it after a run left the checkout in
  *   the state a consumer install fails from.
  */
 import { strict as assert } from "node:assert";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, extname, join, resolve } from "node:path";
 import { after, before, test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "playwright";
 import { build } from "esbuild";
 
@@ -24,6 +41,98 @@ let server;
 let origin;
 let consumer;
 let atomConsumer;
+
+// --- the documentation site's runnable fences -------------------------------
+// Served under a base that is not `/`, because that is the only shape in which
+// the site's own two URL rules can be wrong: the worker resolves `./browser/`
+// and `./_runtime/` against its own URL, and the component resolves the worker
+// against Vite's `BASE_URL`.
+const SITE = resolve(root, "..", "..", "website");
+const SITE_MODULES = join(SITE, "node_modules");
+const BASE = "/site/";
+const IDENTITY = await readFile(
+  join(root, "../../examples/ch05-equations-and-evaluation/05-01-an-equation-is-a-rewrite/01-identity.metta"),
+  "utf8");
+/** Whether the website's own toolchain is here to compile its component with. */
+const siteToolchain = ["vite", "@vitejs/plugin-vue", "vue"]
+  .every(name => existsSync(join(SITE_MODULES, name)));
+const noToolchain = siteToolchain
+  ? undefined
+  : "run 'npm ci --prefix website'; the site's vite, @vitejs/plugin-vue and vue compile its component";
+/** The compiled fixture's files, by the name the built HTML asks for. */
+const fixture = new Map();
+/** One mounted page per component test, by the path it is served at. */
+const pages = new Map();
+
+/**
+ * Compile `MettaRun.vue` with the SITE's own toolchain, into memory.
+ *
+ * A virtual entry rather than a fixture directory: what is being tested is the
+ * component and the worker, and an `index.html` plus a `main.js` checked in
+ * beside this file would be two more things to keep true. Vite is what compiles
+ * a `.vue` in this repository, so it is what compiles it here.
+ */
+async function compileFixture() {
+  const { build: viteBuild } = await import(pathToFileURL(join(SITE_MODULES, "vite/dist/node/index.js")).href);
+  const vue = (await import(pathToFileURL(join(SITE_MODULES, "@vitejs/plugin-vue/dist/index.mjs")).href)).default;
+  const ENTRY = "metta-run-fixture";
+  const source = `
+    import { createApp, h } from "vue";
+    import MettaRun from ${JSON.stringify(join(SITE, ".vitepress/theme/MettaRun.vue"))};
+    const fence = document.querySelector("#fence");
+    createApp({ render: () => h(MettaRun, {
+      example: fence.dataset.example,
+      source: fence.dataset.source,
+      inferences: fence.dataset.inferences,
+    }) }).mount("#app");
+  `;
+  const out = await viteBuild({
+    root: SITE,
+    base: BASE,
+    configFile: false,
+    logLevel: "warn",
+    plugins: [
+      { name: "fence-fixture",
+        resolveId: id => (id === ENTRY ? `\0${ENTRY}` : null),
+        load: id => (id === `\0${ENTRY}` ? source : null) },
+      vue(),
+    ],
+    resolve: { alias: { vue: join(SITE_MODULES, "vue/dist/vue.runtime.esm-bundler.js") } },
+    build: { write: false, minify: false, rollupOptions: { input: { fixture: ENTRY } } },
+  });
+  for (const emitted of (Array.isArray(out) ? out[0].output : out.output)) {
+    fixture.set(emitted.fileName, emitted.code ?? emitted.source);
+  }
+}
+
+/** The page a component test mounts, carrying one fence's own attributes. */
+function fixturePage(example, source, inferences) {
+  const script = [...fixture.keys()].find(name => name.endsWith(".js"));
+  return `<!doctype html><title>fence</title>` +
+    `<div id="fence" data-example="${example}" data-source="${encodeURIComponent(source)}" ` +
+    `data-inferences="${String(inferences)}"></div><div id="app"></div>` +
+    `<script type="module" src="${BASE}assets/${script}"></script>`;
+}
+
+/** Post one message to the site's worker and wait for its answer. */
+const ASK = `
+  // A listener per ask, matched on the message's own id and removed when it
+  // answers, so two runs asked for AT ONCE can be told apart and the order they
+  // come back in can be read. \`onmessage =\` cannot do that: the second ask
+  // would replace the first ask's handler and the first would never settle.
+  const ask = (worker, message) => new Promise((settle, fail) => {
+    const hear = event => {
+      // The worker sends one progress message per run before the program
+      // starts; the ANSWER is the one that is not it.
+      if (event.data.id !== message.id || event.data.ready === true) return;
+      worker.removeEventListener("message", hear);
+      settle(event.data);
+    };
+    worker.addEventListener("message", hear);
+    worker.onerror = event => fail(new Error(event.message || "the worker stopped"));
+    worker.postMessage(message);
+  });
+`;
 const workerSource = `
 import { metta } from '/browser/index.js';
 try {
@@ -85,7 +194,35 @@ before(async () => {
       response.end(workerSource);
       return;
     }
-    const file = resolve(root, '.' + path);
+    // The site's own layout, under a base: the worker and the kit beside it,
+    // and the compiled component's chunks. `/site/metta/<x>` is where
+    // scripts/bundle-browser.mjs puts the seat's `browser/` and `_runtime/`,
+    // so the same relative URLs the site serves resolve here.
+    if (path === BASE) {
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end('<!doctype html><title>site</title><body>site');
+      return;
+    }
+    if (path === `${BASE}metta/worker.js`) {
+      response.writeHead(200, { 'content-type': 'text/javascript' });
+      response.end(await readFile(join(SITE, 'public/metta/worker.js')));
+      return;
+    }
+    if (path.startsWith(`${BASE}assets/`)) {
+      const held = fixture.get(path.slice(`${BASE}assets/`.length));
+      if (held === undefined) { response.writeHead(404).end('missing fixture chunk'); return; }
+      response.writeHead(200, { 'content-type': 'text/javascript' });
+      response.end(held);
+      return;
+    }
+    if (path.startsWith(`${BASE}fence/`)) {
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end(pages.get(path) ?? '<!doctype html><title>no fence</title>');
+      return;
+    }
+    const file = resolve(root, '.' + (path.startsWith(`${BASE}metta/`)
+      ? path.slice(`${BASE}metta`.length)
+      : path));
     if (!file.startsWith(root + '/')) { response.writeHead(403).end(); return; }
     try {
       const bytes = await readFile(file);
@@ -97,6 +234,7 @@ before(async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   origin = `http://127.0.0.1:${server.address().port}`;
   browser = await chromium.launch();
+  if (siteToolchain) await compileFixture();
 });
 
 after(async () => {
@@ -476,5 +614,187 @@ test('a consumer bundler selects browser exports with shared satellite atoms', a
       return probe(new URL('/_runtime/', location.href).href);
     });
     assert.deepEqual(result, { same: true, answer: ['3'] });
+  } finally { await page.close(); }
+});
+
+// --- the documentation site's runnable fences -------------------------------
+
+test("answers the site's fences through one worker", async () => {
+  // Six messages on ONE worker, which is what a page with six fences on it
+  // sends. What is being checked is the whole protocol at once: the answer
+  // groups, the two costs kept apart, the engine paid for once, each fence
+  // getting a space of its own, and the order two runs asked for together come
+  // back in.
+  const page = await browser.newPage();
+  const fetched = [];
+  const errors = [];
+  page.on('request', request => fetched.push(new URL(request.url()).pathname));
+  page.on('pageerror', error => errors.push(String(error)));
+  try {
+    await page.goto(origin + BASE);
+    const { said, arrived } = await page.evaluate(async ({ base, identity, ask }) => {
+      const worker = new Worker(`${base}metta/worker.js`, { type: 'module' });
+      const run = new Function('worker', 'message', `${ask} return ask(worker, message);`);
+      // The order answers ARRIVE in, which is not the order `Promise.all`
+      // collects them in: that preserves its input order however they settle,
+      // so reading it would have made the ordering check say nothing.
+      const arrived = [];
+      const note = answer => { arrived.push(answer.id); return answer; };
+      try {
+        const said = [
+          await run(worker, { id: 1, source: identity, inferences: 1000000 }),
+          await run(worker, { id: 2, source: identity, inferences: 1000000 }),
+          await run(worker, { id: 3, source: '(= (only-here) 1)\n!(+ 20 22)', inferences: 1000000 }),
+          await run(worker, { id: 4, source: '!(only-here)', inferences: 1000000 }),
+          // Two asked for AT ONCE, not one after the other. The engine is
+          // synchronous inside the worker, so what this reads is whether the
+          // answers come back in the order the page asked for them: the second
+          // is the cheaper program and would answer first if they raced.
+          ...await Promise.all([
+            run(worker, { id: 5, source: '(= (twice $n) (* 2 $n))\n!(twice 21)', inferences: 1000000 }).then(note),
+            run(worker, { id: 6, source: '!(+ 2 2)', inferences: 1000000 }).then(note),
+          ]),
+        ];
+        return { said, arrived };
+      } finally { worker.terminate(); }
+    }, { base: BASE, identity: IDENTITY, ask: ASK });
+    assert.deepEqual(said.map(answer => answer.groups), [
+      [['true']], [['true']], [['42']], [['(only-here)']], [['42']], [['4']],
+    ], JSON.stringify(said));
+    assert.deepEqual(arrived, [5, 6],
+      'the worker answered two runs asked for at once out of the order it was asked in');
+    // The fourth answers `(only-here)` unreduced because the third defined it
+    // in a space of its own. Sharing one space would answer `1`, and running
+    // the identity example twice in it would double its equation.
+    assert.deepEqual(said.map(answer => answer.stderr), [[], [], [], [], [], []]);
+    assert.ok(said[0].bootMs > 0, `bootMs ${String(said[0].bootMs)}`);
+    // The boot is not counted into the run: the fence that pays for the engine
+    // reports the program's own cost beside it, not the sum.
+    assert.ok(said[0].ms < said[0].bootMs, `${String(said[0].ms)} ms run, ${String(said[0].bootMs)} ms boot`);
+    assert.equal(said[1].bootMs, said[0].bootMs, 'the engine booted twice');
+    // Printed, not only asserted: these two numbers are what the site's own
+    // documentation states about what a first press costs, and a claim nobody
+    // can reprint is a claim that goes stale quietly. Read them beside the
+    // load: this box is shared.
+    const load = await readFile('/proc/loadavg', 'utf8').then(text => text.split(' ')[0], () => 'unknown');
+    console.log(`  boot ${said[0].bootMs.toFixed(0)} ms, identity ${said[0].ms.toFixed(1)} ms, ` +
+      `second fence ${said[2].ms.toFixed(1)} ms, loadavg ${load}`);
+    const asked = what => fetched.filter(path => path.endsWith(what)).length;
+    assert.deepEqual([asked('runtime.json'), asked('.wasm'), asked('.data')], [1, 1, 1]);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+test('refuses a fence the browser has no seat or no budget for', async () => {
+  const page = await browser.newPage();
+  try {
+    await page.goto(origin + BASE);
+    const said = await page.evaluate(async ({ base, ask }) => {
+      const worker = new Worker(`${base}metta/worker.js`, { type: 'module' });
+      const run = new Function('worker', 'message', `${ask} return ask(worker, message);`);
+      try {
+        return [
+          await run(worker, { id: 1, source: '!(py-atom "1 + 1")', inferences: 1000000 }),
+          await run(worker, { id: 2, source: '(= (spin $n) (spin (+ $n 1)))\n!(spin 0)', inferences: 50000 }),
+          await run(worker, { id: 3, source: '!(hyperpose ((+ 1 2)))', inferences: 1000000 }),
+          await run(worker, { id: 4, source: '!(+ 20 22)', inferences: 1000000 }),
+        ];
+      } finally { worker.terminate(); }
+    }, { base: BASE, ask: ASK });
+    // The Python seat's doors are DECLARED by the standard library and
+    // implemented by a seat this build has not got, so a call to one answers
+    // itself: the refusal is what stops that reading as an answer.
+    assert.equal(said[0].error?.code, 'ERR_METTA_UNSUPPORTED', JSON.stringify(said[0]));
+    assert.match(said[0].error.message, /^py-atom is declared \(-> Atom %Undefined%\)/);
+    // The fence's own budget, enforced by the engine and reported in its words.
+    assert.equal(said[1].error?.code, 'ERR_METTA_INFERENCES', JSON.stringify(said[1]));
+    assert.match(said[1].error.message, /50000 inference bound/);
+    // A platform capability the engine itself names, with what its absence
+    // costs, which needs nothing from this side at all.
+    assert.equal(said[2].error?.code, 'ERR_METTA_CAPABILITY', JSON.stringify(said[2]));
+    assert.match(said[2].error.message, /library\(thread\) is absent/);
+    // And the engine is still usable after all three, which is what the check
+    // after a refusal is for.
+    assert.deepEqual(said[3].groups, [['42']]);
+  } finally { await page.close(); }
+});
+
+test('names the runtime asset a fence could not boot without', async () => {
+  const page = await browser.newPage();
+  try {
+    await page.route(`**${BASE}metta/_runtime/runtime.json`, route => route.fulfill({ status: 404, body: 'gone' }));
+    await page.goto(origin + BASE);
+    const said = await page.evaluate(async ({ base, ask }) => {
+      const worker = new Worker(`${base}metta/worker.js`, { type: 'module' });
+      const run = new Function('worker', 'message', `${ask} return ask(worker, message);`);
+      try { return await run(worker, { id: 1, source: '!(+ 20 22)', inferences: 1000000 }); }
+      finally { worker.terminate(); }
+    }, { base: BASE, ask: ASK });
+    assert.equal(said.error?.code, 'ERR_METTA_SOURCE', JSON.stringify(said));
+    assert.match(said.error.message, /runtime\.json/);
+  } finally { await page.close(); }
+});
+
+test('runs a fence in a mounted component and prints its answer', { skip: noToolchain }, async () => {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(String(error)));
+  pages.set(`${BASE}fence/identity`, fixturePage('examples/identity.metta', IDENTITY, 1000000));
+  try {
+    await page.goto(`${origin}${BASE}fence/identity`);
+    await page.waitForSelector('.metta-run-go');
+    assert.equal(
+      await page.getAttribute('.metta-run', 'data-example'),
+      'examples/identity.metta',
+      'the component did not record the example it runs',
+    );
+    await page.click('.metta-run-go');
+    await page.waitForSelector('.metta-run-answers', { timeout: 120000 });
+    assert.equal(await page.textContent('.metta-run-answers'), '1. true');
+    assert.match(await page.textContent('.metta-run-state'), /ms, after a \d+ ms boot/);
+    // Reset drops the worker, and the button comes back to its first wording.
+    await page.click('.metta-run-clear');
+    assert.equal(await page.locator('.metta-run-answers').count(), 0);
+    assert.equal((await page.textContent('.metta-run-go')).trim(), 'Run');
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+test('clears a fence reset while its run was still going', { skip: noToolchain }, async () => {
+  // Reset settles the run in flight with a refusal, and showing that refusal
+  // would put one under a fence the reader has just cleared. The program never
+  // finishes, so the only thing that ends this run is the reset.
+  const page = await browser.newPage();
+  const spin = '(= (spin $n) (spin (+ $n 1)))\n!(spin 0)\n';
+  pages.set(`${BASE}fence/spin`, fixturePage('examples/spin.metta', spin, 4000000000));
+  try {
+    await page.goto(`${origin}${BASE}fence/spin`);
+    await page.waitForSelector('.metta-run-go');
+    await page.click('.metta-run-go');
+    await page.waitForFunction(
+      () => document.querySelector('.metta-run-state')?.textContent.includes('running'),
+      undefined, { timeout: 120000 });
+    await page.click('.metta-run-clear');
+    await page.waitForFunction(
+      () => document.querySelector('.metta-run-go')?.textContent.trim() === 'Run',
+      undefined, { timeout: 30000 });
+    assert.equal(await page.locator('.metta-run-refusal').count(), 0,
+      'a reset fence showed the refusal its own reset produced');
+    assert.equal(await page.locator('.metta-run-answers').count(), 0);
+  } finally { await page.close(); }
+});
+
+test('names a worker it cannot start rather than waiting on it', { skip: noToolchain }, async () => {
+  const page = await browser.newPage();
+  pages.set(`${BASE}fence/broken`, fixturePage('examples/identity.metta', IDENTITY, 1000000));
+  try {
+    await page.route(`**${BASE}metta/worker.js`, route => route.fulfill({ status: 404, body: 'gone' }));
+    await page.goto(`${origin}${BASE}fence/broken`);
+    await page.waitForSelector('.metta-run-go');
+    await page.click('.metta-run-go');
+    await page.waitForSelector('.metta-run-refusal', { timeout: 60000 });
+    const said = await page.textContent('.metta-run-refusal');
+    assert.match(said, /ERR_METTA_TRANSPORT/);
+    assert.match(said, /metta\/worker\.js/);
   } finally { await page.close(); }
 });

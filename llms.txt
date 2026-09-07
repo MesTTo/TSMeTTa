@@ -233,6 +233,24 @@ npx metta-node why "(quad 3)"
 npx metta-node repl
 ```
 
+## In a browser
+
+`browser/` and `_runtime/` are what a page serves. `metta({ root })` points at
+the `_runtime/` directory; a browser fetches three files out of it,
+`runtime.json` and the two `wasm/` assets, and reads the engine and library
+sources out of the manifest rather than as files. The documentation site is the
+worked example: `website/scripts/bundle-browser.mjs` copies the kit into
+`website/public/metta/` and `website/public/metta/worker.js` boots one engine
+per page in a Web Worker, which is where a synchronous `run` belongs.
+
+Two things a browser meets that a Node process does not. `loadFile`,
+`libraryPath`, `mount` and `lintFile` read host paths and refuse with
+`ERR_METTA_UNSUPPORTED`; `run`, `load` and `lint` take source text. And a call
+to a door the standard library DECLARES while this build implements nothing for
+it answers ITSELF: `!(py-atom "1 + 1")` answers `(py-atom "1 + 1")` where there
+is no Python seat. `lint`'s `unimplemented-head` rule names that before it
+runs, and it is the rule to run before handing a program to a browser engine.
+
 ## Where to read next
 
 - `extensions/node/README.md` is the full surface with worked examples.

@@ -20,12 +20,12 @@
  */
 
 import { strict as assert } from "node:assert";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { Expression, G, type MeTTa, S, type Space, V, metta } from "../src/index.ts";
+import { Expression, G, type MeTTa, S, type Space, V, metta, repoRoot } from "../src/index.ts";
 import {
   TO_ATOM,
   build,
@@ -44,6 +44,19 @@ import { arrayTables, bridge, tableSpace } from "../src/tables.ts";
 
 let m: MeTTa;
 let counter = 0;
+
+/** Every `.metta` file under a directory, fixtures excluded the way the shell
+ *  runner excludes them, in the order a listing gives. */
+const mettaExamples = (directory: string): string[] => {
+  const found: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== "_fixtures") found.push(...mettaExamples(path));
+    } else if (entry.name.endsWith(".metta")) found.push(path);
+  }
+  return found.sort();
+};
 
 const fresh = (): Space => {
   counter += 1;
@@ -233,7 +246,84 @@ describe("linting", () => {
       rules: ["unused-variable"],
     });
     assert.deepEqual(findings, []);
-    assert.equal(RULES.length, 5);
+    assert.equal(RULES.length, 6);
+  });
+
+  it("names a head this build declares and cannot run", async () => {
+    // The engine's standard library declares `py-atom`; the Python seat is what
+    // implements it, and a WebAssembly engine has no janus and so no seat. The
+    // call therefore answers ITSELF, which is a silent wrong answer rather than
+    // a refusal, and this is the rule that says so before anything runs.
+    const findings = await lint(m, '!(py-atom "1 + 1")', { rules: ["unimplemented-head"] });
+    assert.equal(findings.length, 1, findings.map(String).join("; "));
+    assert.match(findings[0]?.message ?? "", /^py-atom is declared \(-> Atom %Undefined%\)/);
+    assert.match(findings[0]?.message ?? "", /answers itself unreduced/);
+    // And the engine really does answer it unreduced, which is the condition
+    // the sentence above describes.
+    assert.deepEqual(m.run('!(py-atom "1 + 1")')[0]?.texts, ['(py-atom "1 + 1")']);
+  });
+
+  it("takes the more specific diagnosis over unknown-head", async () => {
+    const findings = await lint(m, '!(py-atom "1 + 1")');
+    assert.deepEqual(findings.map((finding) => finding.rule), ["unimplemented-head"]);
+  });
+
+  it("says nothing about a constructor the engine declares", async () => {
+    // `Error` is declared `(-> Atom Atom ErrorType)` and is not reducible
+    // either: it is a term that stands for itself. What separates it from a
+    // door with no implementation is the arrow's RESULT, which names the type
+    // it builds where an unimplemented door's result is `%Undefined%`.
+    const findings = await lint(
+      m,
+      ["(: half (-> Number Number))", "(= (half $n) (/ $n 2))", "!(half (Error 5 BadType))"].join("\n"),
+      { rules: ["unimplemented-head"] },
+    );
+    assert.deepEqual(findings, []);
+  });
+
+  it("says nothing about the arrow in a type declaration", async () => {
+    // `->` is declared `(-> (%Rest% Type) Type)` and reduces nowhere, so a
+    // rule reading every expression with a symbol head would report every
+    // declaration in the corpus. A type is not a call.
+    const findings = await lint(m, "(: twice (-> Number Number))\n(= (twice $n) (* 2 $n))", {
+      rules: ["unimplemented-head"],
+    });
+    assert.deepEqual(findings, []);
+  });
+
+  it("reads an equation's body as well as a directive", async () => {
+    const findings = await lint(m, "(= (widen $x) (py-list $x))", {
+      rules: ["unimplemented-head"],
+    });
+    assert.deepEqual(findings.map((finding) => finding.rule), ["unimplemented-head"]);
+    assert.match(findings[0]?.message ?? "", /^py-list is declared/);
+  });
+
+  it("an ok comment suppresses the unimplemented-head rule too", async () => {
+    const source = ["; metta: ok(unimplemented-head)", '!(py-atom "1 + 1")'].join("\n");
+    assert.deepEqual(await lint(m, source, { rules: ["unimplemented-head"] }), []);
+  });
+
+  it("flags exactly the doors the corpus needs a host for", async () => {
+    // The exhaustiveness half. The rule's cases above say it fires and does not
+    // misfire on the two shapes that look like it; this says what it finds
+    // across every example the repository ships, so a door the engine declares
+    // and this build grows -- or loses -- moves this number rather than
+    // going unnoticed. The set is the Python seat's, which is the only seat
+    // whose doors the standard library declares.
+    const corpus = mettaExamples(join(repoRoot, "examples"));
+    assert.ok(corpus.length > 200, `${String(corpus.length)} examples found`);
+    const heads = new Set<string>();
+    for (const path of corpus) {
+      for (const finding of await lint(m, readFileSync(path, "utf8"), {
+        rules: ["unimplemented-head"],
+      })) {
+        heads.add(finding.message.slice(0, finding.message.indexOf(" ")));
+      }
+    }
+    assert.deepEqual([...heads].sort(), [
+      "Kwargs", "py-atom", "py-call", "py-dict", "py-dot", "py-iter", "py-list", "py-tuple",
+    ]);
   });
 });
 

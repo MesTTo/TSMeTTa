@@ -15,20 +15,24 @@
  * Guarantees:
  *   - a point is declared once with one kind, and a second declaration of the
  *     same name is refused naming the first
- *     [tested: "a point is declared once with one kind"]
+ *     [tested: "declares a point once with one kind"]
  *   - registering against an undeclared point refuses naming every declared
  *     point, and a row missing a declared field refuses naming the field
- *     [tested: "an undeclared point refuses by name",
- *     "a row missing a declared field refuses"]
+ *     [tested: "refuses an undeclared point by name",
+ *     "refuses a row missing a declared field, and one that gives too many"]
  *   - dispatching a point the wrong way for its kind refuses naming the right
- *     way [tested: "each kind refuses the other kinds' dispatch"]
+ *     way [tested: "refuses each kind's dispatch on the other kinds"]
  *   - an ownership point consults rows in registration order and the first
  *     non-undefined answer wins; an event point runs every row
- *     [tested: "ownership stops at the first claim", "an event runs every row"]
+ *     [tested: "stops an ownership dispatch at the first row that claims",
+ *     "runs every row of an event point, in registration order"]
  *   - a point whose rows already live somewhere keeps that storage and is
  *     still one row table from out here, so nothing about `registerType`,
  *     `registerRepr` or `registerReflector` changes
- *     [tested: "the doors that already existed are rows"]
+ *     [tested: "registers a type through the seam and reads it back from
+ *     convert's own store",
+ *     "keeps the name a reflector was registered under, which its store does
+ *     not hold"]
  * Decides: four kinds, where the engine declares five. `host_service` splits
  *   `service` by an audience internal to the engine (host bindings against
  *   extensions) and a seat has one audience.

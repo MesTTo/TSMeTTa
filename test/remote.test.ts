@@ -14,6 +14,11 @@
  *   - every operation refusal uses the protocol's one 4xx error shape without
  *     a dead classification branch [tested: "uses one protocol error status for every refusal";
  *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
+ *   - a wide integer crosses as a JSON NUMBER even though booting the engine
+ *     installs `BigInt.prototype.toJSON`, which is why the codec places each
+ *     literal rather than filtering through a `JSON.stringify` replacer
+ *     [tested: "writes a wide integer as a JSON number after the engine has booted";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -35,6 +40,7 @@ import {
   V,
   metta,
   packageRoot,
+  transportToJson,
 } from "../src/index.ts";
 import {
   BODY_LIMIT,
@@ -274,6 +280,29 @@ describe("the remote protocol", () => {
     for (const [text, value] of kept) assert.deepEqual(readJson(text), value, text);
     // Malformed text keeps JSON.parse's own message rather than gaining one.
     assert.throws(() => readJson('{"a":1'), SyntaxError);
+  });
+
+  // `JSON.stringify` asks a value for `toJSON` BEFORE it reaches a replacer,
+  // and booting the engine installs `BigInt.prototype.toJSON`, which answers
+  // the decimal STRING. So a replacer never sees the bigint and this gateway
+  // wrote `["n", "1"]` for the integer 1, a string where the grammar says a
+  // number. Placing each literal in the structure is what ends that, and this
+  // is where the case belongs: every test in this file runs after the `before`
+  // hook has booted an engine, which is exactly the state the hazard needs
+  // [source: extensions/node/src/wire.ts, transportToJson and literalised].
+  it("writes a wide integer as a JSON number after the engine has booted", () => {
+    assert.equal(
+      typeof (BigInt.prototype as { toJSON?: unknown }).toJSON,
+      "function",
+      "the engine no longer installs BigInt.prototype.toJSON, so this case no "
+        + "longer pins the replacer hazard and the reason for literalised is gone",
+    );
+    const wide = 170141183460469231731687303715884118073n;
+    assert.equal(transportToJson(["n", wide]), `["n",${wide}]`);
+    assert.equal(transportToJson({ atom: ["n", 1n] }), '{"atom":["n",1]}');
+    // The float in the same document keeps its own literal, which is the other
+    // half of what a replacer could not do.
+    assert.equal(transportToJson(["n", 1]), '["n",1.0]');
   });
 
   it("refuses a body that names one key twice", async () => {

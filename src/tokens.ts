@@ -11,7 +11,8 @@
  *     [tested: "parses a lexeme of its own into whatever the host says"]
  *   - a later registration of the same pattern replaces the constructor, and
  *     only future parses read the new mapping, because an atom already
- *     returned is an immutable value [tested: "replaces a pattern's meaning"]
+ *     returned is an immutable value
+ *     [tested: "replaces a pattern's meaning, for future parses only"]
  * Decides: this is per ENGINE rather than per space. There is one reader, so a
  *   token class registered anywhere is one every space's source is read under,
  *   and pretending otherwise would be a scope nothing enforces.

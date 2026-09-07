@@ -24,7 +24,6 @@
  *     in 785 ms against 1042
  *     [measured 2026-09-07: 1 wasm.Deserialize and 1 wasm.CompileLazy against
  *     0 and 1062 in Chromium's v8.wasm trace category;
- *     command=node ai-tmp/measure-wasmtrace2.mjs and ai-tmp/measure-codecache.mjs;
  *     fixture=extensions/node/_runtime served over HTTP to one persistent
  *     Chromium profile, six page loads per arm, the module made hot with 4000
  *     directives so V8 reaches its caching threshold; commit=c478620e8c8a6690212528c64c30012ab69acfa3].

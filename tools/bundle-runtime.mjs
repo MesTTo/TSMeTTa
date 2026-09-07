@@ -18,7 +18,8 @@
  * for a pack alone was never there for `npm install file:.../extensions/node`:
  * 135 of the package's 300 files, the whole engine, were missing from what
  * arrived, and the boot searched the consumer's own project for `engine/`
- * [measured 2026-09-07; fixture=ai-tmp/consumer-links].
+ * [measured 2026-09-07; fixture=an `npm install file:` of this directory
+ * into a project outside the checkout].
  *
  * Written in Node rather than as a shell line because `npm pack` runs on
  * whatever machine publishes, Windows included.

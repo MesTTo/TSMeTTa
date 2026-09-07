@@ -55,7 +55,7 @@
 %     fields that kind holds, beside the rendered sentence, so the host
 %     classifies a refusal without matching prose
 %     [tested: "classifies every kind the engine publishes, from a real ball";
-%     commit=WORKTREE]
+%     commit=52e95b50cc5acdc0e41f97b444ab244ad1301433]
 %   - a host operation's dispatch clause refuses with its own diagnostic when
 %     it is reached outside an engine, rather than with SWI's vmi message
 %     [tested: "refuses a host operation reached where the engine cannot
@@ -143,7 +143,7 @@ metta_node_do(Goal, Outcome) :-
 % class at all.
 % engine/metta/registration.pl holds the one table both seats now read
 % [tested: "classifies every kind the engine publishes, from a real ball";
-% commit=WORKTREE].
+% commit=52e95b50cc5acdc0e41f97b444ab244ad1301433].
 %
 % The fields cross FLAT and as TEXT, name then value, the same decision the
 % number payload takes and for the same reason: this is the shape that goes

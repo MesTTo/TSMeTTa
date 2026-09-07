@@ -26,9 +26,9 @@
  *     against its own map
  *     [tested: "covers every kind the engine publishes";
  *     "classifies every kind the engine publishes, from a real ball";
- *     commit=WORKTREE]
+ *     commit=52e95b50cc5acdc0e41f97b444ab244ad1301433]
  *   - a bound the engine could not name is `undefined` rather than 0
- *     [tested: "carries a limit on a resource refusal"; commit=WORKTREE]
+ *     [tested: "carries a limit on a resource refusal"; commit=52e95b50cc5acdc0e41f97b444ab244ad1301433]
  *   - a reduction that failed across several nondeterministic branches raises
  *     the platform's own `AggregateError` with one `cause`-chained entry per
  *     branch, rather than an error shape invented here

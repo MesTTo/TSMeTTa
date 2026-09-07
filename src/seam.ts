@@ -262,8 +262,9 @@ export class Point<F extends object = Record<string, unknown>> {
   /**
    * Run every row of this EVENT point, answering who ran.
    *
-   * Every row runs: a throw from one is the caller's, and stops the rest,
-   * which is the one thing an event seam may not swallow.
+   * Every row runs, and a row that THROWS stops the ones after it and the
+   * error reaches the caller. Swallowing it is the one thing an event seam
+   * may not do: a handler that failed silently is a handler nothing can find.
    */
   each(...args: readonly unknown[]): readonly string[] {
     this.expect("event", "each()");

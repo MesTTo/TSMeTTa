@@ -17,7 +17,7 @@ Guarantees:
     lane exits 0 with a named skip on a developer's box and 1 where CI=true,
     and never reports a refused measurement as a moved row
     [tested: test_a_benchmark_lane_skips_a_refusal_locally_and_refuses_it_in_ci;
-    commit=WORKTREE]
+    commit=11afdcdbad5bbbe37168b5d8528c23a21c42b4b6]
   - a regression in one case never hides another: every selected case is
     measured and every failure is reported before the nonzero exit, the shape
     benchmarks/check_instructions.py settled after a stop-at-first-failure

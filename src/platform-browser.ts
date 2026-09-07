@@ -232,7 +232,7 @@ async function prepareBase(base: URL): Promise<PreparedRuntime> {
       }
     }
   }
-  for (const required of ["engine/metta.pl", "engine/prelude.metta", "lib/lib_builtin_types/lib_builtin_types.metta", "bridge.pl"]) {
+  for (const required of ["engine/metta.pl", "engine/prelude.pl", "lib/lib_builtin_types/lib_builtin_types.metta", "bridge.pl"]) {
     if (!seen.has(required)) {
       throw new EngineError(`browser runtime manifest is missing ${required}`);
     }

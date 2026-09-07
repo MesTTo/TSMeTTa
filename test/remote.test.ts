@@ -18,7 +18,7 @@
  *     installs `BigInt.prototype.toJSON`, which is why the codec places each
  *     literal rather than filtering through a `JSON.stringify` replacer
  *     [tested: "writes a wide integer as a JSON number after the engine has booted";
- *     commit=WORKTREE]
+ *     commit=45615fb15d8a1d041e3ce0698d789d4d1392a0eb]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

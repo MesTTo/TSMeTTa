@@ -31,12 +31,12 @@
  *     `(refusal ...)` catalog row, rendered by the engine with this refusal's
  *     fields already in them, and `toJSON` carries both
  *     [tested: "carries the ground and the filled remedy of every kind";
- *     "carries a filled edit where every hole was a field"; commit=WORKTREE]
+ *     "carries a filled edit where every hole was a field"; commit=f33b7ab0200e6dc74c88fb4c7f827bf545a447ed]
  *   - the kind union is the GENERATED `refusal-kind` vocabulary, so a kind
  *     added to the catalog reaches this seat through vocabgen rather than by
  *     being written out here beside the map it would be checked against
  *     [tested: "raises the class each row names, or the shared list says why";
- *     commit=WORKTREE]
+ *     commit=f33b7ab0200e6dc74c88fb4c7f827bf545a447ed]
  *   - a bound the engine could not name is `undefined` rather than 0
  *     [tested: "carries a limit on a resource refusal"; commit=52e95b50cc5acdc0e41f97b444ab244ad1301433]
  *   - a reduction that failed across several nondeterministic branches raises

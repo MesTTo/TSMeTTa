@@ -2,7 +2,7 @@
 %   Remedy], the last two being the engine's own (refusal ...) row for that
 %   kind with the remedy's <field> holes already filled, both flat and as text
 %   [tested: extensions/node/test/errors.test.ts,
-%   "carries the ground and the filled remedy of every kind"; commit=WORKTREE].
+%   "carries the ground and the filled remedy of every kind"; commit=f33b7ab0200e6dc74c88fb4c7f827bf545a447ed].
 % Purpose: the Prolog half of the Node binding's transport. It runs MeTTa
 %   inside an SWI engine that can suspend, so answers arrive one at a time and
 %   a host operation written in TypeScript is called from the middle of a

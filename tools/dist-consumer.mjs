@@ -14,7 +14,8 @@
  *     fetcher runs `prepare` and no other script and both were made by
  *     `prepack`: 165 of 300 files arrived and the boot searched the
  *     CONSUMER's project for `engine/`
- *     [measured 2026-09-07; fixture=ai-tmp/consumer-links]
+ *     [measured 2026-09-07; fixture=an `npm install file:` of the seat
+ *     directory into a project outside the checkout]
  *   - `metta-node/atom` and `metta-node/errors` resolve through NODE'S OWN
  *     resolver from a directory whose `node_modules` holds this package,
  *     which is the only way to exercise the `exports` map rather than a path

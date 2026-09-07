@@ -8,8 +8,8 @@
  *   - browser callers can lint source text; lintFile refuses host paths
  *     [source: extensions/node/src/platform-browser.ts:readTextFile; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  *   - a lint pass performs no write and no reduction: it reads forms and, when
- *     given a space, the atoms already in it [tested: "changes nothing it
- *     looks at"]
+ *     given a space, the atoms already in it [tested: "finds what it carries
+ *     rules for, and changes nothing it looks at"]
  *   - an exact `; metta: ok(rule)` comment on the line before a form suppresses
  *     exactly that rule on exactly that form, so a deliberate shape is
  *     annotated once rather than the rule being turned off everywhere

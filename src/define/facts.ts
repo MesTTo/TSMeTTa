@@ -12,12 +12,12 @@
  * Guarantees:
  *   - `definitionFacts` installs nothing and writes nothing: the body is
  *     lowered to find out what it reaches and the term is discarded
- *     [tested: "reads a definition's own facts without defining it"]
+ *     [tested: "a definition's own facts", "reads them without defining it"]
  *   - the effect it reports is the join over every head the body reaches, and
  *     that is the WHOLE analysis rather than a part of one: a lowered body can
  *     only act by naming a head, because the lowering refuses every other
  *     statement form, so there is no effect left for a second walk to find
- *     [tested: "joins the effect of every head the body reaches"]
+ *     [tested: "names every head the body reaches, and joins their effects"]
  *   - `pure` is never claimed for a body reaching a head whose effect the
  *     engine does not declare, so nothing is reported purer than it was shown
  *     to be [tested: "does not claim purity for a head it could not resolve"]

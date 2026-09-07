@@ -6,6 +6,11 @@
  *   - each door is exercised against a live engine where it needs one
  *   - the custom-match seam is shown to be ABSENT until something registers,
  *     which is the property that keeps it free for programs that never use it
+ *   - both seats answer the same digest for the same program, read from the
+ *     one shared vector tests/fixtures/space_digest_vector.json, so a seat
+ *     whose wire codec built different atoms from the same text is caught
+ *     [tested: "answers the shared vector's digest for the shared vector's
+ *     program"; commit=WORKTREE]
  *   - embedding removal leaves survivor identity and stable result order
  *     intact without rewriting later index entries
  *     [tested: "removes from the ordered index without rewriting every later
@@ -18,7 +23,7 @@
  */
 
 import { strict as assert } from "node:assert";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
@@ -48,6 +53,7 @@ import {
   registerCustomMatch,
   registerToken,
   registerType,
+  repoRoot,
   spanOf,
   sym,
   tokens,
@@ -582,6 +588,20 @@ describe("what a space declares about itself", () => {
     assert.equal(one.digest(), other.digest(), "same atoms, any order, same digest");
     other.add(S.user(3, S.cy));
     assert.notEqual(one.digest(), other.digest());
+  });
+
+  it("answers the shared vector's digest for the shared vector's program", () => {
+    // The same file extensions/python/tests/ch04_spaces_and_matching/test_digest.py
+    // reads. One vector, two seats: a seat whose wire codec turned a number
+    // into a float or a string into a symbol would build different atoms from
+    // the same text and answer a different hex here, which is the one thing
+    // neither seat can see on its own.
+    const vector = JSON.parse(
+      readFileSync(join(repoRoot, "tests", "fixtures", "space_digest_vector.json"), "utf8"),
+    ) as { program: string; digest: string };
+    const vectored = m.space("&digest-vector");
+    m.run(vector.program, vectored);
+    assert.equal(vectored.digest(), vector.digest);
   });
 
   it("refuses to hash a space holding a live host reference", () => {

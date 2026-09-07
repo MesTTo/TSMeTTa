@@ -623,6 +623,19 @@ export function unregisterRepr(constructor: abstract new (...args: never[]) => u
   return renderings.delete(constructor);
 }
 
+/**
+ * Every registered rendering as data: the constructor and how it renders.
+ *
+ * The seam reads this rather than the private map, so "what prints its own way
+ * here" is a query and the storage stays where it is.
+ */
+export function reprs(): readonly {
+  readonly constructor: Function;
+  readonly text: (value: never) => string;
+}[] {
+  return [...renderings.entries()].map(([constructor, text]) => ({ constructor, text }));
+}
+
 /** The rendering registered for a value's own constructor, or nothing. */
 function registeredText(value: object): string | undefined {
   const own = (value as { constructor?: Function }).constructor;

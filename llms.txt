@@ -205,6 +205,44 @@ A host value can also decide what it unifies with, which is Hyperon's
 `registerCustomMatch(m.engine, TheClass)`. Registration is what turns the seam
 on, so a program that does not use it carries no clause for it at all.
 
+## Extending this seat: one declared table of points
+
+`metta-node/seam` is this seat's extension seam, the seat-level twin of
+`engine/ext_points.pl`. A point is DECLARED with a kind and its fields, a
+registrant is a ROW against one, and both read back as data:
+`seam.declared()`, `seam.rows()`, `seam.at(name)`. Four kinds, the engine's own
+less the `host_service` split a seat has no audience for: `declaration` (every
+row read), `ownership` (the first row whose `claims(...)` answers wins),
+`event` (every row's `on(...)` runs), `service` (the seat writes it, a
+registrant calls it). `<point>.table()`, `.claim(...)`, `.each(...)` and
+`.call()` dispatch by kind and refuse the other kinds' spelling;
+`.register(name, { ...fields })` refuses an undeclared point, a missing field
+or an extra one by name; `.refusal(subject)` is the sentence a caller gets when
+no row answers, naming the door and the registrants there are.
+
+Points: `type`, `repr` and `reflector` keep the storage `registerType`,
+`registerRepr` and `registerReflector` always used and are declared here so the
+surface is one query; `provider`, `library` and `integration` are what packages
+advertise under the `spaces`, `libraries` and `integrations` groups, read
+UNLOADED. Services: `term`, `name`. `seam.point(name, kind, {fields, doc})`
+declares one of your own. `seam.publish(surface)` writes the table into
+`&metta` under `(kind extension-point ...)` and `(kind extension ...)`.
+
+A package advertises registrations under a fourth group, `extensions`, in its
+`package.json` `metta` field; `seam.advertised()` answers the names without
+importing anything and `await seam.discover()` loads them. Loading is explicit
+rather than on first dispatch because ESM `import()` is asynchronous; a package
+that registers from its own module body needs neither call.
+
+`metta-node/seam` is a Node-only subpath, beside `metta-node/integrate` and for
+its reason: it reads a `package.json`, which a browser page has neither of.
+
+This seat declares NO `frame` point and NO `array` point: it has no frame
+notion, and its array notion is the platform's own `TypedArray` family, which
+every numeric library in this runtime already produces. It names no third-party
+library anywhere; `swipl-wasm` is the engine it mounts and `acorn` the parser
+its `define` lowering uses.
+
 ## Integrating a library
 
 `metta-node/integrate` wraps a module, an object or one function as operations,

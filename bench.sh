@@ -3,9 +3,9 @@
 #   entry point a developer and the gate both call. `sh extensions/node/bench.sh`
 #   is exactly what check.sh's node-bench lane runs.
 # Assumes:
-#   - a Python that can import metta.testing, because the comparison, the
+#   - a Python that can import metta_benchmarking, because the comparison, the
 #     bands, the configuration stamp and the atomic re-pin all belong to the
-#     shared harness in extensions/python/metta/benchmarking.py. One baseline
+#     shared harness in extensions/python/ext/metta-benchmarking/metta_benchmarking.py. One baseline
 #     format and one regression protocol across every component is the point,
 #     and DEVELOPING.md says not to copy the harness into another seat.
 #   - node, swipl-wasm, and a made TypeScript build, because the workloads run
@@ -60,14 +60,20 @@ if ! command -v "$PY" >/dev/null 2>&1; then
     echo "note: no python found (set CHECK_PY), the Node benchmarks will not run" >&2
     exit 0
 fi
-if ! PYTHONPATH="$ROOT/extensions/python" bounded "$PY" -c 'import metta.testing' \
+# The guard asks for the module benchmarks/bench.py actually imports. It used
+# to ask for metta.testing, which still imports and no longer carries the
+# harness, so this lane died on an ImportError past a green guard.
+if ! PYTHONPATH="$ROOT/extensions/python" bounded "$PY" -c \
+        'import _workspace
+_workspace.on_path()
+import metta_benchmarking' \
         >/dev/null 2>&1; then
-    echo "note: $PY cannot import metta.testing; run 'uv sync --extra checks' in \
+    echo "note: $PY cannot import metta_benchmarking; run 'uv sync --extra checks' in \
 extensions/python or set CHECK_PY, the Node benchmarks will not run" >&2
     exit 0
 fi
 
-# perf and setarch are what metta.testing.measure_instructions needs, and the
+# perf and setarch are what metta_benchmarking.measure_instructions needs, and the
 # rows they decide are the host-side ones. Without them the engine-counter rows
 # still run, which is most of the suite.
 COUNTER_ONLY=''

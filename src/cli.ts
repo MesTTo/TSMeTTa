@@ -6,6 +6,9 @@
  *   - the engine is this package's own, booted in process, so the command
  *     needs no `swipl` on `PATH` and no Python
  * Guarantees:
+ *   - direct invocation resolves both entry paths, including preserved links
+ *     [tested: runs through a linked checkout with either symlink policy;
+ *     commit=WORKTREE]
  *   - every subcommand exits NONZERO on failure, so each one is scriptable
  *   - `--version` and `--help` boot nothing at all, which is what makes them
  *     safe to run on a machine where the engine cannot start
@@ -24,7 +27,7 @@
 import { realpathSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import { MettaError } from "./errors.ts";
 import { type MeTTa, metta } from "./metta.ts";
@@ -190,19 +193,14 @@ export async function main(argv: readonly string[], io: Output = CONSOLE): Promi
 // Run only when this file IS the command, so importing it for a test costs
 // nothing. `process.argv[1]` is the script the runtime was pointed at.
 //
-// Compared as a resolved file URL rather than by basename, because the two
-// spellings disagree exactly where it matters. npm installs a `bin` as a LINK
-// named for the command, so under `npx metta-node` the basename is
-// `metta-node` while this module's URL ends `cli.js`: the old test compared
-// those, found no match, and the command exited 0 having run nothing
-// [measured 2026-08-29 against the packed tarball]. realpathSync resolves that
-// link to the file it points at, and pathToFileURL agrees with import.meta.url
-// on separators and escaping, which `split("/")` does not on Windows.
+// npm bin links and --preserve-symlinks-main can retain different spellings
+// of the same file. Resolve both paths before comparing their identity.
+// fileURLToPath preserves platform separators and decodes URL escapes.
 const invokedDirectly = (() => {
   const entry = process.argv[1];
   if (entry === undefined) return false;
   try {
-    return import.meta.url === pathToFileURL(realpathSync(entry)).href;
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(entry);
   } catch {
     // An entry that cannot be resolved is not this file.
     return false;

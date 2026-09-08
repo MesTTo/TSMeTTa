@@ -387,6 +387,7 @@ export const ProviderCapability = {
   subscribe: "subscribe",
   plan: "plan",
   rules: "rules",
+  tokens: "tokens",
 } as const;
 
 /** One value of the `provider-capability` vocabulary. */

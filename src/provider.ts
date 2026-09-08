@@ -44,6 +44,7 @@ import type { Delivery, EventOrder } from "./vocabularies.ts";
 
 /** What a provider can be asked to do, in the engine's own vocabulary. */
 export type ProviderCapability =
+  | "tokens"
   | "match"
   | "enumerate"
   | "add"
@@ -59,6 +60,7 @@ export type ProviderCapability =
 
 /** Every capability the seam names, in the engine's own vocabulary. */
 export const CAPABILITIES: readonly ProviderCapability[] = Object.freeze([
+  "tokens",
   "match",
   "enumerate",
   "add",
@@ -88,6 +90,8 @@ export type DeliveryPromise = readonly [Delivery, EventOrder];
 export type Matcher = Required<Pick<SpaceProvider, "match">>;
 /** A provider that can list everything it holds. */
 export type Enumerable = Required<Pick<SpaceProvider, "atoms">>;
+/** A provider that supplies stable occurrence identities. */
+export type TokenProvider = Required<Pick<SpaceProvider, "tokens">>;
 /** A provider that can be written to. */
 export type Adder = Required<Pick<SpaceProvider, "add">>;
 /** A provider that can remove one atom. */
@@ -161,6 +165,15 @@ export interface SpaceProvider {
    * correct default candidate set, and the engine unifies.
    */
   atoms?(): Iterable<Term> | AsyncIterable<Term>;
+
+  /**
+   * Yield [token, atom] pairs, with token shaped (t actor rowId).
+   * Row IDs are stable nonnegative integers within the engine's flag/3 range.
+   * The engine unifies candidates against the pattern and refuses duplicates.
+   */
+  tokens?(pattern: Atom):
+    | Iterable<readonly [Atom, Atom]>
+    | AsyncIterable<readonly [Atom, Atom]>;
 
   /** Admit one atom. */
   add?(atom: Atom): void | Promise<void>;
@@ -278,6 +291,7 @@ export function capabilitiesOf(provider: SpaceProvider): readonly ProviderCapabi
   const held: ProviderCapability[] = [];
   if (provider.match !== undefined || provider.atoms !== undefined) held.push("match");
   if (provider.atoms !== undefined) held.push("enumerate");
+  if (provider.tokens !== undefined) held.push("tokens");
   if (provider.add !== undefined) held.push("add");
   if (provider.addMany !== undefined) held.push("add-many");
   if (provider.remove !== undefined) held.push("remove");
@@ -313,6 +327,7 @@ export function capabilitiesOf(provider: SpaceProvider): readonly ProviderCapabi
 
 /** The verbs `bridge.pl` sends across, one per seam clause. */
 type Verb =
+  | "tokens"
   | "match"
   | "match-bounded"
   | "atoms"
@@ -407,6 +422,10 @@ function install(engine: Engine, registry: Map<string, SpaceProvider>): void {
       const provider = providerAt(args[0]);
       const verb = verbAt(args[1]);
       if (verb === "atoms") return enumerate(provider);
+      if (verb === "tokens") {
+        if (provider.tokens === undefined) missing("tokens", provider);
+        return tokenCandidates(provider.tokens(args[2] as Atom));
+      }
       if (verb === "match") return candidates(provider, args[2] as Atom);
       if (verb === "match-bounded") {
         if (provider.matchBounded === undefined) missing("bounded", provider);
@@ -507,6 +526,20 @@ function callClear(provider: SpaceProvider): unknown {
 function enumerate(provider: SpaceProvider): Iterable<Term> | AsyncIterable<Term> {
   if (provider.atoms === undefined) missing("enumerate", provider);
   return provider.atoms();
+}
+
+/** Encode each occurrence pair as an expression while retaining stream cleanup. */
+function tokenCandidates(
+  rows: Iterable<readonly [Atom, Atom]> | AsyncIterable<readonly [Atom, Atom]>,
+): Iterable<Atom> | AsyncIterable<Atom> {
+  if (Symbol.asyncIterator in rows) {
+    return (async function* () {
+      for await (const pair of rows) yield exprOf(pair);
+    })();
+  }
+  return (function* () {
+    for (const pair of rows) yield exprOf(pair);
+  })();
 }
 
 function candidates(

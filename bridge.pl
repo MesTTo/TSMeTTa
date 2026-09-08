@@ -857,6 +857,7 @@ metta_node_verb(reducible, 2).
 metta_node_verb(currentspace, 0).
 metta_node_verb(custommatch, 1).
 metta_node_verb(digest, 1).
+metta_node_verb(blame, 2).
 metta_node_verb(token, 2).
 metta_node_verb(untoken, 1).
 
@@ -1231,6 +1232,12 @@ metta_node_command(digest, [Space0], [value, [s, Hash]]) :-
     metta_node_space(Space0, Space),
     metta_host_digest(Space, Outcome),
     metta_node_digest_result(Outcome, Space, Hash).
+
+metta_node_command(blame, [Space0, Wire], [value, Encoded]) :-
+    metta_node_space(Space0, Space),
+    metta_node_decode(Wire, Pattern),
+    metta_host_blame(Space, Pattern, Tokens),
+    metta_node_encode(Tokens, Encoded).
 
 
 % A reader class of this host's own: a full-token regex and the key the host
@@ -1772,6 +1779,7 @@ metta_node_leaf(_, Goal, [[builtin, Text]]) :- term_string(Goal, Text).
 :- multifile seam:foreign_add/2.
 :- multifile seam:foreign_remove/3.
 :- multifile seam:foreign_atoms/2.
+:- multifile seam:foreign_token/3.
 :- multifile seam:foreign_clear/1.
 :- multifile seam:foreign_add_many/2.
 :- multifile seam:foreign_pushdown/3.
@@ -1884,6 +1892,14 @@ seam:foreign_match(Space, Pattern, Options) :-
 seam:foreign_atoms(Space, Atom) :-
     metta_node_foreign(Space),
     metta_node_provider_stream(Space, atoms, [], Atom).
+
+seam:foreign_token(Space, Pattern, Token) :-
+    metta_node_foreign(Space),
+    metta_node_provider_stream(Space, tokens, [Pattern], Pair),
+    (   Pair = [[t, Actor, Generation], Candidate]
+    ->  Token = t(Actor, Generation), Pattern = Candidate
+    ;   throw(error(domain_error(occurrence_pair, Pair), none))
+    ).
 
 % The BULK door. A provider that has one takes the whole batch in one crossing;
 % one that does not declares no add-many capability and the engine falls back

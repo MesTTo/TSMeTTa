@@ -107,6 +107,10 @@ export interface BootOptions {
   readonly root?: string;
   /** Whether the engine's own trace also reaches the console. */
   readonly verbose?: boolean;
+  /** Stable replica identity. Omit to mint a UUID for this engine. */
+  readonly actor?: string;
+  /** Next unused generation when resuming an actor. Defaults to zero. */
+  readonly generation?: number | bigint;
 }
 
 /** What the engine did with one directive. */
@@ -1042,6 +1046,7 @@ function asProvider(backing: SpaceProvider | object): SpaceProvider {
   }
   const shape = backing as SpaceProvider;
   const answers =
+    typeof shape.tokens === "function" ||
     typeof shape.match === "function" ||
     typeof shape.atoms === "function" ||
     typeof shape.add === "function" ||

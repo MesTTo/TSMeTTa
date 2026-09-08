@@ -9,7 +9,7 @@
  * Guarantees:
  *   - heap settlement precedes the measurement window and releases sample
  *     state when either collector fails [tested: "the sampler";
- *     commit=WORKTREE]
+ *     commit=32650f9ff4d1c4aa0749d8eb8b153e5bb448ee5c]
  *   - a case's declared counters match what it can produce, so a case cannot
  *     claim an engine counter it never opens an engine for
  *   - the committed baseline and the case table name exactly the same rows, in

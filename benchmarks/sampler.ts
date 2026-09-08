@@ -11,7 +11,7 @@
  * Guarantees:
  *   - explicit collection settles Prolog and then V8 before opening any
  *     measured counter; collector failures still release the engine
- *     [tested: "the sampler"; commit=WORKTREE]
+ *     [tested: "the sampler"; commit=32650f9ff4d1c4aa0749d8eb8b153e5bb448ee5c]
  *   - setup and teardown stay outside the measured window, so a count is the
  *     workload and not the engine boot in front of it [tested: "measures the
  *     workload rather than the boot in front of it"]
@@ -144,7 +144,7 @@ async function measure(one: Case, bench: Bench, around: Window): Promise<Sample>
  * it first, then collect V8 twice because finalizers can resurrect references.
  * SWI garbage_collect/0 collects the global and trail stacks and trims them
  * [source: https://github.com/SWI-Prolog/swipl-devel/blob/fc7ef84b949378b729052c3ade79c90ce5416abb/boot/syspred.pl#L1324;
- * commit=WORKTREE].
+ * commit=32650f9ff4d1c4aa0749d8eb8b153e5bb448ee5c].
  */
 function settle(bench: Bench): void {
   const collect = (globalThis as { gc?: () => void }).gc;

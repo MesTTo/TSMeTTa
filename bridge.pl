@@ -35,6 +35,10 @@
 %     PeTTa@ae66fa8e41dcd5539d614706bd4e5cfb34f9608d src/metta.pl,
 %     eval_20/6 clauses for '==' and '!='].
 % Guarantees:
+%   - metta_node_start/3, metta_node_step/2, metta_node_resume/3 and
+%     metta_node_stop/1 use opaque host holds, including transaction-owned
+%     eager jobs [tested: host_hold:node_jobs_use_the_transaction_hold,
+%     extensions/node/test/engine.test.ts; commit=WORKTREE].
 %   - the three capability words this seat gates its own seam clauses on and
 %     the engine names nowhere -- bounded, pushdown and transactional -- are
 %     registered against the catalog's OPEN provider-capability row at load,
@@ -47,8 +51,8 @@
 %     [tested: "carries partial applications as the Python wire's expression",
 %     "carries compound edge cases under the shared expression grammar";
 %     commit=de332bf69feadc2080254f76a6c278fd6db344bc]
-%   - metta_node_step/2 computes at most one event per call, so a host that
-%     stops pulling leaves the rest of an infinite stream uncomputed
+%   - outside a transaction, metta_node_step/2 computes at most one event per
+%     call, so a host that stops pulling leaves an infinite stream uncomputed
 %     [tested: "leaves an abandoned stream's remaining answers uncomputed"]
 %   - job identifiers are monotone for this engine's lifetime and allocating
 %     one takes constant engine inferences regardless of the live-job count
@@ -105,7 +109,7 @@
 %   - a world's journal removes one matching parent occurrence per entry,
 %     including when the entry contains variables [tested: "spends one removal
 %     budget for a nonground journal entry"; commit=6b117a66f6d1028496594942d4b4bdb4cc2b14fe]
-% Owns: one SWI engine per open job, released by metta_node_stop/1, which the
+% Owns: one host hold per open job, released by metta_node_stop/1, which the
 %   JavaScript iterator calls from its own return() so an abandoned for-await
 %   releases it; the watch queues; the registered-operation table.
 % Decides: a job, a host value and a watch are addressed by INTEGER, because
@@ -597,7 +601,7 @@ metta_node_group(Terms, Encoded) :-
 % them as the same opaque {"$t":"b"} [measured 2026-08-20], so a host that
 % kept the handle could not hand it back.
 metta_node_start(Scopes, Command, Id) :-
-    engine_create(Event, metta_node_scoped(Scopes, Command, Event), Engine),
+    metta_host_hold(Event, metta_node_scoped(Scopes, Command, Event), Engine),
     metta_node_fresh_id(Id),
     assertz(metta_node_job(Id, Engine)).
 
@@ -620,19 +624,19 @@ metta_node_engine(Id, Engine) :-
 % [] is exhaustion and [Event] is one event, so the host needs no sentinel.
 metta_node_step(Id, Answer) :-
     metta_node_engine(Id, Engine),
-    ( engine_next(Engine, Event) -> Answer = [Event] ; Answer = [] ).
+    ( metta_host_hold_next(Engine, Event) -> Answer = [Event] ; Answer = [] ).
 
 % Answer a host call and take the next event in one crossing, which is what
 % engine_post/3 is for.
 metta_node_resume(Id, Reply, Answer) :-
     metta_node_engine(Id, Engine),
-    ( engine_post(Engine, Reply, Event) -> Answer = [Event] ; Answer = [] ).
+    ( metta_host_hold_post(Engine, Reply, Event) -> Answer = [Event] ; Answer = [] ).
 
 % Idempotent: a host that stops after exhaustion, and again from an abandoned
 % iterator's return(), finds nothing the second time and is at peace.
 metta_node_stop(Id) :-
     (   retract(metta_node_job(Id, Engine))
-    ->  catch(engine_destroy(Engine), error(existence_error(_, _), _), true)
+    ->  metta_host_hold_close(Engine)
     ;   true
     ).
 

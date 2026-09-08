@@ -1,6 +1,6 @@
 /**
  * Purpose: embed the MeTTa Kernel engine in Node or a browser over swipl-wasm, run a
- *   job inside a suspendable SWI engine, and pump the events it produces,
+ *   job through the engine's host hold service, and pump the events it produces,
  *   answering the ones only a JavaScript function can answer.
  * Assumes:
  *   - swipl-wasm 8.0.6 is installed beside this package; it is the SWI-Prolog
@@ -13,7 +13,11 @@
  * Guarantees:
  *   - Node and browser boot share the job and wire implementation
  *     [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
- *   - a job computes one event per pull, and abandoning it closes the engine
+ *   - metta_host_hold/3 makes jobs eager on their creating transaction's
+ *     thread; outside transactions, a job computes one event per pull
+ *     [tested: host_hold:node_jobs_use_the_transaction_hold,
+ *     "leaves an abandoned stream's remaining answers uncomputed";
+ *     commit=WORKTREE]
  *   - a host operation is called from the middle of a reduction, may be async,
  *     and may answer lazily; its rejection becomes the engine's own error
  *   - nothing reaches the host's console unless boot() was asked for verbose:
@@ -33,7 +37,7 @@
  *   - a job exposes complete collection, not a partial uniqueness helper that
  *     can return before proving uniqueness [tested: "does not expose the partial Job.only helper";
  *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
- * Owns: one WebAssembly instance per boot(), one Prolog engine per open job,
+ * Owns: one WebAssembly instance per boot(), one host hold per open job,
  *   and the live-host-value table, all released by dispose().
  * Decides: a job is addressed by integer because the WebAssembly value
  *   conversion renders every Prolog blob as the same opaque `{"$t":"b"}`.

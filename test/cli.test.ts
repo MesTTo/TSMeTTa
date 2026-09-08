@@ -4,7 +4,7 @@
  * Guarantees:
  *   - linked checkout entry points execute under either Node symlink policy
  *     [tested: runs through a linked checkout with either symlink policy;
- *     commit=WORKTREE]
+ *     commit=7f00ac7932fefa6f380fc8d14ec583ea0c58eff4]
  *   - `--version` and `--help` boot nothing, so they answer on a machine where
  *     the engine cannot start
  *   - every command exits nonzero when it fails, so each one is scriptable

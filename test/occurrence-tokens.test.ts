@@ -1,7 +1,7 @@
 /**
  * Purpose: verify occurrence identity through native and provider spaces.
  * Guarantees: blame orders stable tokens and closes failed provider streams
- *   [tested: occurrence-tokens.test.ts; commit=WORKTREE].
+ *   [tested: occurrence-tokens.test.ts; commit=7f00ac7932fefa6f380fc8d14ec583ea0c58eff4].
  * Owns resources: the fixture disposes its engine; each provider is detached.
  */
 import { strict as assert } from "node:assert";

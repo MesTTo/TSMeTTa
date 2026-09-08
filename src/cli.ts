@@ -8,7 +8,7 @@
  * Guarantees:
  *   - direct invocation resolves both entry paths, including preserved links
  *     [tested: runs through a linked checkout with either symlink policy;
- *     commit=WORKTREE]
+ *     commit=7f00ac7932fefa6f380fc8d14ec583ea0c58eff4]
  *   - every subcommand exits NONZERO on failure, so each one is scriptable
  *   - `--version` and `--help` boot nothing at all, which is what makes them
  *     safe to run on a machine where the engine cannot start

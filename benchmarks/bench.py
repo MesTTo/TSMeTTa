@@ -69,9 +69,12 @@ ROOT = SEAT.parents[1]
 sys.path.insert(0, str(ROOT / "extensions" / "python"))
 sys.path.insert(0, str(HERE))
 
-from configuration import V8_FLAGS, counter_configuration  # noqa: E402
+from _workspace import on_path  # noqa: E402  -- the path entry above
 
-from metta.testing import (  # noqa: E402
+on_path()
+
+from configuration import V8_FLAGS, counter_configuration  # noqa: E402
+from metta_benchmarking import (  # noqa: E402  -- on_path() above
     BenchmarkBaseline,
     measure_instructions,
     measured_main,

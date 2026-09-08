@@ -38,7 +38,7 @@
 %   - metta_node_start/3, metta_node_step/2, metta_node_resume/3 and
 %     metta_node_stop/1 use opaque host holds, including transaction-owned
 %     eager jobs [tested: host_hold:node_jobs_use_the_transaction_hold,
-%     extensions/node/test/engine.test.ts; commit=WORKTREE].
+%     extensions/node/test/engine.test.ts; commit=ea2c1bde39a7b002b1e5948cf6c53bc469dac084].
 %   - the three capability words this seat gates its own seam clauses on and
 %     the engine names nowhere -- bounded, pushdown and transactional -- are
 %     registered against the catalog's OPEN provider-capability row at load,

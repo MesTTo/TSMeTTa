@@ -17,7 +17,7 @@
  *     thread; outside transactions, a job computes one event per pull
  *     [tested: host_hold:node_jobs_use_the_transaction_hold,
  *     "leaves an abandoned stream's remaining answers uncomputed";
- *     commit=WORKTREE]
+ *     commit=ea2c1bde39a7b002b1e5948cf6c53bc469dac084]
  *   - a host operation is called from the middle of a reduction, may be async,
  *     and may answer lazily; its rejection becomes the engine's own error
  *   - nothing reaches the host's console unless boot() was asked for verbose:

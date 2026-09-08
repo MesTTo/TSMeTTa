@@ -308,6 +308,7 @@ export {
   type Remover,
   type SpaceProvider,
   type Subscribable,
+  type TokenProvider,
   capabilitiesOf,
   customMatchers,
   hasProvider,

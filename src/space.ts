@@ -328,6 +328,23 @@ export class Space {
     return String(hostValue(valueOf(this.#command(["digest", this.reference]).sync(), "digest")));
   }
 
+  /** Matching occurrence tokens, each (t actor generation), in token order. */
+  blame(atom: Term): readonly Atom[] {
+    const result = valueOf(
+      this.#command(["blame", this.reference, this.#wire(atom)]).sync(), "blame",
+    );
+    if (!(result instanceof Expression)) throw new WireError("blame did not return a token list");
+    return result.items;
+  }
+
+  /** The awaiting twin for a provider whose token stream is asynchronous. */
+  async blamed(atom: Term): Promise<readonly Atom[]> {
+    const events = await this.#command(["blame", this.reference, this.#wire(atom)]).all();
+    const result = valueOf(events[0] ?? null, "blame");
+    if (!(result instanceof Expression)) throw new WireError("blame did not return a token list");
+    return result.items;
+  }
+
   /**
    * Declare how faithfully this space answers queries of one shape.
    *

@@ -1032,7 +1032,7 @@ export { fromTransport, toTransport };
  * engine/main.pl already lists it as an engine flag.
  */
 export async function boot(
-  options: { root?: string; verbose?: boolean } = {},
+  options: { root?: string; verbose?: boolean; actor?: string; generation?: number | bigint } = {},
 ): Promise<Engine> {
   // A BLANK root is absent, not a path. `??` only replaces null and
   // undefined, so `boot({ root: "" })` reached the check below and was told
@@ -1043,6 +1043,21 @@ export async function boot(
   const supplied = options.root?.trim();
   const root = supplied ? supplied : REPO_ROOT;
   const verbose = options.verbose ?? false;
+  const identity: string[] = [];
+  if (options.actor !== undefined) {
+    if (typeof options.actor !== "string" || options.actor.length === 0) {
+      throw new TypeError("actor must be a nonempty string");
+    }
+    identity.push(`--actor=${options.actor}`);
+  }
+  if (options.generation !== undefined) {
+    const value = options.generation;
+    if ((typeof value !== "bigint" && !Number.isSafeInteger(value)) ||
+        value < 0 || BigInt(value) > 9223372036854775807n) {
+      throw new RangeError("generation must be a nonnegative signed 64-bit integer");
+    }
+    identity.push(`--generation=${String(value)}`);
+  }
   const runtime = await prepareRuntime(root);
   // Sources are validated before a wasm instance is allocated.
   config.markStarted();
@@ -1050,7 +1065,7 @@ export async function boot(
   const stderr: string[] = [];
   const swipl = await loadSWIPL({
     ...(runtime.options ?? {}),
-    arguments: ["-q"],
+    arguments: ["-q", "--", ...identity],
     print: (line: string) => {
       output.push(line);
       if (verbose) console.log(line);
@@ -1077,8 +1092,13 @@ export async function boot(
       );
     }
   }
-  swipl.prolog.query(`set_prolog_flag(argv, ${flags}).`).once();
-  const consulted = swipl.prolog.query(`consult('${VIRTUAL_ROOT}/engine/metta.pl').`).once();
+  swipl.prolog.query(
+    `current_prolog_flag(argv, Identity), append(Identity, ${flags}, Flags), set_prolog_flag(argv, Flags).`,
+  ).once();
+  const consulted = swipl.prolog.query(
+    `consult('${VIRTUAL_ROOT}/engine/identity.pl'), ` +
+    `metta_identity:metta_boot_identity, consult('${VIRTUAL_ROOT}/engine/metta.pl').`,
+  ).once();
   if (consulted?.error === true) {
     throw new EngineError(`the engine did not load: ${String(consulted.message)}`);
   }

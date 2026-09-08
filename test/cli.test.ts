@@ -2,6 +2,9 @@
  * Purpose: the command line — every subcommand, its exit status, and what it
  *   writes.
  * Guarantees:
+ *   - linked checkout entry points execute under either Node symlink policy
+ *     [tested: runs through a linked checkout with either symlink policy;
+ *     commit=7f00ac7932fefa6f380fc8d14ec583ea0c58eff4]
  *   - `--version` and `--help` boot nothing, so they answer on a machine where
  *     the engine cannot start
  *   - every command exits nonzero when it fails, so each one is scriptable
@@ -13,13 +16,19 @@
 
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { describe, it } from "node:test";
 
 import { main } from "../src/cli.ts";
+import { repoRoot } from "../src/platform.ts";
+
+const here = fileURLToPath(import.meta.url);
+const command = here.replace(/test[/\\]cli\.test\.(ts|js)$/, (matched) =>
+  matched.endsWith(".ts") ? "src/cli.ts" : "src/cli.js",
+);
 
 /**
  * Run one command line, collecting what it wrote.
@@ -106,13 +115,28 @@ describe("the command line", () => {
     assert.match(wrong.err, /usage: metta-node/);
   });
 
+  it("runs through a linked checkout with either symlink policy", () => {
+    const directory = mkdtempSync(join(tmpdir(), "metta-cli-link-"));
+    const linkedRoot = join(directory, "checkout");
+    try {
+      symlinkSync(repoRoot, linkedRoot, "dir");
+      const linkedCommand = join(linkedRoot, relative(repoRoot, command));
+      for (const flags of [[], ["--preserve-symlinks", "--preserve-symlinks-main"]]) {
+        const answered = spawnSync(process.execPath, [...flags, linkedCommand, "--version"], {
+          encoding: "utf8",
+          env: { ...process.env, NODE_OPTIONS: "" },
+        });
+        assert.equal(answered.status, 0, answered.stderr);
+        assert.match(answered.stdout, /^metta-node \d+\.\d+\.\d+/);
+      }
+    } finally {
+      rmSync(directory, { recursive: true });
+    }
+  });
+
   it("runs as a process, with the exit status a shell reads", () => {
     // The injected sink above tests the commands; this tests the ENTRY POINT,
     // which is the part a `bin` field points at and a shell actually invokes.
-    const here = fileURLToPath(import.meta.url);
-    const command = here.replace(/test[/\\]cli\.test\.(ts|js)$/, (matched) =>
-      matched.endsWith(".ts") ? "src/cli.ts" : "src/cli.js",
-    );
     const answered = spawnSync(process.execPath, [command, "eval", "(+ 2 3)"], {
       encoding: "utf8",
     });

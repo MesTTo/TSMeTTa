@@ -184,6 +184,7 @@
     "node": ">=22.18"
   },
   "scripts": {
+    "prebuild": "node -e \"require('node:fs').rmSync('build', {recursive: true, force: true})\"",
     "build": "tsc -p tsconfig.build.json",
     "build:dist": "tsc -p tsconfig.dist.json",
     "cli": "npm run build:dist --silent && node dist/cli.js",

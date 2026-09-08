@@ -7,6 +7,9 @@
  *   - the committed baseline sits at benchmarks/baseline.json and is the
  *     document benchmarks/bench.py compares against
  * Guarantees:
+ *   - heap settlement precedes the measurement window and releases sample
+ *     state when either collector fails [tested: "the sampler";
+ *     commit=WORKTREE]
  *   - a case's declared counters match what it can produce, so a case cannot
  *     claim an engine counter it never opens an engine for
  *   - the committed baseline and the case table name exactly the same rows, in
@@ -20,7 +23,7 @@
  */
 
 import { strict as assert } from "node:assert";
-import { describe, it } from "node:test";
+import { describe, it, type TestContext } from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -44,6 +47,16 @@ interface Pinned {
 const pinned = JSON.parse(readFileSync(BASELINE, "utf8")) as {
   benchmarks: Record<string, Pinned>;
 };
+
+// Restore the original global property even on assertion or collector failure.
+function collector(t: TestContext, collect: (() => void) | undefined): void {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "gc");
+  Object.defineProperty(globalThis, "gc", { configurable: true, value: collect });
+  t.after(() => {
+    if (original === undefined) Reflect.deleteProperty(globalThis, "gc");
+    else Object.defineProperty(globalThis, "gc", original);
+  });
+}
 
 describe("the benchmark case table", () => {
   it("declares at least one deciding counter per case", () => {
@@ -110,6 +123,69 @@ describe("the benchmark case table", () => {
 });
 
 describe("the sampler", () => {
+  for (const name of ["query-rows", "wire-roundtrip"]) {
+    it(`settles both heaps before the window: ${name}`, async (t) => {
+      const one = CASES[name]!;
+      const bench = await one.setup();
+      const calls = bench.engine === null ? null : t.mock.method(bench.engine.engine, "once");
+      const events: string[] = [];
+      collector(t, () => {
+        if (calls !== null) {
+          assert.equal(calls.mock.calls.at(-1)?.arguments[0], "garbage_collect");
+        }
+        events.push("v8");
+      });
+      const measured = await sample({ ...one, setup: async () => bench }, async (work) => {
+        assert.deepEqual(events, ["v8", "v8"]);
+        if (calls !== null) {
+          assert.equal(calls.mock.calls.filter((call) => call.arguments[0] === "garbage_collect").length, 1);
+        }
+        events.push("window");
+        return work();
+      });
+      assert.deepEqual(events, ["v8", "v8", "window"]);
+      assert.ok(measured.crossings === null || measured.crossings < one.operations + 10);
+    });
+  }
+
+  it("leaves collection implicit when explicit collection is unavailable", async (t) => {
+    collector(t, undefined);
+    const one = CASES["query-rows"]!;
+    const bench = await one.setup();
+    assert.ok(bench.engine !== null);
+    const calls = t.mock.method(bench.engine.engine, "once");
+    await sample({ ...one, setup: async () => bench });
+    assert.equal(calls.mock.calls.filter((call) => call.arguments[0] === "garbage_collect").length, 0);
+  });
+
+  for (const failing of ["prolog", "v8"]) {
+    it(`releases the engine when collection fails: ${failing}`, async (t) => {
+      const one = CASES["query-rows"]!;
+      const bench = await one.setup();
+      assert.ok(bench.engine !== null);
+      const backend = bench.engine.engine;
+      const once = backend.once.bind(backend);
+      const fault = new Error(`${failing} collection failed`);
+      let closed = false;
+      let worked = false;
+      t.mock.method(backend, "once", (goal: string, input?: Record<string, unknown>) => {
+        if (failing === "prolog" && goal === "garbage_collect") throw fault;
+        return once(goal, input);
+      });
+      collector(t, () => { if (failing === "v8") throw fault; });
+      await assert.rejects(sample({
+        ...one,
+        setup: async () => ({
+          ...bench,
+          run: async () => { worked = true; return bench.run(); },
+          close: () => { closed = true; bench.close(); },
+        }),
+      }), (error: unknown) => error === fault);
+      assert.equal(closed, true);
+      assert.equal(worked, false);
+    });
+  }
+
   it("gives every sample fresh state", async () => {
     // Two samples of a case whose workload GROWS with what the space already
     // holds. Equal counts is the whole claim: state that survived a sample

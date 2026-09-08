@@ -9,6 +9,9 @@
  *     metta.testing's measure_instructions is what sets it up for both
  *     [source: perf-stat(1), --control=fd:ctl-fd[,ack-fd]]
  * Guarantees:
+ *   - explicit collection settles Prolog and then V8 before opening any
+ *     measured counter; collector failures still release the engine
+ *     [tested: "the sampler"; commit=32650f9ff4d1c4aa0749d8eb8b153e5bb448ee5c]
  *   - setup and teardown stay outside the measured window, so a count is the
  *     workload and not the engine boot in front of it [tested: "measures the
  *     workload rather than the boot in front of it"]
@@ -129,7 +132,7 @@ async function measure(one: Case, bench: Bench, around: Window): Promise<Sample>
 }
 
 /**
- * Settle the heap, so the window starts from the same state whatever was loaded.
+ * Settle both managed heaps before measuring prepared work.
  *
  * `--predictable-gc-schedule` makes collection deterministic given the same
  * allocation sequence, and the startup heap is part of that sequence: growing
@@ -137,12 +140,16 @@ async function measure(one: Case, bench: Bench, around: Window): Promise<Sample>
  * window, and four kilobytes of comments moved a row 3.7 percent. Collecting
  * to a fixed point here, outside the window, is what removes that.
  *
- * Twice, because the first pass can resurrect through finalizers and weak
- * references, which this seat holds by the tableful.
+ * Prolog setup leaves garbage on its own stacks, independently of V8. Collect
+ * it first, then collect V8 twice because finalizers can resurrect references.
+ * SWI garbage_collect/0 collects the global and trail stacks and trims them
+ * [source: https://github.com/SWI-Prolog/swipl-devel/blob/fc7ef84b949378b729052c3ade79c90ce5416abb/boot/syspred.pl#L1324;
+ * commit=32650f9ff4d1c4aa0749d8eb8b153e5bb448ee5c].
  */
-function settle(): void {
+function settle(bench: Bench): void {
   const collect = (globalThis as { gc?: () => void }).gc;
   if (collect === undefined) return;
+  bench.engine?.engine.once("garbage_collect");
   collect();
   collect();
 }
@@ -151,7 +158,7 @@ function settle(): void {
 export async function sample(one: Case, around: Window = directly): Promise<Sample> {
   const bench = await one.setup();
   try {
-    settle();
+    settle(bench);
     return await measure(one, bench, around);
   } finally {
     bench.close();

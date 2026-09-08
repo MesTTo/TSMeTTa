@@ -286,6 +286,16 @@ export const ImageMode = {
 /** One value of the `image-mode` vocabulary. */
 export type ImageMode = (typeof ImageMode)[keyof typeof ImageMode];
 
+/** The `journal-sync` vocabulary, in the catalog's own order. */
+export const JournalSync = {
+  none: "none",
+  flush: "flush",
+  close: "close",
+} as const;
+
+/** One value of the `journal-sync` vocabulary. */
+export type JournalSync = (typeof JournalSync)[keyof typeof JournalSync];
+
 /** The `limit` vocabulary, in the catalog's own order. */
 export const Limit = {
   events: "events",
@@ -606,6 +616,7 @@ export interface Vocabularies {
   readonly "fidelity": typeof Fidelity;
   readonly "ground-kind": typeof GroundKind;
   readonly "image-mode": typeof ImageMode;
+  readonly "journal-sync": typeof JournalSync;
   readonly "limit": typeof Limit;
   readonly "live-strategy": typeof LiveStrategy;
   readonly "memo-aggregate": typeof MemoAggregate;
@@ -656,6 +667,7 @@ export const VOCABULARIES: Vocabularies = {
   "fidelity": Fidelity,
   "ground-kind": GroundKind,
   "image-mode": ImageMode,
+  "journal-sync": JournalSync,
   "limit": Limit,
   "live-strategy": LiveStrategy,
   "memo-aggregate": MemoAggregate,

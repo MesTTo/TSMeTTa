@@ -257,7 +257,7 @@ describe("the remote protocol", () => {
         (raised: unknown) => {
           assert.ok(raised instanceof MettaError, text);
           // The engine's own sentence, so one refusal reads the same in both
-          // seats [source: extensions/python/metta/shim.pl,
+          // seats [source: extensions/python/metta/_binding/shim.pl,
           // metta_py_json_rethrow/1 on duplicate_key/1].
           assert.equal(raised.message, `JSON object repeats the key ${key}`, text);
           return true;

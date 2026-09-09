@@ -132,9 +132,9 @@ export interface RemoteRequest {
  * is handed every pair as it is read. The engine's codec REFUSES a repeated
  * key on this wire and the Python gateway answers 400 for one, so a body both
  * ends must read the same way cannot go through a bare `JSON.parse`
- * [source: extensions/python/metta/shim.pl, metta_py_json_options/1 asking for
+ * [source: extensions/python/metta/_binding/shim.pl, metta_py_json_options/1 asking for
  * shape(dicts) and metta_py_json_rethrow/1 turning duplicate_key(Key) into
- * "JSON object repeats the key <k>"; extensions/python/metta/remote.py,
+ * "JSON object repeats the key <k>"; extensions/python/metta/remote/__init__.py,
  * Handler._payload; tested:
  * extensions/python/tests/ch03_atoms_and_expressions/test_json.py,
  * test_json_codec_refuses_duplicate_keys]. The ruling is a refusal rather than
@@ -270,7 +270,7 @@ export function httpTransport(url: string, options: { readonly token?: string } 
       const answered = await fetch(`${base}${path}`, { method: "POST", headers, body: payload });
       // `Response.json` is `JSON.parse`, so a peer's repeated key would be
       // last-wins here while the Python client refuses it
-      // [source: extensions/python/metta/remote.py, the _json.loads on every
+      // [source: extensions/python/metta/remote/__init__.py, the _json.loads on every
       // answer]. Both ends of this protocol read the same way.
       const held = readJson(await answered.text()) as Record<string, unknown>;
       if (!answered.ok || typeof held["error"] === "string") {

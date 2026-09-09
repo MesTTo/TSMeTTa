@@ -293,7 +293,7 @@ function atNumberPayload(holder: unknown, key: string): boolean {
  *
  * A non-finite float is REFUSED. JSON has no literal for one and the engine's
  * codec refuses it in the same words, so both ends of this wire agree
- * [measured 2026-09-05: metta._json.dumps({'n': float('inf')}) answers
+ * [measured 2026-09-05: metta._binding.json.dumps({'n': float('inf')}) answers
  * "JSON cannot carry the non-finite number inf"].
  */
 function jsonNumberLiteral(value: number | bigint): string {
@@ -397,7 +397,7 @@ function literalised(root: unknown): unknown {
  *
  * A float literal that overflows to infinity is refused rather than becoming
  * one, which is what SWI's reader does with the same text
- * [measured 2026-09-05: metta._json.loads('{"n":1e400}') refuses].
+ * [measured 2026-09-05: metta._binding.json.loads('{"n":1e400}') refuses].
  */
 export function transportFromJson(text: string): unknown {
   return sourceJson.parse(text, function revive(this: unknown, key, held, context): unknown {

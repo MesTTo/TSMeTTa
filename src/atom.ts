@@ -691,7 +691,7 @@ function groundedText(value: unknown): string {
  * print positionally while KK is in -4..16 and scientifically otherwise,
  * exponent KK-1, minus sign only, never a plus, never zero-padded
  * [source: engine/parser.pl, metta_float_layout/4; the Python seat carries the
- * same five branches at extensions/python/metta/_atoms_core.py, _float_text].
+ * same five branches at extensions/python/metta/_atoms/model.py, _float_text].
  *
  * JavaScript's own layout is a THIRD spelling, and leaving it in place is what
  * made this seat the odd one out: `String` writes a plus in the exponent

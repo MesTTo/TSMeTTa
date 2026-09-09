@@ -412,7 +412,7 @@ describe("a tagged program", () => {
     // A capability name is whatever a caller wrote; nothing narrows it to a
     // vocabulary the way `laws` is narrowed. U+1D400 is astral and U+F900 is
     // not, and the two orders disagree on exactly that pair: Python's
-    // `sorted`, which extensions/python/metta/algebra.py uses to build this
+    // `sorted`, which extensions/python/metta/algebra/__init__.py uses to build this
     // same row, puts U+F900 first, while a comparator-less
     // `Array.prototype.sort` puts the astral one first because it compares
     // UTF-16 units. The row is an ATOM the engine reads, so one declaration

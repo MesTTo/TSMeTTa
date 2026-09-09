@@ -397,7 +397,7 @@ export class Algebra {
       // read by the engine and written by the Python seat's own `sorted`, so a
       // capability name outside the BMP would land in a different order here
       // and make one declaration two atoms
-      // [source: extensions/python/metta/algebra.py, _symbol_list("laws",
+      // [source: extensions/python/metta/algebra/__init__.py, _symbol_list("laws",
       // sorted(...)) and _symbol_list("requires", sorted(...))].
       expr(sym("laws"), ...[...this.laws].sort(byCodePoint).map((law) => sym(law))),
       expr(sym("carrier"), ...this.carrier),

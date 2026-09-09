@@ -258,7 +258,7 @@ user:message_hook(_, _, Lines) :-
 
 %%%%%%%%%% The tagged codec %%%%%%%%%%
 %
-% The same tags extensions/python/metta/shim.pl's metta_py_encode/2 writes and
+% The same tags extensions/python/metta/_binding/shim.pl's metta_py_encode/2 writes and
 % extensions/node/src/wire.ts reads: s symbol, v variable, n number, g string,
 % b boolean, e expression, p portable space handle, o live host value.
 %
@@ -321,7 +321,7 @@ user:message_hook(_, _, Lines) :-
 % per term would satisfy the first and break the second, since a host atom
 % compares by spelling and two answers put in one expression would share a
 % variable that was never shared. This is the same fix, with the same
-% reasoning, that `extensions/python/metta/shim.pl` carries.
+% reasoning, that `extensions/python/metta/_binding/shim.pl` carries.
 metta_node_encode(T, Wire) :- metta_node_encode(T, [], _, Wire, []).
 
 metta_node_encode(T, N0, N, [v, Name|R], R) :- var(T), !,
@@ -337,8 +337,8 @@ metta_node_encode(T, N0, N, [e, Count|R0], R)   :- is_list(T), !,
     metta_node_encode_items(T, N0, N, 0, Count, R0, R).
 % Match metta_py_encode/4's structural projection, including improper lists.
 % compound_name_arguments/3 also accepts zero-arity compounds, unlike =../2.
-% [source: extensions/python/metta/shim.pl, metta_py_encode/4;
-% commit=8f853f992a4c732eca39de34ff0a3dfe161508dd]
+% [source: extensions/python/metta/_binding/wire.pl:58, metta_py_encode/4;
+% commit=WORKTREE]
 metta_node_encode([H|T], N0, N, [e, 3, s, "cons"|R0], R) :- !,
     metta_node_encode(H, N0, N1, R0, R1),
     metta_node_encode(T, N1, N, R1, R).
@@ -883,7 +883,7 @@ metta_node_remove_one(Space, Pattern) :-
 % copied into an analysis scratch saw its own rows in both places
 % [measured 2026-09-05 against the Python binding, whose two doors already
 % agree; source: metta_py_target_term_bindings/4 in
-% extensions/python/metta/shim.pl].
+% extensions/python/metta/_binding/shim.pl].
 %
 % Only EXECUTION targets. Stored data keeps its literal atoms, so add, remove
 % and the match patterns do not pass through it; that is the line the Python

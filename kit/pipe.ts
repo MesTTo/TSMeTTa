@@ -5,7 +5,7 @@
  * Assumes:
  *   - the corpus writes a non-finite float as `{"$float": "inf"}`,
  *     `{"$float": "-inf"}` or `{"$float": "nan"}`, which is the vocabulary
- *     `metta._codec_kit._FLOATS` resolves on the other side
+ *     `metta.testing._codec_kit._FLOATS` resolves on the other side
  * Guarantees:
  *   - a number crosses as its VALUE and at its own width, because
  *     {@link transportToJson} places each `n` payload as its own literal

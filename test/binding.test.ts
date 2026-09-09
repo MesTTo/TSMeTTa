@@ -990,7 +990,7 @@ describe("the atom door and the engine's own writer agree", () => {
   // One atom, one text. The engine's writer is the authority and the Python
   // seat implements the same law, so a float spelled JavaScript's way here is
   // this seat disagreeing with both [source: engine/parser.pl,
-  // metta_float_layout/4; extensions/python/metta/_atoms_core.py, _float_text].
+  // metta_float_layout/4; extensions/python/metta/_atoms/model.py, _float_text].
   // The values are the layout's own boundaries, where `String` parts from it:
   // the exponent's plus sign, the positional range ending at 1e16 rather than
   // 1e21, and its low end at 1e-5 rather than 1e-6.

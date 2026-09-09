@@ -282,7 +282,7 @@ describe("linting", () => {
   });
 
   it("says nothing about the arrow in a type declaration", async () => {
-    // `->` is declared `(-> (%Rest% Type) Type)` and reduces nowhere, so a
+    // `->` is declared `(-> (:seg Type) Type)` and reduces nowhere, so a
     // rule reading every expression with a symbol head would report every
     // declaration in the corpus. A type is not a call.
     const findings = await lint(m, "(: twice (-> Number Number))\n(= (twice $n) (* 2 $n))", {

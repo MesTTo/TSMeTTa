@@ -338,7 +338,7 @@ metta_node_encode(T, N0, N, [e, Count|R0], R)   :- is_list(T), !,
 % Match metta_py_encode/4's structural projection, including improper lists.
 % compound_name_arguments/3 also accepts zero-arity compounds, unlike =../2.
 % [source: extensions/python/metta/_binding/wire.pl:58, metta_py_encode/4;
-% commit=WORKTREE]
+% commit=cd62330ceacc8f1254eed9791c3f6203b48a1c9e]
 metta_node_encode([H|T], N0, N, [e, 3, s, "cons"|R0], R) :- !,
     metta_node_encode(H, N0, N1, R0, R1),
     metta_node_encode(T, N1, N, R1, R).

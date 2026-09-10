@@ -11,6 +11,10 @@
  *     `engine/ext_points.pl`, and `bridge.pl` routes it here over the same
  *     trampoline a host operation uses
  * Guarantees:
+ *   - the capability vocabulary includes optional exact-token mutation;
+ *     no provider claims it merely by implementing ordinary writes
+ *     [tested: "names every capability the engine's own row carries";
+ *     commit=90ba93eb8f6e98ebfefc55416859bf13de6a8427]
  *   - capabilities are DERIVED from the methods a provider implements, so a
  *     provider that cannot remove is refused a removal by name rather than
  *     failing silently [tested: "derives its capabilities from its methods"]
@@ -45,6 +49,8 @@ import type { Delivery, EventOrder } from "./vocabularies.ts";
 /** What a provider can be asked to do, in the engine's own vocabulary. */
 export type ProviderCapability =
   | "tokens"
+  | "add-token"
+  | "remove-token"
   | "match"
   | "enumerate"
   | "add"
@@ -61,6 +67,8 @@ export type ProviderCapability =
 /** Every capability the seam names, in the engine's own vocabulary. */
 export const CAPABILITIES: readonly ProviderCapability[] = Object.freeze([
   "tokens",
+  "add-token",
+  "remove-token",
   "match",
   "enumerate",
   "add",

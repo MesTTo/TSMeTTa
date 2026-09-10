@@ -14,7 +14,7 @@
  *   - the capability vocabulary includes optional exact-token mutation;
  *     no provider claims it merely by implementing ordinary writes
  *     [tested: "names every capability the engine's own row carries";
- *     commit=WORKTREE]
+ *     commit=90ba93eb8f6e98ebfefc55416859bf13de6a8427]
  *   - capabilities are DERIVED from the methods a provider implements, so a
  *     provider that cannot remove is refused a removal by name rather than
  *     failing silently [tested: "derives its capabilities from its methods"]

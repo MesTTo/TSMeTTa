@@ -388,6 +388,8 @@ export const ProviderCapability = {
   plan: "plan",
   rules: "rules",
   tokens: "tokens",
+  addToken: "add-token",
+  removeToken: "remove-token",
 } as const;
 
 /** One value of the `provider-capability` vocabulary. */
@@ -479,6 +481,7 @@ export type SaveFormat = (typeof SaveFormat)[keyof typeof SaveFormat];
  */
 export const Semiring = {
   bool: "bool",
+  visibility: "visibility",
   bag: "bag",
   counting: "counting",
   set: "set",

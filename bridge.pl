@@ -5,7 +5,7 @@
 %   "carries the ground and the filled remedy of every kind"; commit=f33b7ab0200e6dc74c88fb4c7f827bf545a447ed].
 % Guarantees: metta_node_render/2 scopes message capture through
 %   metta_engine:metta_with_trailed/3
-%   [source: extensions/node/bridge.pl:metta_node_render/2; commit=WORKTREE].
+%   [source: extensions/node/bridge.pl:metta_node_render/2; commit=40b71fc99571872ca5fc85cdaf7902b467166539].
 %
 % Purpose: the Prolog half of the Node binding's transport. It runs MeTTa
 %   inside an SWI engine that can suspend, so answers arrive one at a time and

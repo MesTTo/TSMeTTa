@@ -408,6 +408,7 @@ export const Refinement = {
   Len: "Len",
   Predicate: "Predicate",
   Unit: "Unit",
+  Literal: "Literal",
 } as const;
 
 /** One value of the `refinement` vocabulary. */

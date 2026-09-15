@@ -15,7 +15,7 @@
  *     vocabulary, plus the three words `bridge.pl` registers for this seat's
  *     own seam clauses, so a word added to the row cannot go missing here
  *     [tested: "names every capability the engine's own row carries";
- *     commit=WORKTREE]
+ *     commit=131f3f70ba8aa184da81b4f66068981ae14e7c19]
  *   - capabilities are DERIVED from the methods a provider implements, so a
  *     provider that cannot remove is refused a removal by name rather than
  *     failing silently [tested: "derives its capabilities from its methods"]

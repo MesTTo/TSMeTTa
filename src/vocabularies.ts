@@ -390,6 +390,7 @@ export const ProviderCapability = {
   tokens: "tokens",
   addToken: "add-token",
   removeToken: "remove-token",
+  savepoint: "savepoint",
 } as const;
 
 /** One value of the `provider-capability` vocabulary. */

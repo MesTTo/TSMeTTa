@@ -35,6 +35,10 @@
 %     PeTTa@ae66fa8e41dcd5539d614706bd4e5cfb34f9608d src/metta.pl,
 %     eval_20/6 clauses for '==' and '!='].
 % Guarantees:
+%   - foreign participant capture retains its original provider value and
+%     completion applications; metta_node_yield/1 still refuses capture in a
+%     transaction or speculate callback
+%     [source: extensions/node/bridge.pl:metta_node_capture_participant/2; commit=WORKTREE].
 %   - metta_node_start/3, metta_node_step/2, metta_node_resume/3 and
 %     metta_node_stop/1 use opaque host holds, including transaction-owned
 %     eager jobs [tested: host_hold:node_jobs_use_the_transaction_hold,
@@ -850,7 +854,7 @@ metta_node_verb(forms, 1).
 metta_node_verb(cast, 3).
 metta_node_verb(disassemble, 2).
 metta_node_verb(derivation, 3).
-metta_node_verb(provider, 3).
+metta_node_verb(provider, 4).
 metta_node_verb(unprovider, 1).
 metta_node_verb(runstatus, 2).
 metta_node_verb(reducible, 2).
@@ -1200,11 +1204,15 @@ metta_node_command(disassemble, [Space0, Name0], [value, [g, Text]]) :-
 % resolving by load order later; the capability rows are this space's own, and
 % an events promise rides the same registration because delivery is one fact
 % about one space rather than a second crossing.
-metta_node_command(provider, [Space0, Caps0, Delivery0], [value, [s, "ok"]]) :-
+metta_node_command(provider, [Space0, ProviderWire, Caps0, Delivery0], [value, [s, "ok"]]) :-
     metta_node_atom(Space0, Space),
+    metta_node_decode(ProviderWire, Provider),
     metta_node_require_space_name(Space),
     metta_claim_space(Space, node),
-    ( metta_node_foreign(Space) -> true ; assertz(metta_node_foreign(Space)) ),
+    % Republishing a host registration creates another source occurrence.
+    % Captured participants keep the previous occurrence and host applications.
+    retractall(metta_node_foreign_provider(Space, _)),
+    assertz(metta_node_foreign_provider(Space, Provider)),
     metta_node_claim_owned(Space),
     metta_source_reset(Space),
     retractall(metta_node_capability(Space, _)),
@@ -1218,7 +1226,7 @@ metta_node_command(unprovider, [Space0], [value, [s, "ok"]]) :-
     metta_node_atom(Space0, Space),
     retractall(metta_node_capability(Space, _)),
     metta_node_declare_delivery(Space, []),
-    retractall(metta_node_foreign(Space)),
+    retractall(metta_node_foreign_provider(Space, _)),
     metta_node_disclaim_owned(Space),
     metta_disclaim_space(Space, node).
 
@@ -1784,14 +1792,14 @@ metta_node_leaf(_, Goal, [[builtin, Text]]) :- term_string(Goal, Text).
 :- multifile seam:foreign_add_many/2.
 :- multifile seam:foreign_pushdown/3.
 :- multifile seam:foreign_plan/5.
-:- multifile seam:foreign_begin/1.
-:- multifile seam:foreign_commit/1.
-:- multifile seam:foreign_rollback/1.
+:- multifile seam:foreign_participant/3.
 :- multifile seam:foreign_capability/2.
 :- multifile seam:foreign_refuse/2.
 
-:- dynamic metta_node_foreign/1.
+:- dynamic metta_node_foreign_provider/2.
 :- dynamic metta_node_capability/2.
+
+metta_node_foreign(Space) :- metta_node_foreign_provider(Space, _).
 
 % Three capability words this seat gates its own seam clauses on and the
 % engine names nowhere: `bounded` for the take bound a matcher can push into
@@ -1978,20 +1986,19 @@ metta_node_plan_rows(Claimed, Rows) :-
     member(Row, Rows),
     Claimed = Row.
 
-% Transactional participation, driven by (writes Ctx transactional): the
-% provider's own begin, commit and rollback.
-seam:foreign_begin(Space) :-
+% Capture uses the ordinary host crossing, so transaction/speculate retains
+% metta_node_yield/1's documented refusal. No callback runs before that door.
+seam:foreign_participant(Space, Identity, Capture) :-
     metta_node_foreign(Space),
     metta_node_capability(Space, transactional),
-    metta_node_provider_call(Space, begin, [], _).
-seam:foreign_commit(Space) :-
-    metta_node_foreign(Space),
-    metta_node_capability(Space, transactional),
-    metta_node_provider_call(Space, commit, [], _).
-seam:foreign_rollback(Space) :-
-    metta_node_foreign(Space),
-    metta_node_capability(Space, transactional),
-    metta_node_provider_call(Space, rollback, [], _).
+    clause(metta_node_foreign_provider(Space, Provider), true, Identity),
+    Capture = user:metta_node_capture_participant(Provider).
+
+metta_node_capture_participant(Provider, Protocol) :-
+    metta_node_provider_call(Provider, participant, [], [Provider, Begin, Commit, Rollback]),
+    Protocol = transaction(user:metta_node_provider_call(Provider, invoke, [Begin], _),
+                           user:metta_node_provider_call(Provider, invoke, [Commit], _),
+                           user:metta_node_provider_call(Provider, invoke, [Rollback], _)).
 
 seam:foreign_add(Space, Term) :-
     metta_node_foreign(Space),

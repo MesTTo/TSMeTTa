@@ -11,6 +11,9 @@
  *     `engine/ext_points.pl`, and `bridge.pl` routes it here over the same
  *     trampoline a host operation uses
  * Guarantees:
+ *   - participant applications retain the provider and original method
+ *     identities; repeated captures reuse HostValues entries
+ *     [source: extensions/node/src/provider.ts:install; commit=WORKTREE].
  *   - the capability vocabulary includes optional exact-token mutation;
  *     no provider claims it merely by implementing ordinary writes
  *     [tested: "names every capability the engine's own row carries";
@@ -30,7 +33,12 @@
  *     `$_17902`, because a variable is an identity rather than a spelling and
  *     the engine renames on the way in. Ground atoms are exact in both
  *     directions
- * Decides: a provider's methods may be SYNCHRONOUS or asynchronous. A
+ * Owns resources: the existing HostValues table retains captured providers
+ *   and methods until Engine.dispose clears it; capture allocates no host
+ *   wrapper or fresh bound function.
+ * Decides: transaction and speculate callbacks retain the bridge's suspension
+ *   refusal, including participant capture. A provider's methods may be
+ *   SYNCHRONOUS or asynchronous. A
  *   synchronous one works on every door; an asynchronous one works wherever
  *   the caller awaits, and refuses on a synchronous door by name, which is the
  *   same rule every host operation here already follows.
@@ -40,7 +48,7 @@
  *   Future Enhancements: None
  */
 
-import { type Atom, G, type Term, expr, exprOf, sym, toAtom } from "./atom.ts";
+import { type Atom, G, Grounded, type Term, expr, exprOf, sym, toAtom } from "./atom.ts";
 import type { Engine } from "./engine.ts";
 import { ProviderError } from "./errors.ts";
 import { hostValue } from "./space.ts";
@@ -346,9 +354,8 @@ type Verb =
   | "refuse"
   | "pushdown"
   | "plan"
-  | "begin"
-  | "commit"
-  | "rollback";
+  | "participant"
+  | "invoke";
 
 /**
  * The providers this engine holds, and the two host operations that serve
@@ -376,6 +383,7 @@ function install(engine: Engine, registry: Map<string, SpaceProvider>): void {
   // verb, then whatever the verb carries. Nothing is unwrapped, because a
   // provider is handed the pattern as the term it is.
   const providerAt = (atom: unknown): SpaceProvider => {
+    if (atom instanceof Grounded) return atom.value as SpaceProvider;
     const name = String(atom);
     const held = registry.get(name);
     if (held === undefined) {
@@ -407,12 +415,22 @@ function install(engine: Engine, registry: Map<string, SpaceProvider>): void {
           return provider.pushdown?.(atom as Atom) ?? "inexact";
         case "plan":
           return callPlan(provider, atom);
-        case "begin":
-          return settled(provider.begin?.());
-        case "commit":
-          return settled(provider.commit?.());
-        case "rollback":
-          return settled(provider.rollback?.());
+        case "participant": {
+          const methods = [provider.begin, provider.commit, provider.rollback];
+          if (methods.some((method) => typeof method !== "function")) {
+            return missing("transactional", provider);
+          }
+          // HostValues interns these existing identities. Binding creates no
+          // fresh host function or participant wrapper per transaction.
+          return expr(G(provider), ...methods.map((method) => G(method)));
+        }
+        case "invoke": {
+          const method = atom === undefined ? undefined : hostValue(atom);
+          if (typeof method !== "function") {
+            throw new ProviderError("a captured participant operation must be callable");
+          }
+          return settled(Reflect.apply(method, provider, []) as void | Promise<void>);
+        }
         case "refuse":
           return missing(String(atom) as ProviderCapability, provider);
         default:
@@ -574,7 +592,10 @@ export function registerProvider(
   const capabilities = capabilitiesOf(provider);
   const promise = provider.delivers?.();
   engine
-    .start(["provider", name, [...capabilities], promise === undefined ? [] : [...promise]])
+    .start([
+      "provider", name, engine.encodeAtom(G(provider)), [...capabilities],
+      promise === undefined ? [] : [...promise],
+    ])
     .sync();
   registry.set(name, provider);
   return capabilities;

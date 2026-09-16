@@ -26,6 +26,7 @@ import { after, before, describe, it } from "node:test";
 
 import {
   type Atom,
+  Expression,
   G,
   Match,
   MettaError,
@@ -56,6 +57,110 @@ before(async () => {
 
 after(() => {
   m.dispose();
+});
+
+describe("retained participant applications", () => {
+  it("keeps the selected provider and methods after replacement", () => {
+    const name = freshName();
+    const calls: string[] = [];
+    const original: SpaceProvider = {
+      atoms() { return []; },
+      begin() { calls.push(this === original ? "original begin" : "wrong receiver"); },
+      commit() { calls.push(this === original ? "original commit" : "wrong receiver"); },
+      rollback() { calls.push(this === original ? "original rollback" : "wrong receiver"); },
+    };
+    const replacement: SpaceProvider = {
+      atoms() { return []; },
+      begin() { calls.push("replacement begin"); },
+      commit() { calls.push("replacement commit"); },
+      rollback() { calls.push("replacement rollback"); },
+    };
+    m.attach(name, original);
+    try {
+      const operation = m.engine.operation("$provider-call", 2);
+      const captured = operation.run([G(original), S.participant]);
+      assert.ok(captured instanceof Expression);
+      const held = m.engine.decodeAtom(m.engine.encodeAtom(captured));
+      assert.ok(held instanceof Expression);
+      m.detach(name);
+      m.attach(name, replacement);
+      original.commit = () => { calls.push("changed commit"); };
+      for (const method of held.items.slice(1)) {
+        assert.equal(operation.run([held.items[0], S.invoke, method]), true);
+      }
+      assert.deepEqual(calls, ["original begin", "original commit", "original rollback"]);
+    } finally {
+      m.detach(name);
+    }
+  });
+
+  it("does not redirect a captured method that throws", () => {
+    const name = freshName();
+    const failure = new Error("captured completion failed");
+    const provider: SpaceProvider = {
+      atoms() { return []; }, begin() {}, rollback() {},
+      commit() { throw failure; },
+    };
+    m.attach(name, provider);
+    const operation = m.engine.operation("$provider-call", 2);
+    const captured = operation.run([G(provider), S.participant]);
+    assert.ok(captured instanceof Expression);
+    m.detach(name);
+    assert.throws(
+      () => operation.run([captured.items[0], S.invoke, captured.items[2]]),
+      (error: unknown) => error === failure,
+    );
+  });
+
+  it("interns original identities and releases them when the engine is disposed", async () => {
+    const isolated = await metta();
+    const provider: SpaceProvider = {
+      atoms() { return []; }, begin() {}, commit() {}, rollback() {},
+    };
+    try {
+      isolated.attach("&participant-identities", provider);
+      const operation = isolated.engine.operation("$provider-call", 2);
+      const capture = (): void => {
+        const held = operation.run([G(provider), S.participant]);
+        assert.ok(held instanceof Expression);
+        isolated.engine.encodeAtom(held);
+      };
+      capture();
+      const size = isolated.engine.hostValues.size;
+      for (let index = 0; index < 20; index += 1) capture();
+      assert.equal(isolated.engine.hostValues.size, size);
+      const id = isolated.engine.hostValues.idFor(provider);
+      isolated.detach("&participant-identities");
+      isolated.dispose();
+      assert.equal(isolated.engine.hostValues.size, 0);
+      assert.throws(() => isolated.engine.hostValues.valueOf(id), /was released/);
+    } finally {
+      isolated.dispose();
+    }
+  });
+
+  it("preserves transaction and speculate refusal before host capture", async () => {
+    const name = freshName();
+    const calls: string[] = [];
+    const provider: SpaceProvider = {
+      atoms() { return []; },
+      add() { calls.push("add"); }, begin() { calls.push("begin"); },
+      commit() { calls.push("commit"); }, rollback() { calls.push("rollback"); },
+    };
+    const handle = m.attach(name, provider);
+    handle.writes("transactional");
+    try {
+      const size = m.engine.hostValues.size;
+      const write = S["add-atom"](handle.handle, S.participantValue(1));
+      const refused = /cannot suspend|cannot answer here|no suspension point/;
+      assert.throws(() => m.self.transaction(write), refused);
+      await assert.rejects(async () => { await m.speculate(write); }, refused);
+      assert.deepEqual(calls, []);
+      assert.equal(m.engine.hostValues.size, size);
+    } finally {
+      m.detach(name);
+    }
+  });
 });
 
 describe("a space implemented in TypeScript", () => {

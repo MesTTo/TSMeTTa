@@ -13,7 +13,7 @@
  * Guarantees:
  *   - participant applications retain the provider and original method
  *     identities; repeated captures reuse HostValues entries
- *     [source: extensions/node/src/provider.ts:install; commit=WORKTREE].
+ *     [source: extensions/node/src/provider.ts:install; commit=05fae56ad5b23baa140cb4e6454cb7b304c06f4f].
  *   - the capability vocabulary includes optional exact-token mutation;
  *     no provider claims it merely by implementing ordinary writes
  *     [tested: "names every capability the engine's own row carries";

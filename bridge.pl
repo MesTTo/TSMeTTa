@@ -38,7 +38,7 @@
 %   - foreign participant capture retains its original provider value and
 %     completion applications; metta_node_yield/1 still refuses capture in a
 %     transaction or speculate callback
-%     [source: extensions/node/bridge.pl:metta_node_capture_participant/2; commit=WORKTREE].
+%     [source: extensions/node/bridge.pl:metta_node_capture_participant/2; commit=05fae56ad5b23baa140cb4e6454cb7b304c06f4f].
 %   - metta_node_start/3, metta_node_step/2, metta_node_resume/3 and
 %     metta_node_stop/1 use opaque host holds, including transaction-owned
 %     eager jobs [tested: host_hold:node_jobs_use_the_transaction_hold,

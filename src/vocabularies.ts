@@ -492,6 +492,7 @@ export const Semiring = {
   prov: "prov",
   budget: "budget",
   formula: "formula",
+  polynomial: "polynomial",
   amplitude: "amplitude",
 } as const;
 

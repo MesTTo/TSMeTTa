@@ -1,4 +1,4 @@
-% This seat's control file; see extensions/python/extension.pl for the model.
+% This seat's control file; see extension.pl for the model.
 %
 % No entry(engine, _): the engine never loads this seat. It runs the OTHER way
 % around -- engine.ts boots a WebAssembly SWI, mounts the engine tree into it,

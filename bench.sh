@@ -5,7 +5,7 @@
 # Assumes:
 #   - a Python that can import metta_benchmarking, because the comparison, the
 #     bands, the configuration stamp and the atomic re-pin all belong to the
-#     shared harness in extensions/python/ext/metta-benchmarking/metta_benchmarking.py. One baseline
+#     shared harness in ext/metta-benchmarking/metta_benchmarking.py. One baseline
 #     format and one regression protocol across every component is the point,
 #     and DEVELOPING.md says not to copy the harness into another seat.
 #   - node, swipl-wasm, and a made TypeScript build, because the workloads run

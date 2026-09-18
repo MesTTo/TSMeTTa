@@ -1564,7 +1564,7 @@ that most needs it.
 
 `sh bench.sh` measures six workloads and holds each to a committed pin in
 `benchmarks/baseline.json`. The comparison, the bands and the re-pin belong to
-the shared harness in `extensions/python/ext/metta-benchmarking/metta_benchmarking.py`, so one
+the shared harness in `ext/metta-benchmarking/metta_benchmarking.py`, so one
 baseline format and one regression protocol cover every component.
 
 Which counter decides is a property of the case, not a policy:

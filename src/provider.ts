@@ -14,10 +14,11 @@
  *   - participant applications retain the provider and original method
  *     identities; repeated captures reuse HostValues entries
  *     [source: extensions/node/src/provider.ts:install; commit=05fae56ad5b23baa140cb4e6454cb7b304c06f4f].
- *   - the capability vocabulary includes optional exact-token mutation;
- *     no provider claims it merely by implementing ordinary writes
+ *   - the capability roster is the engine's own row, read from the generated
+ *     vocabulary, plus the three words `bridge.pl` registers for this seat's
+ *     own seam clauses, so a word added to the row cannot go missing here
  *     [tested: "names every capability the engine's own row carries";
- *     commit=90ba93eb8f6e98ebfefc55416859bf13de6a8427]
+ *     commit=131f3f70ba8aa184da81b4f66068981ae14e7c19]
  *   - capabilities are DERIVED from the methods a provider implements, so a
  *     provider that cannot remove is refused a removal by name rather than
  *     failing silently [tested: "derives its capabilities from its methods"]
@@ -52,43 +53,37 @@ import { type Atom, G, Grounded, type Term, expr, exprOf, sym, toAtom } from "./
 import type { Engine } from "./engine.ts";
 import { ProviderError } from "./errors.ts";
 import { hostValue } from "./space.ts";
-import type { Delivery, EventOrder } from "./vocabularies.ts";
+import {
+  ProviderCapability as DeclaredCapability,
+  type Delivery,
+  type EventOrder,
+} from "./vocabularies.ts";
+
+/**
+ * The three words this seat gates its own seam clauses on: a take bound a
+ * matcher pushes into its own query, the filtering claim
+ * `seam:foreign_pushdown/3` asks for, and the begin/commit/rollback trio.
+ * `bridge.pl` registers them through the catalog's `(vocabulary-member ...)`
+ * door, which is what an open vocabulary is for, so they are not on the
+ * engine's own row and have to be named beside it here.
+ */
+const SEAT_CAPABILITIES = ["bounded", "pushdown", "transactional"] as const;
 
 /** What a provider can be asked to do, in the engine's own vocabulary. */
 export type ProviderCapability =
-  | "tokens"
-  | "add-token"
-  | "remove-token"
-  | "match"
-  | "enumerate"
-  | "add"
-  | "add-many"
-  | "remove"
-  | "clear"
-  | "subscribe"
-  | "bounded"
-  | "pushdown"
-  | "plan"
-  | "rules"
-  | "transactional";
+  | (typeof DeclaredCapability)[keyof typeof DeclaredCapability]
+  | (typeof SEAT_CAPABILITIES)[number];
 
-/** Every capability the seam names, in the engine's own vocabulary. */
+/**
+ * Every capability the seam names: the engine's own row, read from the
+ * generated vocabulary rather than restated, plus this seat's three. A word
+ * added to the row reaches this list by regenerating `vocabularies.ts`, so
+ * the two cannot drift; the list written out here missed `savepoint` on the
+ * day the row gained it.
+ */
 export const CAPABILITIES: readonly ProviderCapability[] = Object.freeze([
-  "tokens",
-  "add-token",
-  "remove-token",
-  "match",
-  "enumerate",
-  "add",
-  "add-many",
-  "remove",
-  "clear",
-  "subscribe",
-  "bounded",
-  "pushdown",
-  "plan",
-  "rules",
-  "transactional",
+  ...Object.values(DeclaredCapability),
+  ...SEAT_CAPABILITIES,
 ]);
 
 /** What a provider promises about the change events it emits. */

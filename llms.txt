@@ -307,7 +307,7 @@ npx metta-node repl
 
 `browser/` and `_runtime/` are what a page serves. `metta({ root })` points at
 the `_runtime/` directory; a browser fetches three files out of it,
-`runtime.json` and the two `wasm/` assets, and reads the engine and library
+`_runtime/runtime.json` and the two `_runtime/wasm/` assets, and reads the engine and library
 sources out of the manifest rather than as files. The documentation site is the
 worked example: `website/scripts/bundle-browser.mjs` copies the kit into
 `website/public/metta/` and `website/public/metta/worker.js` boots one engine

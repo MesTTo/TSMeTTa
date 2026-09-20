@@ -30,7 +30,7 @@ ROOT=$(cd -- "$HERE/../.." && pwd)
 
 # One spelling of the bound, implemented in bounded.sh, which every runner in
 # this tree and a command typed by hand all reach.
-bounded() { sh "$ROOT/bounded.sh" "$@"; }
+bounded() { sh "$ROOT/tools/bounded.sh" "$@"; }
 
 # A missing prerequisite means this run says nothing about the tree, and 125 is
 # this repository's one word for that: bounded.sh refuses with it when the
@@ -100,4 +100,4 @@ and host-op) will not be measured" >&2
     COUNTER_ONLY='--counter-only'
 fi
 
-exec sh "$ROOT/bounded.sh" "$PY" "$HERE/benchmarks/bench.py" $COUNTER_ONLY "$@"
+exec sh "$ROOT/tools/bounded.sh" "$PY" "$HERE/benchmarks/bench.py" $COUNTER_ONLY "$@"

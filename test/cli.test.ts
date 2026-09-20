@@ -55,11 +55,11 @@ describe("the command line", () => {
   it("answers its version and its usage without booting", async () => {
     const version = await run("--version");
     assert.equal(version.status, 0);
-    assert.match(version.out, /^metta-node \d+\.\d+\.\d+/);
+    assert.match(version.out, /^tsmetta \d+\.\d+\.\d+/);
 
     const help = await run("--help");
     assert.equal(help.status, 0);
-    assert.match(help.out, /usage: metta-node <command>/);
+    assert.match(help.out, /usage: tsmetta <command>/);
 
     // No command at all is a usage error, which is a nonzero status.
     const bare = await run();
@@ -112,7 +112,7 @@ describe("the command line", () => {
     const wrong = await run("serve");
     assert.equal(wrong.status, 1);
     assert.match(wrong.err, /no such command serve/);
-    assert.match(wrong.err, /usage: metta-node/);
+    assert.match(wrong.err, /usage: tsmetta/);
   });
 
   it("runs through a linked checkout with either symlink policy", () => {
@@ -127,7 +127,7 @@ describe("the command line", () => {
           env: { ...process.env, NODE_OPTIONS: "" },
         });
         assert.equal(answered.status, 0, answered.stderr);
-        assert.match(answered.stdout, /^metta-node \d+\.\d+\.\d+/);
+        assert.match(answered.stdout, /^tsmetta \d+\.\d+\.\d+/);
       }
     } finally {
       rmSync(directory, { recursive: true });

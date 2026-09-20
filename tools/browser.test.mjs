@@ -146,8 +146,8 @@ try {
 before(async () => {
   const bundled = await build({
     stdin: {
-      contents: `import { metta, variable } from 'metta-node';
-        import { alphaEqual } from 'metta-node/matching';
+      contents: `import { metta, variable } from 'tsmetta';
+        import { alphaEqual } from 'tsmetta/matching';
         export async function probe(root) {
           const m = await metta({root});
           try { return {same: alphaEqual(variable('x'), variable('y')), answer: m.run('!(+ 1 2)')[0].texts}; }
@@ -160,8 +160,8 @@ before(async () => {
   consumer = bundled.outputFiles[0].text;
   const atomsOnly = await build({
     stdin: {
-      contents: `import { expr, sym, G, float } from 'metta-node/atom';
-        import { MettaError } from 'metta-node/errors';
+      contents: `import { expr, sym, G, float } from 'tsmetta/atom';
+        import { MettaError } from 'tsmetta/errors';
         export function probeAtoms() {
           const term = expr(sym('user'), G(42), float(1), G('ada'));
           const refusal = new MettaError('refused');
@@ -320,8 +320,8 @@ test('boots in a module worker without window or Node globals', async () => {
 
 
 test('builds atoms in a browser with no engine behind them', async () => {
-  // The consumer bundled above imports `metta-node/atom` and
-  // `metta-node/errors` by NAME, so what is exercised is the exports map's
+  // The consumer bundled above imports `tsmetta/atom` and
+  // `tsmetta/errors` by NAME, so what is exercised is the exports map's
   // `browser` key rather than a path this file happens to know. A page that
   // only builds terms must not pay for the engine, and the two ways it could
   // are both checked: the bundle cannot mention swipl-wasm or a node builtin,

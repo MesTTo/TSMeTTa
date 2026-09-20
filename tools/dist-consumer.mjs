@@ -16,7 +16,7 @@
  *     CONSUMER's project for `engine/`
  *     [measured 2026-09-07; fixture=an `npm install file:` of the seat
  *     directory into a project outside the checkout]
- *   - `metta-node/atom` and `metta-node/errors` resolve through NODE'S OWN
+ *   - `tsmetta/atom` and `tsmetta/errors` resolve through NODE'S OWN
  *     resolver from a directory whose `node_modules` holds this package,
  *     which is the only way to exercise the `exports` map rather than a path
  *     this file happens to know
@@ -54,13 +54,13 @@ const packageRoot = fileURLToPath(new URL("../", import.meta.url));
  * `prepare`, which is the hook that makes `_runtime/` and `browser/` and the
  * one a directory install runs, so this proves the chain a consumer follows.
  *
- * `node_modules/metta-node` rather than a symlink to the checkout: the two
+ * `node_modules/tsmetta` rather than a symlink to the checkout: the two
  * levels above an installed package decide whether the engine is read from an
  * enclosing tree or from the copy inside the package, and a link back into
  * the checkout would answer that question with the checkout every time.
  */
 function unpack(scratch) {
-  const installed = join(scratch, "node_modules", "metta-node");
+  const installed = join(scratch, "node_modules", "tsmetta");
   mkdirSync(installed, { recursive: true });
   try {
     execFileSync("npm", ["pack", "--pack-destination", scratch], {
@@ -94,22 +94,22 @@ function unpack(scratch) {
  * are bare names, so the `exports` map and the unpacked `node_modules` decide
  * what they reach, and a module already in this process's graph would be
  * resolved for free. The recorder counts what the engine-free subpaths ask
- * for. Measured 2026-09-05 through it: importing `metta-node` asks for 166
- * specifiers, three of them `node:` builtins; importing `metta-node/atom`
+ * for. Measured 2026-09-05 through it: importing `tsmetta` asks for 166
+ * specifiers, three of them `node:` builtins; importing `tsmetta/atom`
  * asks for three, none of them.
  */
 const consumer = `
   import { registerHooks } from "node:module";
   const asked = [];
   registerHooks({ resolve(specifier, context, next) { asked.push(specifier); return next(specifier, context); } });
-  const { expr, sym, G, float } = await import("metta-node/atom");
-  const { MettaError } = await import("metta-node/errors");
+  const { expr, sym, G, float } = await import("tsmetta/atom");
+  const { MettaError } = await import("tsmetta/errors");
   const atoms = {
     text: expr(sym("user"), G(42), float(1), G("ada")).text,
     code: new MettaError("refused").code,
     asked: [...asked],
   };
-  const { metta, S, repoRoot } = await import("metta-node");
+  const { metta, S, repoRoot } = await import("tsmetta");
   const m = await metta();
   try {
     const [answer] = await m.eval(S["+"](2, 3));
@@ -124,7 +124,7 @@ const consumer = `
 // ESM resolver lets a package import itself by name wherever a `package.json`
 // with an `exports` map encloses the importer, and self-reference beats the
 // `node_modules` lookup: a scratch directory under `extensions/node/ai-tmp/`
-// resolved `metta-node` straight back to the checkout, so the unpacked copy
+// resolved `tsmetta` straight back to the checkout, so the unpacked copy
 // beside it was never loaded and this lane read the tree it was meant to be
 // standing outside of [measured 2026-09-07: import.meta.resolve answered
 // extensions/node/dist/index.js from a scratch whose own node_modules held
@@ -173,9 +173,9 @@ try {
     console.error(`the engine-free subpaths answered ${JSON.stringify(seen)}`);
     process.exitCode = 1;
   } else if (outside.length > 0) {
-    console.error(`metta-node/atom reached ${JSON.stringify(outside)}`);
+    console.error(`tsmetta/atom reached ${JSON.stringify(outside)}`);
     process.exitCode = 1;
-  } else if (!seen.repoRoot.endsWith(`${join("metta-node", "_runtime")}`)) {
+  } else if (!seen.repoRoot.endsWith(`${join("tsmetta", "_runtime")}`)) {
     console.error(`the packed package read its engine from ${seen.repoRoot}, not from its own copy`);
     process.exitCode = 1;
   } else {

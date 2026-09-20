@@ -305,7 +305,7 @@ describe("the lifetime of a surface", () => {
       metta({ root: "/no/such/tree" }),
       (error: unknown) => {
         assert.ok(MettaError.is(error, "ERR_METTA_SOURCE"), String(error));
-        assert.match(String(error), /is not a MeTTa Kernel checkout/);
+        assert.match(String(error), /is not a MeTTa checkout/);
         return true;
       },
     );
@@ -313,7 +313,7 @@ describe("the lifetime of a surface", () => {
 
   it("takes a blank root as absent rather than as a path", async () => {
     // `??` only replaces null and undefined, so `root: ""` reached the
-    // checkout test and was refused with `"" is not a MeTTa Kernel checkout`,
+    // checkout test and was refused with `"" is not a MeTTa checkout`,
     // which sends a reader looking for a checkout rather than at their own
     // empty string. An empty string is what a caller computes when the value
     // it meant to pass was not there.
@@ -453,7 +453,7 @@ describe("running a program", () => {
     // The claim the engine's own loader buys, and the reason loadFile goes
     // through the engine's load door rather than reading the text here and
     // calling run(): a second load of one file replaces what it put there.
-    const directory = mkdtempSync(join(tmpdir(), "metta-node-reload-"));
+    const directory = mkdtempSync(join(tmpdir(), "tsmetta-reload-"));
     const file = join(directory, "program.metta");
 
     writeFileSync(file, "(= (reloaded) 1)\n!(collapse (reloaded))\n");

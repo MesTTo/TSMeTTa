@@ -11,7 +11,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
 // `./seam` joins them because it reads a package.json to answer what packages
-// advertise, which is metta-node/integrate's own reason: a browser page has no
+// advertise, which is tsmetta/integrate's own reason: a browser page has no
 // filesystem to read one from and no installed packages to discover.
 const nodeOnly = new Set(["./remote", "./integrate", "./manifest", "./seam", "./testing"]);
 const entryPoints = Object.fromEntries(Object.entries(manifest.exports)

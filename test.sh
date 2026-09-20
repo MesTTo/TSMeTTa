@@ -45,7 +45,7 @@ fi
 
 # One spelling of the bound, implemented in bounded.sh, which every runner in
 # this tree and a command typed by hand all reach.
-bounded() { sh "$HERE/../../bounded.sh" "$@"; }
+bounded() { sh "$HERE/../../tools/bounded.sh" "$@"; }
 
 cd "$HERE" && bounded npm run --silent typecheck &&
     bounded npm run --silent test

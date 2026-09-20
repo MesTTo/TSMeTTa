@@ -129,7 +129,7 @@ m.attach("&table", {
 ```
 
 Capabilities are derived from the methods present, so what a provider cannot do
-is refused by name. `metta-node/spaces` composes them: `union`, `readOnly`,
+is refused by name. `tsmetta/spaces` composes them: `union`, `readOnly`,
 `overlay`, `mapped`, `diff`, `objectView`.
 
 ## Proofs, and asking the engine about itself
@@ -171,7 +171,7 @@ absent from a WebAssembly build, so this is where concurrency lives.
 ## The satellites
 
 The root carries what a program reaches for. Everything else is one of 27
-subpaths and costs nothing unimported: `metta-node/ambient` (a lazily booted
+subpaths and costs nothing unimported: `tsmetta/ambient` (a lazily booted
 default engine), `/spaces`, `/structures` (`AlphaSet`, `PatternMap`,
 `MatchIndex`, `ClosureView`, `TabledMap`), `/matching` (unification and alpha
 keys, no engine needed), `/testing` (generators and a shrinking property
@@ -184,7 +184,7 @@ runner), `/vocabularies` (the engine's closed value sets, checked against
 ## Crossing a host type, and a value that owns its matching
 
 ```ts
-import { registerType } from "metta-node/convert";
+import { registerType } from "tsmetta/convert";
 registerType(Person, {
   name: "Person",
   toAtom: (p) => [p.name, p.age],
@@ -207,7 +207,7 @@ on, so a program that does not use it carries no clause for it at all.
 
 ## Extending this seat: one declared table of points
 
-`metta-node/seam` is this seat's extension seam, the seat-level twin of
+`tsmetta/seam` is this seat's extension seam, the seat-level twin of
 `engine/ext_points.pl`. A point is DECLARED with a kind and its fields, a
 registrant is a ROW against one, and both read back as data:
 `seam.declared()`, `seam.rows()`, `seam.at(name)`. Four kinds, the engine's own
@@ -234,7 +234,7 @@ importing anything and `await seam.discover()` loads them. Loading is explicit
 rather than on first dispatch because ESM `import()` is asynchronous; a package
 that registers from its own module body needs neither call.
 
-`metta-node/seam` is a Node-only subpath, beside `metta-node/integrate` and for
+`tsmetta/seam` is a Node-only subpath, beside `tsmetta/integrate` and for
 its reason: it reads a `package.json`, which a browser page has neither of.
 
 This seat declares NO `frame` point and NO `array` point: it has no frame
@@ -245,7 +245,7 @@ its `define` lowering uses.
 
 ## Integrating a library
 
-`metta-node/integrate` wraps a module, an object or one function as operations,
+`tsmetta/integrate` wraps a module, an object or one function as operations,
 installs atomically, and discovers packages that advertise themselves in their
 own `package.json` under `metta.integrations`, `metta.spaces` or
 `metta.libraries`. `entryPoints(group)` answers advertised names without
@@ -297,10 +297,10 @@ conservative: a body reaching an unresolved head is never called pure.
 ## The command line
 
 ```sh
-npx metta-node run program.metta
-npx metta-node eval "(+ 1 2)"
-npx metta-node why "(quad 3)"
-npx metta-node repl
+npx tsmetta run program.metta
+npx tsmetta eval "(+ 1 2)"
+npx tsmetta why "(quad 3)"
+npx tsmetta repl
 ```
 
 ## In a browser

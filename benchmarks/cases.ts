@@ -123,7 +123,7 @@ const WIRE_TRIPS = 50_000;
  *
  * `wireFromAtom` then `toTransport` out, `fromTransport` then `atomFromWire`
  * back. That is the nested one-pair-per-atom grammar the golden corpus records
- * and `metta-node/remote` puts on the network; it is NOT what crosses into
+ * and `tsmetta/remote` puts on the network; it is NOT what crosses into
  * this engine, which has spoken a flat token list through `encodeEngine` and
  * `decodeEngine` since 2026-08-31 (C47) and is priced end to end by
  * `query-rows`, `answers-lazy` and `host-op`. The `===` at the end is the

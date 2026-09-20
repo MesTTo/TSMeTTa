@@ -117,7 +117,7 @@ describe("interning", () => {
   });
 
   it("interns registered symbols without treating them as weak keys", () => {
-    const key = "metta-node.atom.test.registered";
+    const key = "tsmetta.atom.test.registered";
     const shared = Symbol.for(key);
     assert.equal(G(shared), G(Symbol.for(key)));
     assert.equal(G(shared).value, shared);
@@ -335,8 +335,8 @@ describe("the standard order", () => {
       sym("[]"),
       G(first),
       G(second),
-      G(Symbol.for("metta-node.atom.order")),
-      G(Symbol("metta-node.atom.order")),
+      G(Symbol.for("tsmetta.atom.order")),
+      G(Symbol("tsmetta.atom.order")),
       space("&same"),
       sym("&same"),
       G(false),

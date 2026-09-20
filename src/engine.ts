@@ -1,5 +1,5 @@
 /**
- * Purpose: embed the MeTTa Kernel engine in Node or a browser over swipl-wasm, run a
+ * Purpose: embed the MeTTa engine in Node or a browser over swipl-wasm, run a
  *   job through the engine's host hold service, and pump the events it produces,
  *   answering the ones only a JavaScript function can answer.
  * Assumes:
@@ -1036,7 +1036,7 @@ export async function boot(
 ): Promise<Engine> {
   // A BLANK root is absent, not a path. `??` only replaces null and
   // undefined, so `boot({ root: "" })` reached the check below and was told
-  // `"" is not a MeTTa Kernel checkout`, which sends the reader looking for a
+  // `"" is not a MeTTa checkout`, which sends the reader looking for a
   // checkout rather than at their own empty string. An empty or whitespace
   // string is what a caller computes when the value it meant to pass was not
   // there, so it means the same thing as omitting it.

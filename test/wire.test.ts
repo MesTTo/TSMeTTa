@@ -200,7 +200,7 @@ describe("the engine transport's own tag", () => {
   it("reuses one host id for each primitive value", () => {
     const values = new HostValues();
     const local = Symbol("local");
-    const registered = Symbol.for("metta-node-wire-test");
+    const registered = Symbol.for("tsmetta-wire-test");
     const primitives = [null, undefined, local, registered, 42, "forty-two", true] as const;
     const first = primitives.map((value) => values.idFor(value));
     const second = primitives.map((value) => values.idFor(value));

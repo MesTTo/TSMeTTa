@@ -27,16 +27,16 @@ import { describe, it } from "node:test";
 import { packageRoot } from "../src/index.ts";
 
 const COUNTERPARTS = [
-  "metta-node/algebra",
-  "metta-node/arrays",
-  "metta-node/convert",
-  "metta-node/integrate",
-  "metta-node/lint",
-  "metta-node/manifest",
-  "metta-node/paths",
-  "metta-node/remote",
-  "metta-node/structures",
-  "metta-node/tables",
+  "tsmetta/algebra",
+  "tsmetta/arrays",
+  "tsmetta/convert",
+  "tsmetta/integrate",
+  "tsmetta/lint",
+  "tsmetta/manifest",
+  "tsmetta/paths",
+  "tsmetta/remote",
+  "tsmetta/structures",
+  "tsmetta/tables",
 ] as const;
 
 function section(markdown: string, heading: string): string {
@@ -55,13 +55,13 @@ describe("the README's Python package comparison", () => {
       readonly exports: Readonly<Record<string, unknown>>;
     };
     const compared = section(readme, "Python package counterparts");
-    const named = [...compared.matchAll(/`(metta-node\/[^`]+)`/g)].map((match) => match[1]);
+    const named = [...compared.matchAll(/`(tsmetta\/[^`]+)`/g)].map((match) => match[1]);
 
     assert.deepEqual([...new Set(named)].sort(), [...COUNTERPARTS].sort());
     // Node's exports map is the package's public subpath allow-list:
     // https://nodejs.org/download/release/v22.17.0/docs/api/packages.html#subpath-exports
     for (const specifier of named) {
-      const exported = `./${specifier.slice("metta-node/".length)}`;
+      const exported = `./${specifier.slice("tsmetta/".length)}`;
       assert.ok(Object.hasOwn(manifest.exports, exported), `${specifier} is not package-exported`);
     }
 
@@ -75,7 +75,7 @@ describe("the README's Python package comparison", () => {
     const compared = section(readme, "Python package counterparts");
     const tabledMap = compared
       .split("\n")
-      .find((line) => line.includes("`metta-node/structures`"));
+      .find((line) => line.includes("`tsmetta/structures`"));
 
     assert.ok(tabledMap, "README has no TabledMap counterpart row");
     assert.match(tabledMap, /query-local/);

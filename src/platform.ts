@@ -134,7 +134,7 @@ export function runtimeVersion(): string {
 export async function prepareRuntime(root: string): Promise<PreparedRuntime> {
   if (!existsSync(join(root, "engine", "metta.pl"))) {
     throw new SourceNotFoundError(
-      `${root} is not a MeTTa Kernel checkout: ${join(root, "engine", "metta.pl")} is not ` +
+      `${root} is not a MeTTa checkout: ${join(root, "engine", "metta.pl")} is not ` +
         `there. boot({ root }) wants the tree the engine lives in, and this package's own ` +
         `is ${repoRoot}.`,
     );

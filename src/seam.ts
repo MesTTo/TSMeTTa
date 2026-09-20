@@ -538,7 +538,7 @@ export const type: Point<TypeFields> = point<TypeFields>("type", "declaration", 
   doc:
     "How a host class crosses, both ways, declared rather than derived. The " +
     "ROW's name is the MeTTa constructor name, so nothing is said twice; " +
-    "`registerType` from metta-node/convert is the same door under the name a " +
+    "`registerType` from tsmetta/convert is the same door under the name a " +
     "program reaches for, and its registry is where these rows live.",
   reader: () =>
     registrations().map((entry) => ({
@@ -576,7 +576,7 @@ export const repr: Point<ReprFields> = point<ReprFields>("repr", "declaration", 
   doc:
     "How a host value renders inside an atom. Keyed by the value's own " +
     "constructor, so a row is one class's rendering; `registerRepr` from " +
-    "metta-node/atom is the same door and its map is where these rows live.",
+    "tsmetta/atom is the same door and its map is where these rows live.",
   reader: () =>
     reprs().map((entry) => ({
       point: "repr",
@@ -608,7 +608,7 @@ export const reflector: Point<ReflectorFields> = point<ReflectorFields>("reflect
   doc:
     "How a host object's structure becomes facts. `claims(value)` recognises " +
     "what this row can lower and `lower(surface, name, target)` writes the " +
-    "facts; `registerReflector` from metta-node/integrate is the same door.",
+    "facts; `registerReflector` from tsmetta/integrate is the same door.",
   reader: () =>
     reflectorRows().map((entry) => ({
       point: "reflector",

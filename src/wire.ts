@@ -93,7 +93,7 @@ export type Wire =
  * The PORTABLE serialisation: one tagged pair per atom, nested.
  *
  * This is the written-down grammar, the one `tests/codec/corpus.json` records,
- * the one the Python host writes, and the one `metta-node/remote` puts on the
+ * the one the Python host writes, and the one `tsmetta/remote` puts on the
  * network. {@link WireTokens} is the same grammar serialised flat, and that is
  * what crosses into this engine.
  *

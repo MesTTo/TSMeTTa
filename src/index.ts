@@ -218,7 +218,7 @@ export {
 export { mapsExactly, mettaName, tsName } from "./naming.ts";
 
 // The engine's own closed value sets that the core surface itself names. The
-// other twenty-eight are the `metta-node/vocabularies` satellite, because a
+// other twenty-eight are the `tsmetta/vocabularies` satellite, because a
 // program that never mentions `agenda-policy` should not carry its table.
 // Each name below is a frozen table AND the union of its values, because a
 // `const` object carries both meanings: `EffectClass.oracleIO` is the word and
@@ -322,7 +322,7 @@ export {
 } from "./provider.ts";
 
 // The live view of a host collection, which is the shortest useful provider.
-// The rest of the space algebra is the `metta-node/spaces` satellite.
+// The rest of the space algebra is the `tsmetta/spaces` satellite.
 export { view } from "./spaces.ts";
 
 // Proofs.
@@ -412,7 +412,7 @@ export {
 } from "./convert.ts";
 
 // The value carriers a program reads answers under. The declaration door, the
-// law checks and the tagged-program evaluator are `metta-node/algebra`.
+// law checks and the tagged-program evaluator are `tsmetta/algebra`.
 export {
   Algebra,
   Amplitude,

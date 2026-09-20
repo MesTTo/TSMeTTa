@@ -12,7 +12,7 @@
  *   - a library DECLARES the capabilities it needs, so a restricted space
  *     refuses it by grant and the refusal names what was missing
  *   - a library that cannot find its own artifact refuses loudly, which is the
- *     law each MeTTa Kernel backend already follows: the backend decides whether its
+ *     law each MeTTa backend already follows: the backend decides whether its
  *     artifact is present, and absence is a fact rather than a silent skip
  * Open Obligations:
  *   To Do: None

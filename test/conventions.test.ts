@@ -291,8 +291,8 @@ describe("the TypeScript style guide, where it reaches this surface", () => {
           outside.push(`${file.slice(SOURCE.length + 1)}: ${specifier}`);
         }
       }
-      assert.deepEqual(outside, [], `metta-node/${entry} reaches outside this package`);
-      assert.ok(!seen.has(join(SOURCE, "engine.ts")), `metta-node/${entry} reaches the engine`);
+      assert.deepEqual(outside, [], `tsmetta/${entry} reaches outside this package`);
+      assert.ok(!seen.has(join(SOURCE, "engine.ts")), `tsmetta/${entry} reaches the engine`);
     }
   });
 

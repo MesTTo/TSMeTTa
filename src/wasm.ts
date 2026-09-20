@@ -15,7 +15,7 @@ export async function loadSWIPL(options: Record<string, unknown>): Promise<Swipl
   if (typeof module.default !== "function") {
     throw new CapabilityError(
       "swipl-wasm did not expose its factory: the web build is CommonJS; use " +
-      "metta-node's browser bundle or a bundler with CommonJS conversion",
+      "tsmetta's browser bundle or a bundler with CommonJS conversion",
     );
   }
   return await module.default(options) as Swipl;

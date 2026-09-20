@@ -56,7 +56,7 @@ const CONSOLE: Output = {
   },
 };
 
-const USAGE = `usage: metta-node <command> [arguments]
+const USAGE = `usage: tsmetta <command> [arguments]
 
 Run MeTTa on the engine this package carries, in one Node process.
 
@@ -92,7 +92,7 @@ async function evalTerm(surface: MeTTa, source: string, io: Output): Promise<voi
 
 async function repl(surface: MeTTa, io: Output): Promise<void> {
   const lines = createInterface({ input: stdin, output: stdout });
-  io.write("metta-node. One form per line; a blank line exits.\n");
+  io.write("tsmetta. One form per line; a blank line exits.\n");
   try {
     for (;;) {
       const line = (await lines.question("> ")).trim();
@@ -147,7 +147,7 @@ export async function main(argv: readonly string[], io: Output = CONSOLE): Promi
     return command === undefined ? 1 : 0;
   }
   if (command === "--version" || command === "-V") {
-    io.write(`metta-node ${version()}\n`);
+    io.write(`tsmetta ${version()}\n`);
     return 0;
   }
   const surface = await metta();
@@ -179,7 +179,7 @@ export async function main(argv: readonly string[], io: Output = CONSOLE): Promi
         return 0;
       }
       default:
-        io.fail(`metta-node: no such command ${command}\n\n${USAGE}\n`);
+        io.fail(`tsmetta: no such command ${command}\n\n${USAGE}\n`);
         return 1;
     }
   } catch (error) {

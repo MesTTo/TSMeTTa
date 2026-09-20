@@ -49,27 +49,116 @@ for await (const a of m.eval(fn.superpose([1, 2, 3]))) { /* 1, 2, 3 */ }
 await m.eval(q).take(2).toArray();   // stop the generator after two
 ```
 
-- `one` `toArray` `count` `last` `at` — collect
-- `take` `drop` `until` `chunk` `unique` `filter` — narrow, lazily
-- `some` `every` `find` `exists` `forEach` — decide
-- `column` `rows` `toTable` — read answers as a table
-- `stream` `timeout` `tap` `orThrow` — control and observe
+- `one` `toArray` `count` `last` `at`: collect
+- `take` `drop` `until` `chunk` `unique` `filter`: narrow, lazily
+- `some` `every` `find` `exists` `forEach`: decide
+- `column` `rows` `toTable`: read answers as a table
+- `stream` `timeout` `tap` `orThrow`: control and observe
 
 ## What is here
 
-- **Runs anywhere Node does** — and in a browser, over the same WebAssembly
-  build; `npm run build:browser` emits the bundle.
-- **Spaces** — `match`, add, remove, state cells, new spaces, and foreign
-  providers that answer `match` and become spaces.
-- **Definition doors** — three ways to give a head meaning, including a
-  TypeScript function as a MeTTa function.
-- **Nondeterminism as async iteration** — an answer set is an
-  `AsyncIterable`, so a generator is consumed lazily and a `take` stops it.
-- **Types** — the engine's declarations, checked through the same lanes.
-- **Scopes and the extension tier** — the seam other packages register
-  against.
-- **Typed throughout** — `npm run typecheck`, and the atom algebra is typed
-  rather than `any`.
+### Node and browsers
+
+The package selects its WebAssembly build for the host.
+
+```ts
+import { metta as open, fn as terms } from "tsmetta";
+
+// Node resolves dist/index.js; browser bundlers select browser/index.js.
+// npm run build:browser emits the browser bundle.
+const runtime = await open();
+String(await runtime.eval(terms.add(1, 2)).one()); // "3"
+runtime.dispose();
+```
+
+### Spaces
+
+Store atoms, update a state cell, or query a TypeScript provider.
+
+```ts
+const kb = m.space("&people");
+kb.add(S.parent(S.alice, S.bob));
+String((await kb.match(S.parent(S.alice, V.child)).one())["child"]); // "bob"
+kb.delete(S.parent(S.alice, S.bob)); // true
+
+const cell = m.state(S.rest);
+String(cell.set(S.active).value);   // "active"
+
+const scores = m.attach("&scores", {
+  *match() { yield S.score(S.ada, 3); }, // candidates; the engine unifies
+});
+String((await scores.match(S.score(S.ada, V.n)).one())["n"]); // "3"
+```
+
+### Definition doors
+
+Lower a function, trace a generator, or call host code from MeTTa.
+
+```ts
+const twice = m.define(function twice(n: number): number { return n * 2; });
+String(await twice(21).one()); // "42", an engine equation
+
+const colour = m.define(function* colour() { yield S.red; yield S.blue; });
+(await colour().toArray()).map(String); // ["red", "blue"], traced clauses
+
+const shout = m.op(function shout(text: string): string {
+  return text.toUpperCase();
+}, { effect: "pureStructural" });
+String(await shout("hello").one()); // '"HELLO"', a host callback
+```
+
+### Nondeterminism as async iteration
+
+Taking two answers closes the generator after two emissions.
+
+```ts
+const naturals = m.op(function* naturals() {
+  for (let n = 0; ; n += 1) yield n;
+}, { effect: "pureStructural" });
+
+for await (const answer of naturals().take(2)) {
+  console.log(String(answer)); // "0", then "1"; the loop ends
+}
+```
+
+### Types
+
+A schema publishes declarations that the engine can match.
+
+```ts
+const vocabulary = m.schema({ ageOf: "(-> Symbol Number)" });
+String(vocabulary.typeOf("ageOf")); // "(-> Symbol Number)"
+String((await m.match(S[":"](S.ageOf, V.type)).one())["type"]);
+// "(-> Symbol Number)"
+```
+
+### Scopes and extensions
+
+Bound a block's evaluation and install a library through the public extension door.
+
+```ts
+m.use({ name: "greetings", source: "(= (greet $who) (Hello $who))" });
+{
+  using budget = m.limits({ inferences: 100_000 });
+  String(await m.eval(S.greet(S.world)).one()); // "(Hello world)"
+} // the inference bound ends here
+```
+
+### Typed atoms
+
+The atom classes expose their fields after TypeScript narrows the value.
+
+```ts
+import { type Atom, Expression, type Term, toAtom } from "tsmetta";
+
+const input: Term = S.job(7);
+const atom: Atom = toAtom(input);
+if (atom instanceof Expression) {
+  const children: readonly Atom[] = atom.items;
+  children.map(String); // ["job", "7"]
+}
+// npm run typecheck checks the atom types and their compile-time tests.
+```
 
 ## Theories
 
@@ -93,64 +182,74 @@ The unmarked form runs everywhere.
 
 ## Coordination
 
+Two waiters can see one candidate; these are the read, delete, and retry steps inside `take`.
+
 ```ts
-const row = await jobs.take(S.job(V.n), { signal: AbortSignal.timeout(50) });
+const jobs = m.space("&jobs");
+jobs.add(S.job(1));
+const options = { signal: AbortSignal.timeout(1_000) };
+
+const waiterA = await jobs.peek(S.job(V.n), options);
+String(waiterA["n"]); // "1"; peek leaves (job 1) in the space
+const waiterB = await jobs.peek(S.job(V.n), options);
+String(waiterB["n"]); // "1"; B sees the same candidate
+
+jobs.delete(S.job(waiterA["n"]!)); // true: A wins (job 1)
+jobs.delete(S.job(waiterB["n"]!)); // false: B lost; take must retry
+
+const retryB = jobs.take(S.job(V.n), options);
+// No candidate: poll until one arrives or the signal aborts.
+// WebAssembly SWI has no library(thread) for an engine-side blocking wait.
+jobs.add(S.job(2));
+String((await retryB)["n"]); // "2"; B removes (job 2), never returns (job 1)
+jobs.size;                  // 0
 ```
-
-`peek` waits until a matching atom is there and leaves it; `take` removes one.
-There is no engine-side blocking wait (`take-atom` needs `library(thread)`,
-which a WebAssembly SWI does not have), so these poll, bounded by the signal.
-The take is still a take rather than a race. Each waiter reads a candidate and
-then asks the engine to delete that exact atom. JavaScript may interleave other
-waiters between those calls; the delete result is the arbiter, so a waiter that
-lost the candidate retries instead of returning it.
-
-`m.race([a, b])` answers the first branch and cancels the rest through their
-signals; `Promise.any` is the platform's word for it, with the cancellation
-wired.
-
-The rest of the family is the platform's own concurrency, because the engine's
-is absent from this build:
 
 ```ts
 import { Channel, every, merge, parMap, spawn } from "tsmetta";
 
-await parMap(ids, (id) => m.eval(S.fetch(id)).one(), { concurrency: 8 });
-const both = merge(m.match(a), m.match(b));       // interleaved as they arrive
-const jobs = new Channel<Atom>({ max: 100 });     // a mailbox with backpressure
-const task = spawn(m.eval(expensive));            // started now; await or cancel
-for await (const rows of every(1_000, () => m.match(p).toArray(), { signal })) {}
+// First answer wins; the other branches are cancelled through their signals.
+String(await m.race([m.eval(1), m.eval(2)])); // "1" or "2"
+
+// Bound host operations in flight and preserve input order.
+(await parMap([1, 2], (n) => m.eval(fn.add(n, 10)).one(), { concurrency: 2 }))
+  .map(String); // ["11", "12"]
+const both = merge(m.eval(1), m.eval(2));
+(await both.toArray()).map(String); // both answers, in arrival order
+
+const mailbox = new Channel<number>({ max: 1 });
+await mailbox.send(1);
+const pending = mailbox.send(2); // waits while the mailbox is full
+await mailbox.receive();        // 1; the waiting sender can proceed
+await pending;
+await mailbox.receive();        // 2
+mailbox.close();
+
+const task = spawn(m.eval(fn.add(1, 2))); // starts now; task.cancel() stops it
+(await task).map(String);               // ["3"]
+const controller = new AbortController();
+for await (const count of every(1_000, () => jobs.size, { signal: controller.signal })) {
+  console.log(count); // 0
+  controller.abort(); // stops the next repetition
+}
+// Awaited host I/O can overlap.
+// Pure reductions interleave on one engine.
 ```
 
-`parMap` bounds how many run at once and preserves INPUT order, which is what
-makes it a map rather than a gather; an unbounded `Promise.all` over ten
-thousand items opens ten thousand host operations at once. A `Channel` bounded
-by `max` makes a sender WAIT rather than dropping, which is `queue.Queue`'s
-policy and not a ring buffer's. Every one of them takes an `AbortSignal`.
+### Public subpaths
 
-Concurrency here is real wherever the work AWAITS (every host operation that
-touches a network, a file or a timer), and is interleaving rather than
-parallelism for pure reduction, which is what one engine can honestly offer.
-
-### Python package counterparts
-
-
-The platform refusals above are separate from the Python package comparison.
-The Python capabilities once described here as missing are present under these
-public Node subpaths:
-
-| Python capability | Node package surface | public counterpart |
-|---|---|---|
-| annotated and weighted evaluation | `tsmetta/algebra` | `counting`, `tropical`, `prob`, `prov`, `ranked`, and `TaggedAnswer.under` |
-| numeric-array interop | `tsmetta/arrays` | typed arrays, `Tensor`, `EmbeddingStore`, and `installArrays` |
-| a space over a network | `tsmetta/remote` | `connect`, `serve`, `RemoteSpace`, and `Gateway` |
-| static analysis of definitions | `tsmetta/lint` | `RULES`, `Finding`, `lint`, and `lintFile` |
-| assembling an app from a manifest | `tsmetta/manifest` | `boot`, `Boot`, and `VOCABULARY` |
-| spaces over rows | `tsmetta/tables` | `tableSpace`, `arrayTables`, and `bridge` |
-| host-value conversion | `tsmetta/convert` | `registerType`, `project`, `build`, and `autoImage` |
-| library discovery and installation | `tsmetta/integrate` | `integrate`, `discover`, `entryPoints`, and reflection helpers |
-| a tabled computed map | `tsmetta/structures` | `TabledMap`; tables are query-local because swipl-wasm has threads disabled, so forms within one `run()` reuse and later jobs recompute |
-| a lazy path into a host value | `tsmetta/paths` | `Path`, `path`, `reach`, and `installPaths`; the engine calls a registered operation instead of lifting a marker from a pattern |
+| Subpath | Exports |
+|---|---|
+| `tsmetta/algebra` | `counting`, `tropical`, `prob`, `prov`, `ranked`, and `TaggedAnswer.under` |
+| `tsmetta/arrays` | typed arrays, `Tensor`, `EmbeddingStore`, and `installArrays` |
+| `tsmetta/remote` | `connect`, `serve`, `RemoteSpace`, and `Gateway` |
+| `tsmetta/lint` | `RULES`, `Finding`, `lint`, and `lintFile` |
+| `tsmetta/manifest` | `boot`, `Boot`, and `VOCABULARY` |
+| `tsmetta/tables` | `tableSpace`, `arrayTables`, and `bridge` |
+| `tsmetta/convert` | `registerType`, `project`, `build`, and `autoImage` |
+| `tsmetta/integrate` | `integrate`, `discover`, `entryPoints`, and reflection helpers |
+| `tsmetta/structures` | `TabledMap`; tables are query-local because swipl-wasm has threads disabled, so forms within one `run()` reuse and later jobs recompute |
+| `tsmetta/paths` | `Path`, `path`, `reach`, and `installPaths`; the engine calls a registered operation instead of lifting a marker from a pattern |
 
 ## Verify
 

@@ -373,7 +373,7 @@ metta_node_encode_items([X|Xs], N0, N, C0, C, R0, R) :-
 
 % The name this cell already has, or a fresh one. Compared by ==, because the
 % identity of a Prolog variable is only answerable by comparison, which is why
-% this scan and engine/writer.c's are both linear in the count of DISTINCT
+% this scan and engine/c/writer.c's are both linear in the count of DISTINCT
 % variables a term holds.
 metta_node_wire_name(Variable, Names0, Names, Name) :-
     (   metta_node_var_name(Names0, Variable, Found)

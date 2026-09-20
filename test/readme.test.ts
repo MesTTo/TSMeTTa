@@ -1,18 +1,17 @@
 /**
- * Purpose: keep the README's Python-counterpart table aligned with the Node
+ * Purpose: keep the README's public subpath table aligned with the Node
  *   package entry points consumers can actually import.
  * Assumes:
  *   - `packageRoot` contains both README.md and package.json in source and
  *     compiled test lanes
  * Guarantees:
- *   - every counterpart repaired in finding N25 names a public Node subpath,
- *     and the stale absence table cannot return unnoticed
- *     [tested: "ties every documented Python counterpart to an exported Node subpath";
- *     commit=d4625c3919a1c40af96479c9d365084cd79ea255]
+ *   - every documented subpath names an exported package entry point
+ *     [tested: "ties every documented subpath to a package export";
+ *     commit=WORKTREE]
  *   - the public `TabledMap` row states that swipl-wasm tables end with one
  *     run, so the class cannot drift back to promising a persistent cache
  *     [tested: "pins the Node table lifetime at the run boundary";
- *     commit=42df19d71823b963fce5594a42f57fd23a89b7a9]
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -26,7 +25,7 @@ import { describe, it } from "node:test";
 
 import { packageRoot } from "../src/index.ts";
 
-const COUNTERPARTS = [
+const PUBLIC_SUBPATHS = [
   "tsmetta/algebra",
   "tsmetta/arrays",
   "tsmetta/convert",
@@ -48,36 +47,32 @@ function section(markdown: string, heading: string): string {
   return markdown.slice(body, next === -1 ? undefined : next);
 }
 
-describe("the README's Python package comparison", () => {
-  it("ties every documented Python counterpart to an exported Node subpath", () => {
+describe("the README's public subpaths", () => {
+  it("ties every documented subpath to a package export", () => {
     const readme = readFileSync(join(packageRoot, "README.md"), "utf8");
     const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
       readonly exports: Readonly<Record<string, unknown>>;
     };
-    const compared = section(readme, "Python package counterparts");
-    const named = [...compared.matchAll(/`(tsmetta\/[^`]+)`/g)].map((match) => match[1]);
+    const documented = section(readme, "Public subpaths");
+    const named = [...documented.matchAll(/`(tsmetta\/[^`]+)`/g)].map((match) => match[1]);
 
-    assert.deepEqual([...new Set(named)].sort(), [...COUNTERPARTS].sort());
+    assert.deepEqual([...new Set(named)].sort(), [...PUBLIC_SUBPATHS].sort());
     // Node's exports map is the package's public subpath allow-list:
     // https://nodejs.org/download/release/v22.17.0/docs/api/packages.html#subpath-exports
     for (const specifier of named) {
       const exported = `./${specifier.slice("tsmetta/".length)}`;
       assert.ok(Object.hasOwn(manifest.exports, exported), `${specifier} is not package-exported`);
     }
-
-    assert.doesNotMatch(readme, /these parts of the Python package have no counterpart here yet/);
-    assert.doesNotMatch(readme, /^\| absent \| why \|$/m);
-    assert.doesNotMatch(compared, /what is absent is a packaged client|the analysis is not|no counterpart/);
   });
 
   it("pins the Node table lifetime at the run boundary", () => {
     const readme = readFileSync(join(packageRoot, "README.md"), "utf8");
-    const compared = section(readme, "Python package counterparts");
-    const tabledMap = compared
+    const documented = section(readme, "Public subpaths");
+    const tabledMap = documented
       .split("\n")
       .find((line) => line.includes("`tsmetta/structures`"));
 
-    assert.ok(tabledMap, "README has no TabledMap counterpart row");
+    assert.ok(tabledMap, "README has no TabledMap subpath row");
     assert.match(tabledMap, /query-local/);
     assert.match(tabledMap, /one `run\(\)`/);
     assert.match(tabledMap, /later jobs recompute/);

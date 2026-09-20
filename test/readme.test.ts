@@ -7,11 +7,11 @@
  * Guarantees:
  *   - every documented subpath names an exported package entry point
  *     [tested: "ties every documented subpath to a package export";
- *     commit=WORKTREE]
+ *     commit=c6ed562a1a6f964aba906206f2558489b107dc24]
  *   - the public `TabledMap` row states that swipl-wasm tables end with one
  *     run, so the class cannot drift back to promising a persistent cache
  *     [tested: "pins the Node table lifetime at the run boundary";
- *     commit=WORKTREE]
+ *     commit=c6ed562a1a6f964aba906206f2558489b107dc24]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

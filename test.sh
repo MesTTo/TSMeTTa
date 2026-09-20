@@ -24,14 +24,23 @@
 set -eu
 HERE=$(cd -- "$(dirname -- "$0")" && pwd)
 
+# A missing prerequisite means this run says nothing about the tree, and 125 is
+# the one word for that here: check.sh's run() turns it into `skipped` and names
+# the lane under MEASURED NOTHING, where exiting 0 reports `ok` for a suite that
+# ran no test. Measured 2026-09-20: node-bench answered `ok` in a battery whose
+# node_modules had never been installed, and the same lane on a battery carrying
+# the install found six cases outside the band.
+unmeasured() {
+    echo "note: $*" >&2
+    exit 125
+}
+
 if ! command -v node >/dev/null 2>&1; then
-    echo "note: node not found, the Node binding suite will not run" >&2
-    exit 0
+    unmeasured "node not found, the Node binding suite will not run"
 fi
 if [ ! -d "$HERE/node_modules/swipl-wasm" ]; then
-    echo "note: run 'npm ci --prefix extensions/node', the Node binding suite \
-will not run without swipl-wasm" >&2
-    exit 0
+    unmeasured "run 'npm ci --prefix extensions/node', the Node binding suite \
+will not run without swipl-wasm"
 fi
 
 # One spelling of the bound, implemented in bounded.sh, which every runner in

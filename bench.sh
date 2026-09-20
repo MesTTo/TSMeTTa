@@ -12,9 +12,10 @@
 #     the compiled build.
 # Guarantees:
 #   - it does not FETCH and it does not BUILD. Each missing step is announced
-#     with the command that supplies it and this exits 0, the same protocol
-#     node-binding takes, because a gate that reaches the network fails for a
-#     reason that is not the tree [tested: sh check.sh node-bench].
+#     with the command that supplies it and this exits 125, because a gate that
+#     reaches the network fails for a reason that is not the tree, and a
+#     benchmark that could not run has to say so rather than answer `ok`
+#     [tested: sh check.sh node-bench].
 #   - without perf it measures the inference rows anyway and says which rows it
 #     could not reach, rather than skipping the whole seat: an engine counter
 #     needs no privileges and is the counter that decides most of these cases.
@@ -31,19 +32,36 @@ ROOT=$(cd -- "$HERE/../.." && pwd)
 # this tree and a command typed by hand all reach.
 bounded() { sh "$ROOT/bounded.sh" "$@"; }
 
+# A missing prerequisite means this run says nothing about the tree, and 125 is
+# this repository's one word for that: bounded.sh refuses with it when the
+# process that started a command had already exited, metta_benchmarking names
+# the same number PERF_CONTROL_REFUSED for a measured window that never opened,
+# and check.sh's run() turns it into `skipped` and names the lane under
+# MEASURED NOTHING at the end of the run.
+#
+# These exited 0, so the lane reported `ok` for a run that compared not one
+# row. Measured 2026-09-20: node-bench answered `ok` in a battery whose
+# node_modules had never been installed, printing the swipl-wasm note below,
+# while the same lane on a battery carrying the install found six cases outside
+# the band -- one inference regression and five improvements wanting a re-pin.
+# A benchmark that cannot see is the failure this repository has already been
+# bitten by three times, and it is indistinguishable from a pass until the word
+# for it is used.
+unmeasured() {
+    echo "note: $*" >&2
+    exit 125
+}
+
 if ! command -v node >/dev/null 2>&1; then
-    echo "note: node not found, the Node benchmarks will not run" >&2
-    exit 0
+    unmeasured "node not found, the Node benchmarks will not run"
 fi
 if [ ! -d "$HERE/node_modules/swipl-wasm" ]; then
-    echo "note: run 'npm ci --prefix extensions/node', the Node benchmarks \
-will not run without swipl-wasm" >&2
-    exit 0
+    unmeasured "run 'npm ci --prefix extensions/node', the Node benchmarks \
+will not run without swipl-wasm"
 fi
 if [ ! -f "$HERE/build/benchmarks/run.js" ]; then
-    echo "note: run 'npm run build --prefix extensions/node', the Node \
-benchmarks run the compiled build" >&2
-    exit 0
+    unmeasured "run 'npm run build --prefix extensions/node', the Node \
+benchmarks run the compiled build"
 fi
 
 # The same interpreter search check.sh makes, and then the same question asked
@@ -57,8 +75,7 @@ if [ -z "$PY" ]; then
     done
 fi
 if ! command -v "$PY" >/dev/null 2>&1; then
-    echo "note: no python found (set CHECK_PY), the Node benchmarks will not run" >&2
-    exit 0
+    unmeasured "no python found (set CHECK_PY), the Node benchmarks will not run"
 fi
 # The guard asks for the module benchmarks/bench.py actually imports. It used
 # to ask for metta.testing, which still imports and no longer carries the
@@ -68,9 +85,8 @@ if ! PYTHONPATH="$ROOT/extensions/python" bounded "$PY" -c \
 _workspace.on_path()
 import metta_benchmarking' \
         >/dev/null 2>&1; then
-    echo "note: $PY cannot import metta_benchmarking; run 'uv sync --extra checks' in \
-extensions/python or set CHECK_PY, the Node benchmarks will not run" >&2
-    exit 0
+    unmeasured "$PY cannot import metta_benchmarking; run 'uv sync --extra checks' in \
+extensions/python or set CHECK_PY, the Node benchmarks will not run"
 fi
 
 # perf and setarch are what metta_benchmarking.measure_instructions needs, and the

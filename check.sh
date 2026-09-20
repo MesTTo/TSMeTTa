@@ -97,11 +97,15 @@ check_node_dist() {
     # checkout and the repository root are in exactly that state.
     # tools/build-browser.mjs imports esbuild, `prepare` runs it, and `npm pack`
     # runs `prepare`, so this is the name the failure would carry.
+    # 125, not 0: the gate's own word for a run that says nothing about the
+    # tree, which run() reports as `skipped` and names under MEASURED NOTHING.
+    # Returning 0 made this lane read as a passing built-package check on a
+    # checkout that has never installed anything.
     [ -d "$HERE/extensions/node/node_modules/esbuild" ] || {
         echo "note: extensions/node/node_modules has no esbuild, so the \
 built-package check will not run; \`npm ci\` in extensions/node fetches it \
 along with swipl-wasm, and a gate does not reach the network" >&2
-        return 0
+        return 125
     }
     ( cd "$HERE/extensions/node" && bounded node tools/dist-consumer.mjs )
 }

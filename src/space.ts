@@ -9,6 +9,8 @@
  *     defined, `(match &kb (uses $f $n) ($f $n))` answers 6 rather than the row
  *     [measured 2026-08-27; quote operand return rechecked 2026-08-30]
  * Guarantees:
+ *   - disposable identities and committed live queries retain engine ownership
+ *     [tested: "maintains joined rows and one progress boundary for an atomic batch"; commit=WORKTREE].
  *   - `add`, `delete`, `has`, `size` and `clear` mean what `Set` means by them,
  *     so a space reads as the collection it is
  *   - `match` answers ROWS keyed by the pattern's own variable names, in
@@ -50,6 +52,7 @@
  */
 
 import {
+  ATOM_OF,
   Atom,
   G,
   Grounded,
@@ -68,12 +71,13 @@ import {
   toAtom,
   variable,
 } from "./atom.ts";
-import { Answers, type AskOptions, type Row } from "./answers.ts";
+import { Answers, type AskOptions, type MatchOptions, type MatchTemplate, type Plan, type Row, matchTerm } from "./answers.ts";
 import { type Derivation, derivationOf } from "./derivation.ts";
-import { type Engine, type Job, type JobEvent } from "./engine.ts";
+import { type Engine, type Job, type JobEvent, type Scope } from "./engine.ts";
 import {
   CapabilityError,
   CastError,
+  ClosedError,
   EngineError,
   MettaError,
   ResultError,
@@ -91,6 +95,47 @@ import {
 } from "./vocabularies.ts";
 import { showsAs } from "./present.ts";
 import { atomFromWire, wireFromAtom } from "./wire.ts";
+import { ScopeHandle } from "./scopes.ts";
+import { LiveQuery } from "./live.ts";
+
+/** The engine's transitive effect analysis, without executing its subject. */
+export interface EffectPlan {
+  readonly operations: readonly (readonly [name: string, effect: EffectClass])[];
+  readonly effect: EffectClass;
+}
+
+/** Options for one prepared execution. */
+export interface PreparedOptions extends AskOptions {
+  /** Evaluate with these facts inside a snapshot; all execution writes are discarded. */
+  readonly given?: readonly Term[];
+}
+
+/** A reusable native query: preparation caches notation, never its answers. */
+export class PreparedQuery {
+  readonly pattern: Atom;
+  readonly term: Atom;
+  readonly columns: readonly string[];
+  readonly #answers: Answers<Row>;
+  readonly #space: Space;
+
+  /** @internal Use Space.prepare. */
+  constructor(space: Space, pattern: Atom, term: Atom, columns: readonly string[], answers: Answers<Row>) {
+    this.#space = space;
+    this.pattern = pattern;
+    this.term = term;
+    this.columns = Object.freeze([...columns]);
+    this.#answers = answers;
+  }
+
+  /** Pull fresh answers from the current space, with per-run cancellation. */
+  solve(options: PreparedOptions = {}): Answers<Row> {
+    if (options.given !== undefined) {
+      const vars = this.columns.map(variable);
+      return this.#space.withFacts(options.given, this.term, options).map((row) => rowOf(row, vars));
+    }
+    return options.signal === undefined ? this.#answers : this.#answers.until(options.signal);
+  }
+}
 
 /** The engine's own space, where a declaration ABOUT a space goes. */
 const CATALOG = "&metta";
@@ -198,21 +243,30 @@ function valueOf(event: JobEvent | null, what: string): Atom {
  * handles with one name are one space. A space is also an ATOM, so it goes
  * into a term wherever a space operand belongs.
  */
-export class Space {
+export interface Space { readonly [ATOM_OF]: SpaceIdentity; }
+
+export class Space implements Disposable {
   #claimed = false;
+  #released = false;
   #engine: Engine;
+  readonly #onRelease: () => void;
 
   /** The space's own atom, which is what a term holds. */
   readonly handle: SpaceIdentity;
 
   /** The transport operand for this identity. @internal */
-  readonly reference: unknown;
+  readonly #reference: unknown;
+
+  get reference(): unknown { this.#assertOpen(); return this.#reference; }
+  get released(): boolean { return this.#released; }
 
   /** @internal Use `m.space(...)`. */
-  constructor(engine: Engine, handle: SpaceIdentity) {
+  constructor(engine: Engine, handle: SpaceIdentity, onRelease: () => void = () => {}) {
     this.#engine = engine;
+    this.#onRelease = onRelease;
     this.handle = handle;
-    this.reference = handle instanceof SpaceHandle ? handle.name : engine.encodeAtom(handle);
+    this.#reference = handle instanceof SpaceHandle ? handle.name : engine.encodeAtom(handle);
+    Object.defineProperty(this, ATOM_OF, { value: handle });
     if (handle instanceof SpaceHandle) {
       engine.knownSpaces.add(handle.name);
       if (handle.name === CATALOG) catalogByEngine.set(engine, this);
@@ -245,7 +299,12 @@ export class Space {
   }
 
   #command(command: readonly unknown[]): Job {
+    this.#assertOpen();
     return this.#engine.start(command);
+  }
+
+  #assertOpen(): void {
+    if (this.#released) throw new ClosedError(`space ${this.name} was released; open a new space handle`);
   }
 
   /** A watch id no other watch in this engine is using. */
@@ -263,12 +322,14 @@ export class Space {
    * together.
    */
   pendingAdmissions(watchId: number): number {
-    const event = this.#command(["watchpending", watchId]).sync();
+    this.#assertOpen();
+    const event = this.#engine.control(["watchpending", watchId]).sync();
     if (event === null || event.kind !== "value") return 0;
     return Number(hostValue(event.atom));
   }
 
   #wire(term: Term): unknown {
+    this.#assertOpen();
     return this.#engine.encodeAtom(toAtom(term));
   }
 
@@ -601,6 +662,40 @@ export class Space {
       .map((event) => event.atom);
   }
 
+  /** Each call is a separate engine transaction; this does not span calls. */
+  atomic(): ScopeHandle {
+    this.#assertOpen();
+    return ScopeHandle.open(this.#engine, [["transaction"]]);
+  }
+
+  /** Each call runs in an engine snapshot and discards its writes. */
+  speculative(): ScopeHandle {
+    this.#assertOpen();
+    return ScopeHandle.open(this.#engine, [["speculate"]]);
+  }
+
+  /** Explain a target's transitive effects without running it. */
+  effectPlan(term: Term): EffectPlan {
+    const answer = valueOf(this.#command(["effectplan", this.reference, this.#wire(term)]).sync(), "effectPlan") as Expression;
+    const operations = (answer.items[0] as Expression).items.map((row) => {
+      const [name, effect] = (row as Expression).items;
+      return Object.freeze([name!.text, effect!.text as EffectClass] as const);
+    });
+    return Object.freeze({ operations: Object.freeze(operations), effect: answer.items[1]!.text as EffectClass });
+  }
+
+  /** Maintain matching rows at committed boundaries; extra patterns form a join. */
+  live(pattern: Term, ...rest: readonly Term[]): LiveQuery {
+    const patterns = [pattern, ...rest].map(toAtom);
+    const joined = patterns.length === 1 ? patterns[0]! : expr(sym(","), ...patterns);
+    return new LiveQuery(this.#engine, this.reference, "match", joined, termVars(joined).map((v) => v.name));
+  }
+
+  /** Maintain the value column of a private incremental tabled call. */
+  liveEval(call: Term): LiveQuery {
+    return new LiveQuery(this.#engine, this.reference, "eval", toAtom(call), ["value"]);
+  }
+
   /** Whether an atom unifying with this pattern is stored. */
   has(pattern: Term): boolean {
     const verdict = valueOf(
@@ -646,26 +741,43 @@ export class Space {
    * With a template, each answer is the template's instance, and it is
    * EVALUATED, which is MeTTa's own reading of the third argument of `match`.
    */
-  match(pattern: Term, options?: AskOptions): Answers<Row>;
-  match(pattern: Term, template: Term, options?: AskOptions): Answers<Atom>;
+  match(pattern: Term, options?: MatchOptions): Answers<Row>;
+  match(pattern: Term, template: MatchTemplate, options?: MatchOptions): Answers<Atom>;
   match(
     pattern: Term,
-    templateOrOptions?: Term | AskOptions,
-    maybeOptions?: AskOptions,
+    templateOrOptions?: Term | MatchOptions,
+    maybeOptions?: MatchOptions,
   ): Answers<Row> | Answers<Atom> {
     const matched = toAtom(pattern);
     const hasTemplate = isTemplate(templateOrOptions);
-    const options = (hasTemplate ? maybeOptions : (templateOrOptions as AskOptions)) ?? {};
+    const options = (hasTemplate ? maybeOptions : (templateOrOptions as MatchOptions)) ?? {};
     if (hasTemplate) {
-      const query = expr(sym("match"), this.handle, matched, toAtom(templateOrOptions as Term));
+      const query = matchTerm(this.#matchPlan(matched, options), toAtom(templateOrOptions as Term));
       return this.#eval(`match(${this.name}, ${matched.text})`, query, options);
     }
-    const vars = termVars(matched);
+    return this.prepare(matched, options).solve(options);
+  }
+
+  #matchPlan(pattern: Atom, options: MatchOptions): Extract<Plan, { kind: "match" }> {
+    return {
+      kind: "match", space: this.handle, pattern, vars: termVars(pattern),
+      ...(options.where === undefined ? {} : { where: toAtom(options.where) }),
+      ...(options.limit === undefined ? {} : { limit: options.limit }),
+    };
+  }
+
+  /** Cache the native term, wire and columns; each solve sees the current store. */
+  // Preparation: O(P + C) time/space, P term nodes, C projected variables.
+  // Repeated solves reuse this work; engine execution and row decoding remain.
+  prepare(pattern: Term, options: Pick<MatchOptions, "where" | "limit"> = {}): PreparedQuery {
+    const matched = toAtom(pattern);
+    const plan = this.#matchPlan(matched, options);
+    const vars = plan.vars;
     // The row rides in a `quote`, whose contract is that its argument does not
     // reduce. A bare tuple template is evaluated: with `twice` defined,
     // `(match &kb (uses $f $n) ($f $n))` answers 6 rather than the row
     // [measured 2026-08-27].
-    const query = expr(sym("match"), this.handle, matched, expr(QUOTE, exprOf(vars)));
+    const query = matchTerm(plan, expr(QUOTE, exprOf(vars)));
     const engine = this.#engine;
     const wire = engine.encodeAtom(query);
     const name = this.name;
@@ -673,9 +785,10 @@ export class Space {
     // Built directly rather than through `.map`, because a derived ask carries
     // no PLAN and a traced body needs the plan to lower this goal into an
     // equation rather than run it.
-    return new Answers<Row>(
+    const rows = new Answers<Row>(
       `match(${name}, ${matched.text})`,
       () => {
+        this.#assertOpen();
         const answers = answerIterator(engine.start(["eval", wire, reference]));
         return {
           async next(): Promise<IteratorResult<Row>> {
@@ -688,9 +801,10 @@ export class Space {
             Promise.resolve({ done: true, value: undefined as never }),
         };
       },
-      options.signal,
-      { kind: "match", space: this.handle, pattern: matched, vars },
+      undefined,
+      plan,
     );
+    return new PreparedQuery(this, matched, query, vars.map((v) => v.name), rows);
   }
 
   /**
@@ -703,6 +817,18 @@ export class Space {
   eval(term: Term, options: AskOptions = {}): Answers<Atom> {
     const built = toAtom(term);
     return this.#eval(`eval(${this.name}, ${built.text})`, built, options);
+  }
+
+  /** Reduce a closed native term, discarding every write in its engine snapshot. */
+  speculate(term: Term, options: AskOptions = {}): Answers<Atom> {
+    refuseCallableScopeBody(term, "speculate", "build a native term whose writes can be discarded");
+    return this.#eval(`speculate(${this.name})`, toAtom(term), options, [["speculate"]]);
+  }
+
+  /** `(progn (add-atom space fact)... term)` in a native snapshot. */
+  withFacts(facts: readonly Term[], term: Term, options: AskOptions = {}): Answers<Atom> {
+    refuseCallableScopeBody(term, "temporary-fact", "build a native term and call withFacts");
+    return this.speculate(expr(sym("progn"), ...facts.map((fact) => expr(sym("add-atom"), this.handle, toAtom(fact))), toAtom(term)), options);
   }
 
   /**
@@ -743,13 +869,14 @@ export class Space {
     return new Answers<Admission>(
       description,
       (signal) => {
+        this.#assertOpen();
         const id = options.watchId ?? engine.nextWatchId();
-        engine.start(["watch", id, reference, wire, [...edges]]).sync();
+        engine.control(["watch", id, reference, wire, [...edges]]).sync();
         let closed = false;
         const close = (): void => {
           if (closed) return;
           closed = true;
-          engine.start(["unwatch", id]).sync();
+          if (!engine.closed) engine.control(["unwatch", id]).sync();
         };
         return {
           async next(): Promise<IteratorResult<Admission>> {
@@ -759,7 +886,7 @@ export class Space {
                 close();
                 throw signal.reason as Error;
               }
-              const job = engine.start(["drain", id]);
+              const job = engine.control(["drain", id]);
               let event: JobEvent | null;
               try {
                 event = await job.next();
@@ -907,7 +1034,7 @@ export class Space {
     const depth = options.depth ?? -1;
     return new Answers<Atom>(
       `derivation(${built.text})`,
-      () => answerIterator(engine.start(["derivation", reference, wire, depth])),
+      () => { this.#assertOpen(); return answerIterator(engine.start(["derivation", reference, wire, depth])); },
       options.signal,
     ).map(derivationOf);
   }
@@ -981,20 +1108,27 @@ export class Space {
 
   /** Mark this space releasable, and release it. */
   release(): void {
+    if (this.#released) return;
     this.#command(["releasable", this.reference]).sync();
     this.#command(["release", this.reference]).sync();
+    if (!this.#engine.scopes.some((scope) => scope[0] === "speculate")) {
+      this.#released = true;
+      this.#onRelease();
+    }
   }
+
+  [Symbol.dispose](): void { if (!this.#engine.closed) this.release(); }
 
   // --- internals ------------------------------------------------------------
 
-  #eval(description: string, term: Atom, options: AskOptions): Answers<Atom> {
+  #eval(description: string, term: Atom, options: AskOptions, scopes: readonly Scope[] = []): Answers<Atom> {
     const engine = this.#engine;
     const wire = engine.encodeAtom(term);
     const name = this.name;
     const reference = this.reference;
     return new Answers<Atom>(
       description,
-      () => answerIterator(engine.start(["eval", wire, reference])),
+      () => { this.#assertOpen(); return answerIterator(engine.start(["eval", wire, reference], scopes)); },
       options.signal,
     );
   }
@@ -1003,7 +1137,7 @@ export class Space {
     const engine = this.#engine;
     return new Answers<Atom>(
       description,
-      () => answerIterator(engine.start(command)),
+      () => { this.#assertOpen(); return answerIterator(engine.start(command)); },
       options.signal,
     );
   }
@@ -1024,6 +1158,7 @@ showsAs(Space.prototype, (space: Space) => `Space(${space.name})`);
 function isTemplate(value: unknown): boolean {
   if (value === undefined) return false;
   if (value instanceof Atom) return true;
+  if (typeof value === "object" && value !== null && ATOM_OF in value) return true;
   if (Array.isArray(value)) return true;
   const kind = typeof value;
   return kind === "string" || kind === "number" || kind === "bigint" ||
@@ -1070,11 +1205,7 @@ export function rowOf(answer: Atom, vars: readonly Var[]): Row {
         `the pattern has ${String(vars.length)}`,
     );
   }
-  const row: Row = {};
-  vars.forEach((variable, index) => {
-    row[variable.name] = answer.items[index]!;
-  });
-  return row;
+  return Object.fromEntries(vars.map((variable, index) => [variable.name, answer.items[index]!]));
 }
 
 /**

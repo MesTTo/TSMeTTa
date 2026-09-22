@@ -5,6 +5,8 @@
  *   - `packageRoot` contains both README.md and package.json in source and
  *     compiled test lanes
  * Guarantees:
+ *   - the depth sections' TypeScript fences execute through the real runtime
+ *     [tested: "executes the depth examples"; commit=WORKTREE].
  *   - the documented subpaths are EXACTLY the package's code-module exports,
  *     derived from its own exports map rather than from a list here
  *     [tested: "ties every documented subpath to a package export";
@@ -23,8 +25,9 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import ts from "typescript";
 
-import { packageRoot } from "../src/index.ts";
+import { metta, packageRoot } from "../src/index.ts";
 
 //: DERIVED from package.json, not listed here. A hand-written list asserted
 //: with deepEqual does not check the README against the package, it pins the
@@ -55,6 +58,38 @@ function section(markdown: string, heading: string): string {
 }
 
 describe("the README's public subpaths", () => {
+  it("executes the depth examples", async () => {
+    using m = await metta();
+    const readme = readFileSync(join(packageRoot, "README.md"), "utf8");
+    const examples = readme.slice(readme.indexOf("## Queries, joins and guards\n"), readme.indexOf("## Theories\n"));
+    const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
+    const moduleUrl = (name: string): string => new URL(`../src/${name}.${extension}`, import.meta.url).href;
+    const fences = [...examples.matchAll(/```ts\n([\s\S]*?)\n```/g)];
+    assert.ok(fences.length > 0, "the depth sections contain no examples");
+    // Parse imports with the compiler; every remaining statement executes in
+    // its own resource scope, using the same engine and notation as the page.
+    for (const fence of fences) {
+      const parsed = ts.createSourceFile("example.ts", fence[1]!, ts.ScriptTarget.Latest, true);
+      const imports: string[] = [];
+      const statements: string[] = [];
+      for (const statement of parsed.statements) {
+        if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
+          const specifier = statement.moduleSpecifier.text;
+          assert.match(specifier, /^tsmetta(?:\/[a-z-]+)?$/);
+          const target = moduleUrl(specifier === "tsmetta" ? "index" : specifier.slice("tsmetta/".length));
+          imports.push(statement.getText(parsed).replace(JSON.stringify(specifier), JSON.stringify(target)));
+        } else statements.push(statement.getText(parsed));
+      }
+      const source = `import { S, V, fn } from ${JSON.stringify(moduleUrl("index"))};\n` +
+        imports.join("\n") + `\nexport async function example(m) {\n${statements.join("\n")}\n}`;
+      const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } });
+      const loaded = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputText).toString("base64")}`) as {
+        example: (runtime: typeof m) => Promise<void>;
+      };
+      await loaded.example(m);
+    }
+  });
+
   it("ties every documented subpath to a package export", () => {
     const readme = readFileSync(join(packageRoot, "README.md"), "utf8");
     const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {

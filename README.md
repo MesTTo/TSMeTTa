@@ -238,6 +238,297 @@ Every value above is printed by `examples/subpaths-snippet.ts` and asserted in
 `test/gallery.test.ts`, so the page cannot show a call the package does not
 have or an answer it does not give.
 
+## Queries, joins and guards
+
+Shared variables join patterns. A guard is a MeTTa term evaluated under those
+bindings, and `limit` bounds admitted answers inside the engine.
+
+```ts
+using people = m.space();
+people.add(S.person(S.ada), S.age(S.ada, 36), S.person(S.grace), S.age(S.grace, 17));
+const adults = people.prepare(
+  S[","](S.person(V.name), S.age(V.name, V.age)),
+  { where: fn.gte(V.age, 18), limit: 1 },
+);
+(await adults.solve()).map(row => String(row.name)); // ["ada"]
+```
+
+`match(pattern, { where, limit })` is the immediate form. Its longhand is
+`(take limit (match space pattern (let true guard (quote (columns...)))))`;
+omitting an option omits its wrapper. A template replaces the quoted columns
+and is evaluated: `people.match(S.age(V.name, V.age), fn.add(V.age, 1))`.
+Guards and bounds also survive `yield*` in a traced definition. The bracket
+head `S[","]` stays exact, as do `fn["prime?"]` and `fn["change-state!"]`.
+
+## Prepared queries and temporary facts
+
+Preparation retains the term, wire encoding and columns. It holds no cursor
+and caches no answers; each solve reads the current space.
+
+```ts
+using routes = m.space();
+routes.add(S.route(S.direct));
+const query = routes.prepare(S.route(V.path));
+query.columns; // ["path"]
+String(query.term); // the native match term, available as data
+await query.solve({ given: [S.route(S.detour)] }).count(); // 2
+await query.solve().count();                            // 1
+```
+
+`solve({ given })` means `space.withFacts(given, query.term)`. That door runs
+`(progn (add-atom space fact)... term)` in an engine snapshot. It discards
+**all** evaluation writes, including the temporary facts, on success, an
+empty result, cancellation or a thrown error. Existing equal occurrences and
+their tokens survive. This is a closed native computation; host callbacks
+cannot suspend inside it. Use an ordinary solve for a query that calls async
+host code. Cancellation is per execution: `query.solve({ signal })` leaves
+the prepared query reusable.
+
+An assumption scope spanning arbitrary JavaScript needs a shared engine
+service for removing the exact admitted occurrence. This surface does not
+implement that scope by deleting equal values.
+
+## Transactions and speculation
+
+```ts
+using inventory = m.space();
+inventory.transaction(fn.progn(
+  fn.addAtom(inventory, S.stock(3)),
+  fn.addAtom(inventory, S.reserved(1)),
+)); // both writes commit together
+
+await inventory.speculate(fn.progn(
+  fn.addAtom(inventory, S.trial()),
+  fn.match(inventory, S.trial(), S.yes),
+)); // [yes]
+inventory.has(S.trial()); // false
+```
+
+`transaction(term)` names `(transaction term)` and returns every answer;
+engine failure rolls the transaction back. `speculate(term)` names the
+engine's snapshot scope and always discards its writes. `m.transaction` and
+`m.speculate` use `m.self`.
+
+`using policy = m.atomic()` makes **each call** a transaction.
+`using policy = m.speculative()` makes each call a separate snapshot. These
+policies apply to the engine until disposal; a JavaScript block containing
+several calls is not one transaction. Build one term when the whole operation
+must be atomic. A callback body is refused with the transport's remedy:
+WebAssembly SWI cannot yield to JavaScript through a transaction or snapshot.
+
+## Reified worlds and compensation
+
+A reified world is a language value with evaluation, successor, diff and
+conflict-checked commit operations. Those operations currently live in the
+Python binding, not in a shared engine service. TSMeTTa therefore has no
+`reify` door. Adding one requires moving that semantic owner into the engine;
+a TypeScript implementation would create a second world model.
+
+The existing `m.world(space)` is a mutable draft with `add`, `remove`,
+`match`, `commit` and `restore`. Its commit applies a native atomic delta.
+It is not a reified-world value.
+
+Compensation handles effects that have already committed:
+
+```ts
+import { compensates, saga } from "tsmetta";
+
+let reserved = 0;
+m.op(function reserve(n: number) { reserved += n; return reserved; }, { effect: "writesState" });
+m.op(function release(n: number) { reserved -= n; return reserved; }, { effect: "writesState" });
+compensates(m, "reserve", "release"); // an ordinary catalog declaration
+using receipts = m.space();
+using book = saga(m, receipts);
+await book.run(S.reserve(2));
+receipts.size; // 1: (did reserve (2) 2)
+await book.rollback();
+reserved; // 0
+```
+
+Rollback preflights the compensation declarations and then walks receipts in
+reverse. A failed compensation keeps its receipt for retry, so compensators
+must be idempotent. A saga does not make external effects atomic.
+
+## Events and standing queries
+
+Admissions are events in the same space queries read. Subscribe to them as
+callbacks or async iterables; `using` and leaving an iteration release the
+watch. A caller's `AbortSignal` also cancels it.
+
+```ts
+import { fold, subscribe } from "tsmetta";
+
+using alarms = m.space();
+using watch = subscribe(alarms, S.alarm(V.what));
+using counter = fold(alarms, S.alarm(V.what), count => count + 1, { initial: 0 });
+alarms.add(S.alarm(S.fire));
+await watch.settled();
+watch.drain().map(event => event.edge); // ["add"]
+await counter.settled();
+counter.state; // 1
+```
+
+`space.reacts(pattern, operation)` publishes an engine reaction;
+`space.agenda(policy)` declares its ordering. `fold` accumulates host state.
+A finite `queueMax` makes an undrained queue fail loudly instead of losing
+events. `settled()` observes delivery of writes already made.
+
+## Materialized answers
+
+```ts
+using facts = m.space();
+facts.add(S.person(S.ada), S.person(S.ada));
+using joined = facts.live(S.person(V.name), S.age(V.name, V.age));
+facts.add(S.age(S.ada, 36));
+joined.columns;                         // ["name", "age"]
+joined.size;                            // 2 occurrences
+joined.count({ name: S.ada, age: 36 });  // 2
+facts.delete(S.person(S.ada));
+joined.size;                            // 1
+```
+
+The engine seeds and registers the view together, then recomputes it at
+committed segment boundaries. Rollback and speculation publish no changes.
+`joined.changes({ signal, queueMax })` is an async iterable of `add`, `remove`
+and `progress` records with generation numbers. Each consumer owns its queue;
+`progress` marks a complete generation. The final snapshot survives `close()`.
+`LiveView.open(space, pattern)` projects this same committed bag as atoms.
+
+`space.liveEval(call)` maintains a private incremental tabled call. Declare
+`(cache head (incremental private))` in the catalog first. Shared tables and
+queries needing a yielding host callback are refused: an observation snapshot
+cannot suspend. Unchanged reads transfer no rows; updates currently recompute
+the native query rather than maintaining a second TypeScript join engine.
+
+## Foreign spaces, composed spaces and live objects
+
+```ts
+import { objectView, readOnly, union } from "tsmetta/spaces";
+
+const scores = new Map([["ada", 3]]);
+const source = m.attach("&scores", scores);
+String((await source.match(S.kv(S.ada, V.score)).one()).score); // "3"
+scores.set("ada", 4); // the next query sees 4
+
+const settings = { threshold: 3 };
+const combined = m.attach("&combined", readOnly(union(source, objectView(settings))));
+String((await combined.match(S.field(V.object, S.threshold, V.value)).one()).value); // "3"
+m.detach(combined.name);
+m.detach(source.name);
+```
+
+A `SpaceProvider` supplies only the operations its backend supports. It yields
+candidate atoms; the engine unifies them. `overlay`, `mapped` and `diff` use
+the same provider contract. Direct host mutations are visible to new queries;
+they do not manufacture native admission events. Unsupported writes are
+refused by capability. `handles`, `writes` and `emits` publish the provider's
+promises as catalog rows.
+
+## Mutable cells
+
+```ts
+const balance = m.state(10, { type: S.Number });
+balance.set(12).held;                        // 12
+String(await m.eval(fn.getState(balance)).one()); // "12"
+```
+
+The cell carries its engine atom, so passing `balance` and passing
+`balance.handle` mean the same thing. Spaces carry their atoms too. The
+engine's `StateMonad` declaration checks writes; TypeScript's generic checks
+calls to `set`.
+
+## Arrays and shape types
+
+```ts
+import { G } from "tsmetta";
+import { Tensor, installArrays } from "tsmetta/arrays";
+
+const matrix = new Tensor(new Float64Array([1, 2, 3, 4, 5, 6]), [2, 3]);
+matrix.at(1, 2);          // 6
+String(matrix.type);     // "(Tensor float64 2 3)"
+matrix.reshape(6).data === matrix.data; // true
+installArrays(m);
+String(await m.eval(S.arrayMax(G(matrix.data))).one()); // "6"
+```
+
+JavaScript's `TypedArray` family supplies numeric storage. A tensor adds shape
+and a MeTTa type; reshaping shares storage and incompatible sizes are refused.
+`EmbeddingStore` presents vector neighbours as a provider. Numeric libraries
+already producing typed arrays need no library-specific door in core.
+
+## Algebras and semirings
+
+```ts
+import { matchUnder, taggedFact, taggedRule } from "tsmetta/algebra";
+
+using weighted = m.space();
+weighted.add(taggedFact(0.5, S.a()), taggedFact(0.2, S.b()),
+  taggedRule(1, S.c(), S.a(), S.b()));
+String((await matchUnder(weighted, S.c(), "prob").one()).tag); // "0.1"
+String((await matchUnder(weighted, S.c(), "counting").one()).tag); // "1" proof
+```
+
+`matchUnder(space, pattern, carrier)` is `(match-under space carrier pattern)`.
+It returns `{ value, tag }` atoms. The engine owns fixpoints, carrier laws,
+guards and cyclic evaluation. Carrier terms compose, including
+`S.product(S.prob, S.counting)` and `S.formula(S.prob)` for overlapping proofs.
+Carrier declarations are queryable in `m.catalog`. Pass a declared name or
+carrier term; a host `Algebra` object is not an engine declaration.
+
+The older `evaluate`/`TaggedAnswer` API retains host derivation trees. It is a
+separate existing host facility; use `matchUnder` for native language semantics.
+
+## Tables and SQL
+
+```ts
+import { arrayTables, bridge, tableSpace } from "tsmetta/tables";
+
+const rows = { people: [{ name: "Ada", age: 36 }] };
+const table = m.attach("&table", tableSpace(arrayTables(rows), [
+  bridge(S.person(V.name, V.age), "people", { name: V.name, age: V.age }),
+]));
+String((await table.match(S.person("Ada", V.age)).one()).age); // "36"
+m.detach(table.name);
+```
+
+Record arrays and async row sources are the TypeScript shapes here.
+`TableSource.rows(table, constraints)` lets a database package parameterize its
+own SQL driver; the core names no driver and translates no SQL dialect. A
+`bridge` is a data declaration mapping columns to a relation. No pandas or
+Python dataframe adapter is ported.
+
+## Remote serving, authorization, HTTP and GraphQL
+
+`serve({ spaces, port, token })` from `tsmetta/remote` serves an explicit space
+allow-list over HTTP. It defaults to loopback. `connect(url, { space, token })`
+returns a provider you attach locally; `await using gateway = await serve(...)`
+owns the server and its cursors. A configured bearer token is required on
+every request. The protocol preserves lazy pulls, structured refusals and
+portable atoms; live JavaScript references cannot cross it.
+
+Application HTTP routes and GraphQL resolvers can await a query and project
+its rows. They belong in the application or an integration package that owns
+the schema and authorization policy. The core has no GraphQL schema generator
+or framework registry.
+
+## Integrations and entry points
+
+`tsmetta/integrate` turns a module's functions into host operations. Packages
+advertise `metta.integrations`, `metta.spaces`, `metta.libraries` or
+`metta.extensions` in their own `package.json`. `entryPoints(group)` inspects
+names without importing packages; discovery is explicit and asynchronous.
+
+`tsmetta/seam` declares extension points and registers rows against them.
+`seam.declared()` and `seam.rows()` inspect the machinery, and
+`seam.publish(m)` makes it queryable in the catalog. An integration registers
+from its own package; core carries no third-party library roster. Filesystem
+discovery is Node-only. Browser applications import their integrations
+explicitly.
+
+The query and observation examples are exercised by `test/depth-parity.test.ts`
+and `test/live-parity.test.ts`; the existing satellite, provider, saga and remote
+suites cover those doors.
+
 ## Theories
 
 Equations group as a class, which is the grouping form and is required
@@ -259,6 +550,21 @@ shipped them, so a decorated class does not run under Node's own type stripping.
 The unmarked form runs everywhere.
 
 ## Coordination
+
+### Async, concurrency and ownership
+
+Each `MeTTa` owns an engine. Dispose it after its spaces, views and queries;
+`using space = m.space()` allocates an anonymous native space and releases it
+at block exit. Released handles refuse later operations, including a prepared
+query first consumed after release. A prepared query owns no running cursor.
+
+Promises and async iterators let host I/O overlap. Pure reductions share one
+WebAssembly engine; they do not become parallel CPU work. Run independent
+engines in workers for that. Exchange portable terms rather than engine handles.
+Abort signals are checked at answer boundaries, so cancellation does not
+preempt one long synchronous reduction; use the engine's inference budget for
+that case. Per-call policies are engine-wide and should not span unrelated
+concurrent tasks.
 
 Two waiters can see one candidate; these are the read, delete, and retry steps inside `take`.
 
@@ -321,7 +627,7 @@ Every code-module entry point the package exports, which is what
 
 | Subpath | What it is |
 |---|---|
-| `tsmetta/algebra` | Weighted answers: `counting`, `tropical`, `prob`, `prov`, `ranked`, and `TaggedAnswer.under` |
+| `tsmetta/algebra` | Native `matchUnder`, `TaggedValue`, tagged facts and rules; host carrier and retained-derivation utilities |
 | `tsmetta/ambient` | One lazily booted engine behind free functions, so a first program needs no setup line: `add`, `define`, `evaluate`, `engine`, `catalog`, `loadFile` |
 | `tsmetta/arrays` | Typed arrays, `Tensor`, `EmbeddingStore`, and `installArrays` |
 | `tsmetta/atom` | The atom algebra: one interned immutable value per MeTTa atom, narrowing by `instanceof`, printing as MeTTa text. `Expression`, `Grounded`, `FloatAtom`, `Sym`, `SpaceHandle`, `ATOM_OF` |
@@ -333,6 +639,7 @@ Every code-module entry point the package exports, which is what
 | `tsmetta/events` | A fold over a space's writes: a standing query that carries state, steps once per matching write, and is itself readable. `fold`, `EventStream`, `publish`, `stream`, `STATELESS` |
 | `tsmetta/integrate` | `integrate`, `discover`, `entryPoints`, and reflection helpers |
 | `tsmetta/lint` | `RULES`, `Finding`, `lint`, and `lintFile` |
+| `tsmetta/live` | Committed materialized query bags and independent change streams: `LiveQuery`, `LiveDelta`, `ChangesOptions` |
 | `tsmetta/manifest` | `boot`, `Boot`, and `VOCABULARY` |
 | `tsmetta/matching` | The structural operations over atoms that need no engine at all: `unifies`, `matchTerms`, `alphaEqual`, `alphaKey`, `alphaCanonical`, `isGround`, `renameVariables` |
 | `tsmetta/parallel` | The coordination verbs, spelled with the platform's own concurrency rather than the engine's: `race`, `merge`, `parMap`, `spawn`, `every`, `Channel`, `Task` |

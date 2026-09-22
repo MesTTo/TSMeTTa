@@ -354,6 +354,34 @@ test('builds atoms in a browser with no engine behind them', async () => {
   } finally { await page.close(); }
 });
 
+test('depth notation in Chromium', async () => {
+  const page = await browser.newPage();
+  try {
+    await page.goto(origin);
+    const result = await page.evaluate(async () => {
+      const { metta, S, V, fn } = await import('/browser/index.js');
+      const m = await metta();
+      try {
+        const kb = m.space();
+        kb.add(S.score(1), S.score(3));
+        const query = kb.prepare(S.score(V.n), { where: fn.gt(V.n, 2) });
+        const live = kb.live(S.score(V.n));
+        try {
+          const given = await query.solve({ given: [S.score(5)] });
+          const cell = m.state(7);
+          return {
+            given: given.map(row => row.n.text),
+            current: (await query.solve()).map(row => row.n.text),
+            rows: live.size,
+            cell: (await m.eval(fn.getState(cell)).one()).text,
+          };
+        } finally { live.close(); kb.release(); }
+      } finally { m.dispose(); }
+    });
+    assert.deepEqual(result, { given: ['3', '5'], current: ['3'], rows: 2, cell: '7' });
+  } finally { await page.close(); }
+});
+
 test('names a missing browser runtime before instantiating wasm', async () => {
   const page = await browser.newPage();
   try {

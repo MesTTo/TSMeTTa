@@ -16,6 +16,7 @@
 // The atom algebra.
 export {
   Atom,
+  ATOM_OF,
   Expression,
   FloatAtom,
   G,
@@ -121,6 +122,8 @@ export {
 export {
   Answers,
   type AskOptions,
+  type MatchOptions,
+  type MatchTemplate,
   Rows,
   type GoalRequest,
   type Plan,
@@ -135,6 +138,9 @@ export {
 export {
   type Admission,
   type DerivationOptions,
+  type EffectPlan,
+  PreparedQuery,
+  type PreparedOptions,
   Space,
   type WaitOptions,
   type SpaceIdentity,
@@ -349,6 +355,7 @@ export {
 } from "./parallel.ts";
 
 // Standing queries, and the fold that carries state across them.
+export { LiveQuery, type LiveDelta, type ChangesOptions } from "./live.ts";
 export { type EventStream, Fold, STATELESS, fold, publish, stream } from "./events.ts";
 export {
   type Event,
@@ -419,6 +426,8 @@ export {
   type Carrier,
   Rational,
   type TaggedAnswer,
+  type TaggedValue,
+  matchUnder,
   counting,
   prob,
   prov,

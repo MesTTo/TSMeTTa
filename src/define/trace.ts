@@ -8,6 +8,8 @@
  *   - a JavaScript generator is single-shot, so the walk is linear: goals only
  *     accumulate, and an emission's clause is everything asked above it
  * Guarantees:
+ *   - match guards and bounds use the same term builder as direct queries
+ *     [tested: "preserves guards and limits when lowering a prepared generator query"; commit=WORKTREE].
  *   - `yield v` EMITS and `yield* g` ASKS, and each spelling has exactly one
  *     meaning wherever it appears, with no rule about position
  *   - a body that branches on a symbolic binding refuses at definition time,
@@ -28,7 +30,7 @@
  */
 
 import { type Atom, type Term, expr, fresh, sym, toAtom } from "../atom.ts";
-import { type Plan, type Row, isGoalRequest } from "../answers.ts";
+import { type Plan, type Row, isGoalRequest, matchTerm } from "../answers.ts";
 import { CompileError, MettaError } from "../errors.ts";
 
 /** One goal the body asked, and the name its answer was bound to. */
@@ -84,8 +86,7 @@ export function trace(body: Body, params: readonly Atom[], name: string): Clause
         );
       }
       if (plan.kind === "match") {
-        const row: Row = {};
-        for (const variable of plan.vars) row[variable.name] = variable;
+        const row: Row = Object.fromEntries(plan.vars.map((variable) => [variable.name, variable]));
         goals.push({ plan });
         sent = row;
       } else {
@@ -122,7 +123,7 @@ export function nest(clause: Clause): Atom {
   for (let index = clause.goals.length - 1; index >= 0; index -= 1) {
     const goal = clause.goals[index] as TracedGoal;
     if (goal.plan.kind === "match") {
-      body = expr(sym("match"), goal.plan.space, goal.plan.pattern, body);
+      body = matchTerm(goal.plan, body);
     } else {
       body = expr(sym("let"), goal.bound ?? fresh("ask"), goal.plan.term, body);
     }

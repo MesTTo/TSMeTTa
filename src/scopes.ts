@@ -12,6 +12,8 @@
  *     [measured 2026-08-27], so a world cannot be an engine suspended inside an
  *     open transaction across host calls
  * Guarantees:
+ *   - per-call policies remove only their own entries when disposed out of
+ *     nesting order [tested: "removes only the policy being disposed even out of nesting order"; commit=WORKTREE].
  *   - leaving a `using` block restores what the scope changed, whatever left it:
  *     a return, a throw, or the end of the block
  *   - a world's `commit()` applies its whole delta inside ONE engine
@@ -22,7 +24,7 @@
  *     world"; commit=6b117a66f6d1028496594942d4b4bdb4cc2b14fe]
  *   - settling a world releases its draft from both engine and surface
  *     ownership [tested: "evicts committed and restored world drafts from both
- *     host caches"; commit=62369c406ca1afee026539a825fa2469c768d957]
+ *     host caches"; commit=WORKTREE]
  * Decides: a world is a DRAFT, not a suspended transaction. Adds go into a
  *   child space, which the engine's own parent declaration makes read through
  *   the parent and write locally; removals are journalled here and applied at
@@ -74,6 +76,17 @@ export class ScopeHandle implements Disposable {
   /** @internal */
   constructor(release: () => void) {
     this.#release = release;
+  }
+
+  /** Install per-call policies; disposal removes only this handle's entries. */
+  static open(engine: Engine, scopes: readonly Scope[]): ScopeHandle {
+    engine.scopes.push(...scopes);
+    return new ScopeHandle(() => {
+      for (const scope of scopes) {
+        const index = engine.scopes.lastIndexOf(scope);
+        if (index >= 0) engine.scopes.splice(index, 1);
+      }
+    });
   }
 
   /** Leave the scope now, rather than at the end of the block. */
@@ -174,16 +187,14 @@ export class World implements Disposable {
   #engine: Engine;
   #parent: Space;
   #draft: Space;
-  #releaseDraft: () => void;
   #removals: Atom[] = [];
   #settled: "open" | "committed" | "restored" = "open";
 
   /** @internal Use `m.world(...)`. */
-  constructor(engine: Engine, parent: Space, draft: Space, releaseDraft: () => void) {
+  constructor(engine: Engine, parent: Space, draft: Space) {
     this.#engine = engine;
     this.#parent = parent;
     this.#draft = draft;
-    this.#releaseDraft = releaseDraft;
     draft.readsThrough(parent);
   }
 
@@ -287,7 +298,6 @@ export class World implements Disposable {
   #drop(): void {
     this.#removals = [];
     this.#draft.release();
-    this.#releaseDraft();
   }
 
   /** Leaving the block restores, unless the world was committed inside it. */

@@ -73,6 +73,11 @@
       "browser": "./browser/lint.js",
       "default": "./dist/lint.js"
     },
+    "./live": {
+      "types": "./dist/live.d.ts",
+      "browser": "./browser/live.js",
+      "default": "./dist/live.js"
+    },
     "./manifest": {
       "types": "./dist/manifest.d.ts",
       "default": "./dist/manifest.js"

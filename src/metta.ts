@@ -6,6 +6,8 @@
  *   - the engine is the meaning and TypeScript is the notation, so every door
  *     here either builds a term or asks the engine one
  * Guarantees:
+ *   - prepared queries and disposable spaces share the native Space doors
+ *     [tested: "refuses a prepared execution after its space was released"; commit=WORKTREE].
  *   - browser evaluation uses the same surface as Node; host file paths refuse
  *     by name [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  *   - `await metta()` is the whole boot: a module may say it at top level
@@ -46,7 +48,7 @@ import {
 } from "./atom.ts";
 import { isDirectory, resolvePath } from "./platform.ts";
 
-import { Answers, type AskOptions, type Row } from "./answers.ts";
+import { Answers, type AskOptions, type MatchOptions, type MatchTemplate, type Row } from "./answers.ts";
 import { type Derivation } from "./derivation.ts";
 import {
   type Capability,
@@ -75,13 +77,13 @@ import type { Limits } from "./scopes.ts";
 import {
   type Admission,
   type DerivationOptions,
+  type PreparedQuery,
   Space,
   type SpaceIdentity,
   type SpaceOptions,
   type WatchOptions,
   answerIterator,
   hostValue,
-  refuseCallableScopeBody,
   rowOf,
 } from "./space.ts";
 import { type SpaceProvider, registerProvider, unregisterProvider } from "./provider.ts";
@@ -275,18 +277,33 @@ export class MeTTa implements Disposable {
    * per parameter set, and a program reads its own parameters back by matching
    * the name.
    */
-  space(name: Term, options: SpaceOptions = {}): Space {
-    const identity = spaceIdentityOf(name);
+  space(name?: Term, options: SpaceOptions = {}): Space {
+    let identity: SpaceIdentity;
+    if (name === undefined) {
+      const event = this.#engine.start(["newspace"]).sync();
+      if (event?.kind !== "value" || !(event.atom instanceof SpaceHandle)) {
+        throw new ResultError("new-space did not return a space handle");
+      }
+      identity = event.atom;
+    } else identity = spaceIdentityOf(name);
     let held = this.#spaces.get(identity);
-    if (held === undefined) {
+    if (held === undefined || held.released) {
       if (identity instanceof Expression) {
         this.#engine.start(["parametric", this.#engine.encodeAtom(identity)]).sync();
       }
-      held = new Space(this.#engine, identity);
+      held = new Space(this.#engine, identity, () => {
+        this.#spaces.delete(identity);
+        if (identity instanceof SpaceHandle) this.#engine.knownSpaces.delete(identity.name);
+      });
       this.#spaces.set(identity, held);
     }
-    if (options.parent !== undefined) held.readsThrough(options.parent);
-    if (options.grants !== undefined) held.restrict(options.grants);
+    try {
+      if (options.parent !== undefined) held.readsThrough(options.parent);
+      if (options.grants !== undefined) held.restrict(options.grants);
+    } catch (error) {
+      if (name === undefined) held.release();
+      throw error;
+    }
     return held;
   }
 
@@ -337,18 +354,23 @@ export class MeTTa implements Disposable {
   // --- asks -----------------------------------------------------------------
 
   /** The answers to a pattern in the engine's own space. */
-  match(pattern: Term, options?: AskOptions): Answers<Row>;
-  match(pattern: Term, template: Term, options?: AskOptions): Answers<Atom>;
+  match(pattern: Term, options?: MatchOptions): Answers<Row>;
+  match(pattern: Term, template: MatchTemplate, options?: MatchOptions): Answers<Atom>;
   match(
     pattern: Term,
-    templateOrOptions?: Term | AskOptions,
-    options?: AskOptions,
+    templateOrOptions?: Term | MatchOptions,
+    options?: MatchOptions,
   ): Answers<Row> | Answers<Atom> {
     return (this.self.match as (...args: unknown[]) => Answers<Row> | Answers<Atom>)(
       pattern,
       templateOrOptions,
       options,
     );
+  }
+
+  /** Prepare one query against the engine's own space. */
+  prepare(pattern: Term, options: Pick<MatchOptions, "where" | "limit"> = {}): PreparedQuery {
+    return this.self.prepare(pattern, options);
   }
 
   /**
@@ -365,10 +387,9 @@ export class MeTTa implements Disposable {
   ask(term: Atom, space: Space, options: AskOptions = {}): Answers<Atom> {
     const engine = this.#engine;
     const wire = engine.encodeAtom(term);
-    const reference = space.reference;
     return new Answers<Atom>(
       term.text,
-      () => answerIterator(engine.start(["eval", wire, reference])),
+      () => answerIterator(engine.start(["eval", wire, space.reference])),
       options.signal,
       { kind: "eval", space: space.handle, term },
     );
@@ -639,14 +660,17 @@ export class MeTTa implements Disposable {
     const pushed: Scope[] = [];
     if (limits.stack !== undefined) pushed.push(["stack", limits.stack]);
     if (limits.inferences !== undefined) pushed.push(["inferences", limits.inferences]);
-    this.#scopes.push(...pushed);
-    return new ScopeHandle(() => {
-      for (const scope of pushed) {
-        const at = this.#scopes.lastIndexOf(scope);
-        if (at >= 0) this.#scopes.splice(at, 1);
-      }
-    });
+    return ScopeHandle.open(this.#engine, pushed);
   }
+
+  /** Commit each engine call independently until disposal. */
+  atomic(): ScopeHandle { return this.self.atomic(); }
+
+  /** Discard each engine call's writes until disposal. */
+  speculative(): ScopeHandle { return this.self.speculative(); }
+
+  /** Run one closed native term atomically. */
+  transaction(term: Term): Atom[] { return this.self.transaction(term); }
 
   /** What the work in this block costs, frozen when the block ends. */
   stats(): Stats {
@@ -667,12 +691,7 @@ export class MeTTa implements Disposable {
    */
   world(over: Space = this.self): World {
     const draft = this.space(nextWorldName());
-    return new World(this.#engine, over, draft, () => {
-      const identity = draft.handle;
-      if (this.#spaces.get(identity) !== draft) return;
-      this.#spaces.delete(identity);
-      if (identity instanceof SpaceHandle) this.#engine.knownSpaces.delete(identity.name);
-    });
+    return new World(this.#engine, over, draft);
   }
 
   /**
@@ -686,20 +705,7 @@ export class MeTTa implements Disposable {
    * for a draft host code takes part in.
    */
   speculate(term: Term, options: AskOptions = {}): Answers<Atom> {
-    refuseCallableScopeBody(
-      term,
-      "speculate",
-      "this door runs it against a snapshot and discards its writes",
-    );
-    const engine = this.#engine;
-    const built = toAtom(term);
-    const wire = engine.encodeAtom(built);
-    const reference = this.self.reference;
-    return new Answers<Atom>(
-      `speculate(${built.text})`,
-      () => answerIterator(engine.start(["eval", wire, reference], [["speculate"]])),
-      options.signal,
-    );
+    return this.self.speculate(term, options);
   }
 
   /**

@@ -100,6 +100,7 @@ catch (e) {
 
 ```ts
 const kb = m.space(S.kb);
+using temporary = m.space(); // anonymous native space, released at block exit
 ```
 
 A space can be created with restricted grants, and ordinary computation still
@@ -110,6 +111,70 @@ const locked = m.space(S.locked, { grants: [] });
 await locked.eval(S.double(21)).one();        // 42
 const reader = m.space(S.reader, { grants: ["file"] });
 ```
+
+Space and State objects implement `ATOM_OF`: pass them directly in terms.
+Released spaces refuse operations, including queries first consumed after
+release. A new `m.space(name)` opens a new handle after the old one is released.
+
+## Joins, guards, prepared queries and temporary facts
+
+```ts
+const adults = kb.prepare(S[","](S.person(V.name), S.age(V.name, V.age)), {
+  where: fn.gte(V.age, 18), limit: 10,
+});
+adults.columns;                  // ["name", "age"]
+adults.term;                     // the query's native term
+await adults.solve();            // current answers, never a cached result
+await adults.solve({ given: [S.person(S.ada), S.age(S.ada, 36)] });
+```
+
+`kb.match(pattern, { where, limit })` is the immediate form. Join with `S[","]`;
+the engine unifies shared variables. `where` is a native boolean term, lowered
+as `(let true guard template)` inside the match. `limit` wraps it in `(take n ...)`
+and must be a positive safe integer. Both survive tracing through `yield*`.
+An evaluated template remains the second positional argument; wrap ordinary
+host objects with `G` so they cannot be mistaken for an options object.
+
+Preparation caches the term, wire and columns, with no cursor until a solve is
+consumed. `solve({ signal })` cancels one execution. `solve({ given })` names
+`kb.withFacts(given, adults.term)`: add facts and evaluate the term inside an
+engine snapshot, discarding **all** writes on exit. It preserves existing equal
+occurrences and their tokens. This closed computation cannot yield to a host
+callback; an ordinary solve can. An assumption scope spanning arbitrary
+JavaScript needs a shared exact-occurrence-removal service and is not exposed.
+
+## Transactions and speculation
+
+`kb.transaction(term)` is `(transaction term)`, returning every answer;
+`kb.speculate(term)` evaluates under an engine snapshot and discards writes.
+`m.transaction` and `m.speculate` target `m.self`. Their bodies are native terms,
+not JavaScript callbacks: `engine_yield/1` cannot cross those SWI query frames.
+
+`using policy = m.atomic()` applies a transaction to **each call** until
+disposal; `m.speculative()` applies a snapshot to each call. Space methods of
+the same names install the same engine-wide policies. Several calls in a
+JavaScript block do not form a transaction. Build one native term for that.
+Do not keep an ambient policy across unrelated concurrent host work.
+
+## Reified worlds
+
+`m.world(space)` is the existing mutable draft with atomic delta commit and
+explicit restore. It is not a reified world. Reification, successor evaluation,
+diff and conflict-checked commit currently live in Python's binding; the shared
+engine publishes no complete service for them. There is no TypeScript `reify`
+door. The remedy is a shared engine service, not a second host world model.
+
+## Mutable cells
+
+```ts
+const balance = m.state(10, { type: S.Number });
+balance.set(12).held;                          // 12
+String(await m.eval(fn.getState(balance)).one()); // "12"
+```
+
+The cell carries its native handle. `fn["change-state!"]` is the exact engine
+head, while `.set` follows the JavaScript collection convention and returns
+the cell. The engine checks its declared `StateMonad` type.
 
 ## Spaces implemented in TypeScript
 
@@ -159,8 +224,37 @@ afterwards, including an ask that was in flight.
 
 ```ts
 using watch = subscribe(kb, S.alarm(V.what), { onEvent: (e) => log(e) });
-await using view = await LiveView.open(kb, S.alarm(V.what));
+using view = await LiveView.open(kb, S.alarm(V.what));
 ```
+
+Subscriptions honor their caller's `signal`. Breaking an async iteration ends
+that subscription; queue overflow is a refusal with a remedy. `publish` is an
+ordinary space write and `fold` accumulates host state over the admission stream.
+`kb.reacts` and `kb.agenda` publish engine reaction and ordering declarations.
+
+## Materialized answers
+
+```ts
+using joined = kb.live(S.person(V.name), S.age(V.name, V.age));
+joined.rows;                         // readonly binding rows
+joined.count({ name: S.ada, age: 36 }); // occurrence multiplicity
+for await (const delta of joined.changes({ signal })) {
+  // add/remove carry a row; progress marks a complete committed generation
+}
+```
+
+The engine seeds and registers a live query atomically and recomputes after
+committed segments. Each change consumer has its own bounded queue. Rollback
+and speculation emit no changes. Closing retains the final snapshot.
+`LiveView` uses this same native multiset, so opening races and variable-pattern
+removals cannot leave stale counts. This recomputes the native query; it does
+not promise incremental join maintenance.
+
+`kb.liveEval(call)` requires a private incremental tabled definition, declared
+with `(cache head (incremental private))` in the catalog. Shared tables and
+queries that would yield to host code are refused at the snapshot boundary.
+`kb.effectPlan(term)` returns the engine's transitive operation/effect analysis
+without running the term.
 
 ## Coordination
 
@@ -168,9 +262,15 @@ await using view = await LiveView.open(kb, S.alarm(V.what));
 concurrency, each taking an `AbortSignal`. The engine's `library(thread)` is
 absent from a WebAssembly build, so this is where concurrency lives.
 
+Each `MeTTa` owns an engine. Dispose its dependent resources before disposing
+it. Async host I/O can overlap; pure reductions use one WebAssembly engine.
+Independent workers need independent engines and exchange portable wire atoms.
+Abort signals act at answer boundaries; an inference budget bounds a reduction
+that does not reach one promptly.
+
 ## The satellites
 
-The root carries what a program reaches for. Everything else is one of 27
+The root carries what a program reaches for. Everything else is in the package's
 subpaths and costs nothing unimported: `tsmetta/ambient` (a lazily booted
 default engine), `/spaces`, `/structures` (`AlphaSet`, `PatternMap`,
 `MatchIndex`, `ClosureView`, `TabledMap`), `/matching` (unification and alpha
@@ -179,7 +279,45 @@ runner), `/vocabularies` (the engine's closed value sets, checked against
 `&metta`), `/strategies`, `/paths`, `/parallel`, `/subscribe`, `/derivation`,
 `/provider`, `/wire`, `/convert`, `/integrate`, `/algebra`, `/remote`,
 `/arrays`, `/tables`, `/tokens`, `/saga`, `/lint`, `/manifest`, `/events`,
-`/config`, `/random`, `/version`.
+`/config`, `/random`, `/version`, `/live`. README.md lists every exported
+subpath and its test checks that list against package.json.
+
+## Arrays, tables and native algebras
+
+`tsmetta/arrays` uses `TypedArray` storage. `new Tensor(data, shape)` validates
+the element count, publishes `(Tensor dtype dimensions...)` as `.type`, and
+reshapes by sharing storage. `installArrays(m)` registers the array operations;
+`EmbeddingStore` supplies a vector-neighbour provider. No numeric library is
+named by core.
+
+`tsmetta/tables` maps record arrays or a `TableSource` into atoms.
+`bridge(S.person(V.name, V.age), "people", {name: V.name, age: V.age})`
+declares the row mapping; `tableSpace(source, declarations)` makes the provider.
+`arrayTables({people: rows})` is the in-memory source. A database integration
+implements `rows(table, constraints)` using its own parameterized SQL driver.
+There is no pandas adapter or SQL dialect translator in core.
+
+`matchUnder(space, pattern, carrier)` from `tsmetta/algebra` names the native
+`(match-under space carrier pattern)` and streams `{value, tag}` atoms.
+`taggedFact` and `taggedRule` build its data. `counting` counts proofs, `prob`
+combines weights, `S.product(...)` combines carriers and `S.formula(S.prob)`
+accounts for overlapping proofs. The engine owns the fixpoint and laws.
+Pass a carrier name or term, not a host `Algebra` object. The older
+`evaluate`/`TaggedAnswer` API retains host derivation trees; it is a separate
+existing facility, not the native query path.
+
+## Remote serving and application doors
+
+`tsmetta/remote` supplies `serve({spaces, port, token})`, an HTTP gateway with
+an explicit space allow-list, loopback default and optional required bearer
+token. Own it with `await using`. `connect(url, {space, token})` is a provider
+to attach to another runtime. Cursor pulls stay lazy and structured errors
+cross the wire; live JavaScript references do not.
+
+HTTP application routes and GraphQL resolvers await queries and project rows.
+Their schema, framework and authorization policy belong to the application or
+an extension package, so core has no GraphQL schema generator or framework
+integration roster.
 
 ## Crossing a host type, and a value that owns its matching
 

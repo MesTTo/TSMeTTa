@@ -8,6 +8,9 @@
  *     carried here, isomorphic to the synchronous one by construction
  *     [source: tc39/proposal-async-iterator-helpers, Stage 2 as of 2026-08]
  * Guarantees:
+ *   - cancelled pulls close their source once, and guarded queries use native
+ *     boolean unification before output bounds [tested: "closes an answer source once when cancellation precedes or follows its pull", "applies native limits after guards for rows and evaluated templates";
+ *     commit=WORKTREE].
  *   - nothing runs until something consumes: building an ask costs no engine
  *     work at all
  *   - `await ans` executes and collapses, which is where Drizzle and Kysely put
@@ -47,7 +50,7 @@
  *   Future Enhancements: None
  */
 
-import { Atom, Expression, Sym } from "./atom.ts";
+import { Atom, Expression, Sym, G, expr, sym, type HasAtom, type Term, type TermList } from "./atom.ts";
 import type { Var } from "./atom.ts";
 import { MettaError, ResultError, UnsupportedError, branchFailure } from "./errors.ts";
 import { showsAs } from "./present.ts";
@@ -97,6 +100,8 @@ export type Plan =
       readonly pattern: Atom;
       /** Its variables, in first-seen order: the row's columns. */
       readonly vars: readonly Var[];
+      readonly where?: Atom;
+      readonly limit?: number;
     }
   | {
       readonly kind: "eval";
@@ -141,6 +146,26 @@ export interface AskOptions {
    * answer before it notices. That is `fetch`'s own contract, said plainly.
    */
   readonly signal?: AbortSignal;
+}
+
+/** A native guard and output bound shared by immediate and prepared matches. */
+export interface MatchOptions extends AskOptions {
+  readonly where?: Term;
+  readonly limit?: number;
+}
+
+/** A template carries its atom; wrap an ordinary host object with G. */
+export type MatchTemplate = Atom | HasAtom | TermList | string | number | bigint | boolean | Function;
+
+/** @internal The one longhand used by queries and traced definitions. */
+export function matchTerm(plan: Extract<Plan, { kind: "match" }>, template: Atom): Atom {
+  const result = plan.where === undefined ? template : expr(sym("let"), G(true), plan.where, template);
+  const query = expr(sym("match"), plan.space, plan.pattern, result);
+  if (plan.limit === undefined) return query;
+  if (!Number.isSafeInteger(plan.limit) || plan.limit < 1) {
+    throw new MettaError("a match limit must be a positive safe integer; omit it for all answers");
+  }
+  return expr(sym("take"), G(plan.limit), query);
 }
 
 function aborted(signal: AbortSignal | undefined): void {
@@ -607,21 +632,36 @@ function withSignal<T>(
   iterator: AsyncIterator<T>,
   signal: AbortSignal | undefined,
 ): AsyncIterable<T> {
+  let closed = false;
+  let closing: Promise<IteratorResult<T>> | undefined;
+  const close = (value?: unknown): Promise<IteratorResult<T>> => {
+    closed = true;
+    return closing ??= Promise.resolve().then(async () => {
+      await iterator.return?.(value);
+      return { done: true, value: undefined as never };
+    });
+  };
   return {
     [Symbol.asyncIterator]: (): AsyncIterator<T> => ({
       async next(): Promise<IteratorResult<T>> {
-        aborted(signal);
-        // One event-loop turn per answer, so a deadline that is a TIMER gets
-        // to fire; without it the synchronous pull starves its own signal.
-        await breathe();
-        aborted(signal);
-        const step = await iterator.next();
-        aborted(signal);
-        return step;
+        if (closed) return { done: true, value: undefined as never };
+        try {
+          aborted(signal);
+          // Yield to timers before the synchronous pull can starve its signal.
+          await breathe();
+          aborted(signal);
+          const step = await iterator.next();
+          aborted(signal);
+          if (step.done === true) closed = true;
+          return step;
+        } catch (error) {
+          try { await close(); }
+          catch (cleanup) { throw new AggregateError([error, cleanup], "the answer pull and its cleanup both failed"); }
+          throw error;
+        }
       },
       async return(value?: unknown): Promise<IteratorResult<T>> {
-        await iterator.return?.(value);
-        return { done: true, value: undefined as never };
+        return close(value);
       },
     }),
   };

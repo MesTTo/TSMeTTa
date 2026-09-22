@@ -10,6 +10,8 @@
  *     — so declaring one here is declaring it to the engine as well
  *     [source: engine/spaces/bounded_matching.pl, metta_top_match/5]
  * Guarantees:
+ *   - `matchUnder` reduces the engine's `match-under` term; cycles and carrier
+ *     laws belong to the engine [tested: "reaches a native fixpoint on a cyclic idempotent tagged program"; commit=WORKTREE].
  *   - only laws CHECKED over a finite carrier, or a trusted shipped preset's,
  *     license answer fusion, and the decision is reported rather than assumed
  *     [tested: "fuses only under a law it has checked"]
@@ -50,6 +52,7 @@ import {
   toAtom,
 } from "./atom.ts";
 import { MettaError } from "./errors.ts";
+import { type Answers, type AskOptions } from "./answers.ts";
 import { matchTerms } from "./matching.ts";
 import { showsAs } from "./present.ts";
 import { Random } from "./random.ts";
@@ -1363,3 +1366,23 @@ export async function hasTaggedProgram(space: Space, query: Term): Promise<boole
 
 /** Every exported carrier, so a program may enumerate what it can read under. */
 export const CARRIERS: readonly string[] = Object.freeze(Object.keys(PRESETS));
+
+/** A proposition and its engine-computed coefficient. */
+export interface TaggedValue {
+  readonly value: Atom;
+  readonly tag: Atom;
+}
+
+/** The native `(match-under Space Carrier Pattern)` query. */
+export function matchUnder(space: Space, pattern: Term, carrier: Term, options: AskOptions = {}): Answers<TaggedValue> {
+  if (carrier instanceof Algebra) {
+    throw new AlgebraDeclarationError("matchUnder needs an engine carrier name or term; declare the algebra in the catalog and pass its name");
+  }
+  const selected = typeof carrier === "string" ? sym(carrier) : toAtom(carrier);
+  return space.eval(expr(sym("match-under"), space.handle, selected, toAtom(pattern)), options).map((answer) => {
+    if (!(answer instanceof Expression) || answer.items.length !== 2) {
+      throw new AlgebraOperationError(`match-under returned ${answer.text}; expected (proposition coefficient)`);
+    }
+    return Object.freeze({ value: answer.items[0]!, tag: answer.items[1]! });
+  });
+}

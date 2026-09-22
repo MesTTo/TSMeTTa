@@ -2,6 +2,8 @@ build/
 dist/
 node_modules
 ai-tmp/
+ai-battery-*/
+agenticmind.json
 browser/
 _runtime/
 

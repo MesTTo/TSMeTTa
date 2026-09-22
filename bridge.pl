@@ -39,6 +39,9 @@
 %     PeTTa@ae66fa8e41dcd5539d614706bd4e5cfb34f9608d src/metta.pl,
 %     eval_20/6 clauses for '==' and '!='].
 % Guarantees:
+%   - error transport runs outside transaction/snapshot scopes so exceptions
+%     roll back before crossing; committed views refresh through the shared
+%     observer hook [tested: "retains separate commit deltas and excludes rollback and speculation", "treats incompatible deterministic and streamed callback results as logical failure"; commit=WORKTREE].
 %   - foreign participant capture retains its original provider value and
 %     completion applications; metta_node_yield/1 still refuses capture in a
 %     transaction or speculate callback
@@ -72,7 +75,7 @@
 %   - metta_node_stop/1 is idempotent
 %     [tested: "closes a cursor that is abandoned before its first pull"]
 %   - no Prolog exception reaches the host: every synchronous call arrives
-%     through metta_node_do/2 and every job body through metta_node_guarded/2,
+%     through metta_node_do/2 and every job body through metta_node_guarded/3,
 %     so the outcome crosses as data
 %     [tested: "raises an error rather than printing it"]
 %   - an error outcome carries the engine's own KIND for the ball and the
@@ -134,6 +137,10 @@
 :- dynamic metta_node_op/3.
 :- dynamic metta_node_watch/4.
 :- dynamic metta_node_event/3.
+:- dynamic metta_node_live/6.
+:- dynamic metta_node_live_delta/2.
+:- dynamic metta_node_live_buffer/3.
+:- dynamic metta_node_live_failure/2.
 
 %%%%%%%%%% Every synchronous call from the host comes through here %%%%%%%%%%
 %
@@ -444,9 +451,11 @@ metta_node_decode(W, T) :- metta_node_decode(W, [], _, T).
 % The whole token list must be consumed: tokens left over mean the host wrote
 % a term this reader did not finish, which is a refusal rather than a prefix.
 metta_node_decode(W, Names0, Names, T) :-
-    (   metta_node_decode_(W, Rest, Names0, Names, T),
+    (   metta_node_decode_(W, Rest, Names0, Names, Decoded),
         Rest == []
-    ->  true
+    % A valid reply may not unify with a caller's bound result. Decode first:
+    % rejecting false against true is logical failure, not malformed wire.
+    ->  T = Decoded
     ;   throw(error(metta_node_undecodable(W),
                     context(metta_node_decode/2,
                             'not a wire atom the Node binding writes')))
@@ -609,7 +618,7 @@ metta_node_group(Terms, Encoded) :-
 % them as the same opaque {"$t":"b"} [measured 2026-08-20], so a host that
 % kept the handle could not hand it back.
 metta_node_start(Scopes, Command, Id) :-
-    metta_host_hold(Event, metta_node_scoped(Scopes, Command, Event), Engine),
+    metta_host_hold(Event, metta_node_guarded(Scopes, Command, Event), Engine),
     metta_node_fresh_id(Id),
     assertz(metta_node_job(Id, Engine)).
 
@@ -665,7 +674,7 @@ metta_node_stop(Id) :-
 % WebAssembly conversion has one text type going in. metta_node_atom/2 is
 % where the two spellings become one, here as everywhere else in this file.
 metta_node_scoped([], Command, Event) :- !,
-    metta_node_guarded(Command, Event).
+    metta_node_perform(Command, Event).
 metta_node_scoped([Scope|Rest], Command, Event) :-
     Scope = [Word|Details],
     metta_node_atom(Word, Name),
@@ -748,9 +757,9 @@ metta_node_argument_count(N, Text) :-
 %
 % Inferences are the transport-independent gate the Python side proved;
 % crossings and replays are the host's own counters and stay there.
-metta_node_guarded(Command, Event) :-
+metta_node_guarded(Scopes, Command, Event) :-
     statistics(inferences, Before),
-    (   catch(metta_node_perform(Command, Event),
+    (   catch(metta_node_scoped(Scopes, Command, Event),
               Ball,
               metta_node_error(Ball, Event))
     ;   statistics(inferences, After),
@@ -839,12 +848,18 @@ metta_node_verb(has, 2).
 metta_node_verb(clear, 1).
 metta_node_verb(spacenames, 0).
 metta_node_verb(parametric, 1).
+metta_node_verb(newspace, 0).
 metta_node_verb(child, 2).
 metta_node_verb(restrict, 2).
 metta_node_verb(releasable, 1).
 metta_node_verb(release, 1).
 metta_node_verb(explain, 2).
 metta_node_verb(effect, 1).
+metta_node_verb(effectplan, 2).
+metta_node_verb(liveopen, 5).
+metta_node_verb(livepoll, 2).
+metta_node_verb(livefollow, 2).
+metta_node_verb(liveclose, 1).
 metta_node_verb(registerop, 4).
 metta_node_verb(dropop, 2).
 metta_node_verb(watch, 4).
@@ -985,6 +1000,10 @@ metta_node_command(spacenames, [], [value, Wire]) :-
 
 % Register one structured space identity before any command tries to use it.
 % The engine owns validation and makes repeated declarations idempotent.
+metta_node_command(newspace, [], [value, Wire]) :-
+    'new-space'(Space),
+    metta_node_space_wire(Space, Wire).
+
 metta_node_command(parametric, [Wire], [value, [s, "ok"]]) :-
     metta_node_decode(Wire, Space),
     metta_declare_parametric_space(Space).
@@ -1041,6 +1060,55 @@ metta_node_command(effect, [Name0], [value, [s, Text]]) :-
     ->  atom_string(Class, Text)
     ;   Text = "unknown"
     ).
+
+metta_node_command(effectplan, [Space0, Wire], [value, Out]) :-
+    metta_node_space(Space0, Space),
+    metta_node_decode(Wire, Term0),
+    metta_substitute_self(Space, Term0, Term),
+    space_module(Space, Module),
+    metta_host_source_effect_plan(Module, Term, Operations, Effect),
+    metta_node_encode([Operations, Effect], Out).
+
+% Seeding and registration share one transaction. A yielding host callback
+% refuses at metta_node_yield/1, so an asynchronous seed cannot lose a write.
+metta_node_command(liveopen, [Id, Space0, Mode0, Wire, Template], [value, Out]) :-
+    metta_node_space(Space0, Space),
+    metta_node_atom(Mode0, Mode),
+    metta_node_decode(Wire, [], Names, Term),
+    metta_node_decode(Template, Names, _, Projection),
+    metta_transaction((
+        metta_node_live_answers(Space, Mode, Term-Projection, Rows),
+        flag(metta_node_generation, Generation, Generation),
+        assertz(metta_node_live(Id, Space, Mode, Term-Projection, Rows, Generation))
+    )),
+    metta_node_live_packet(Generation, [Rows], [], Out).
+
+metta_node_command(livepoll, [Id, Previous], [value, Out]) :-
+    ( metta_node_live_failure(Id, Error) -> throw(Error) ; true ),
+    ( metta_node_live(Id, _, _, _, Rows, Generation) -> true
+    ; throw(error(existence_error(live_query, Id), none)) ),
+    ( Previous =:= Generation -> Changed = [] ; Changed = [Rows] ),
+    ( retract(metta_node_live_buffer(Id, Limit, overflow))
+    -> metta_node_expr_wire([[s, "overflow"]], Overflow), Deltas = [Overflow],
+       assertz(metta_node_live_buffer(Id, Limit, 0))
+    ; findall(Delta, retract(metta_node_live_delta(Id, Delta)), Deltas),
+      ( retract(metta_node_live_buffer(Id, Limit, _))
+      -> assertz(metta_node_live_buffer(Id, Limit, 0)) ; true ) ),
+    metta_node_live_packet(Generation, Changed, Deltas, Out).
+
+metta_node_command(livefollow, [Id, Limit], [value, [s, "ok"]]) :-
+    ( retract(metta_node_live_buffer(Id, _, Previous)) -> Count = Previous ; Count = 0 ),
+    ( Limit =:= 0 -> retractall(metta_node_live_delta(Id, _))
+    ; ( Count == overflow -> Next = overflow
+      ; Count > Limit -> Next = overflow, retractall(metta_node_live_delta(Id, _))
+      ; Next = Count ),
+      assertz(metta_node_live_buffer(Id, Limit, Next)) ).
+
+metta_node_command(liveclose, [Id], [value, [s, "ok"]]) :-
+    retractall(metta_node_live(Id, _, _, _, _, _)),
+    retractall(metta_node_live_delta(Id, _)),
+    retractall(metta_node_live_buffer(Id, _, _)),
+    retractall(metta_node_live_failure(Id, _)).
 
 metta_node_command(registerop, [Name0, Arity, Kind0, Effect0], [value, [s, "ok"]]) :-
     metta_node_atom(Name0, Name),
@@ -1543,10 +1611,104 @@ metta_node_note(Edge, Space, Atom) :-
            metta_node_queue(WatchId, Edge, Atom)).
 
 metta_node_queue(WatchId, Edge, Atom) :-
-    catch(( metta_node_encode(Atom, Wire),
-            assertz(metta_node_event(WatchId, Edge, Wire)) ),
-          _,
-          true).
+    metta_node_encode(Atom, Wire),
+    assertz(metta_node_event(WatchId, Edge, Wire)).
+
+% Materialized answers move once per committed segment, including inherited
+% and cross-space dependencies. Source: engine/ext_points.pl:segment_committed/1
+% and pymetta/live.py:_boundary. Recompute conservatively: WebAssembly tables
+% belong to individual jobs, so their invalidation counters cannot span jobs.
+% Failure belongs to the view; every other view still receives this commit.
+:- multifile seam:segment_committed/1.
+seam:segment_committed(_) :-
+    flag(metta_node_generation, Before, Before + 1),
+    Generation is Before + 1,
+    findall(Id, metta_node_live(Id, _, _, _, _, _), Ids),
+    forall(member(Id, Ids),
+           ( metta_node_live_failure(Id, _) -> true
+           ; catch(metta_node_live_refresh(Id, Generation), Error,
+                   assertz(metta_node_live_failure(Id, Error))) )).
+
+metta_node_live_refresh(Id, Generation) :-
+    metta_node_live(Id, Space, Mode, Query, Previous, _),
+    metta_node_live_answers(Space, Mode, Query, Rows),
+    retractall(metta_node_live(Id, _, _, _, _, _)),
+    assertz(metta_node_live(Id, Space, Mode, Query, Rows, Generation)),
+    ( metta_node_live_buffer(Id, _, _)
+    -> metta_node_live_diff(Previous, Rows, Id, Generation),
+       metta_node_number_text(Generation, Text),
+       metta_node_expr_wire([[s, "progress"], [n, Text]], Progress),
+       metta_node_live_enqueue(Id, Progress)
+    ; true ).
+
+metta_node_live_answers(Space, Mode, Term-Projection, Rows) :-
+    space_module(Space, Module),
+    with_metta_module(Module, (
+        metta_node_live_target(Mode, Space, Term, Projection, Goal),
+        metta_speculate(findall(Wire,
+            ( eval(Goal, Answer), term_variables(Answer, Variables),
+              metta_node_live_names(Variables, 0, Names),
+              metta_node_encode_named(Answer, Names, Wire) ), Unsorted))
+    )),
+    msort(Unsorted, Rows).
+
+% Each row is compared modulo variable names, preserving repeated variables.
+% This is pymetta/live.py:_live_row's multiset key, not a general wire identity.
+metta_node_live_names([], _, []).
+metta_node_live_names([Var|Vars], Index, [Name-Var|Names]) :-
+    format(atom(Name), '__live_~d', [Index]),
+    Next is Index + 1,
+    metta_node_live_names(Vars, Next, Names).
+
+metta_node_live_target(match, Space, Pattern, Projection,
+                      [match, Space, Pattern, [quote, Projection]]) :- !.
+metta_node_live_target(eval, Space, Term0, _, Goal) :-
+    metta_substitute_self(Space, Term0, Term),
+    ( nonvar(Term), Term = [Name|Args], atom(Name), length(Args, Arity),
+      metta_host_stored('&metta', [tabled, Space, Name, Arity]),
+      eval(['table-stats', Term], Stats),
+      memberchk([policy, Policy], Stats), memberchk(incremental, Policy)
+    -> Goal = [chain, Term, Value, [quote, [Value]]]
+    ; throw(error(domain_error(incremental_tabled_query, Term),
+                  context(metta_node_live_target/5,
+                          'liveEval requires an incremental table over a repeatable body'))) ).
+
+% Sorted multiset subtraction preserves duplicates and alpha-renamed rows.
+% Time: O((A+B)*L) merge after sorting, L = maximum wire comparison length.
+% Space: O(D*L), D = occurrence changes, bounded by the consumers' queueMax.
+metta_node_live_diff([], [], _, _) :- !.
+metta_node_live_diff([A|As], [], Id, Gen) :- !,
+    metta_node_live_emit(Id, remove, A, Gen), metta_node_live_diff(As, [], Id, Gen).
+metta_node_live_diff([], [B|Bs], Id, Gen) :- !,
+    metta_node_live_emit(Id, add, B, Gen), metta_node_live_diff([], Bs, Id, Gen).
+metta_node_live_diff([A|As], [B|Bs], Id, Gen) :-
+    compare(Order, A, B),
+    ( Order == (=) -> metta_node_live_diff(As, Bs, Id, Gen)
+    ; Order == (<) -> metta_node_live_emit(Id, remove, A, Gen),
+                     metta_node_live_diff(As, [B|Bs], Id, Gen)
+    ; metta_node_live_emit(Id, add, B, Gen), metta_node_live_diff([A|As], Bs, Id, Gen) ).
+
+metta_node_live_emit(Id, Edge, Row, Generation) :-
+    metta_node_number_text(Generation, Text),
+    atom_string(Edge, Name),
+    metta_node_expr_wire([[s, Name], [n, Text], Row], Delta),
+    metta_node_live_enqueue(Id, Delta).
+
+% Overflow is explicit and leaves the current snapshot intact. A stalled
+% iterator therefore cannot grow the native queue while JavaScript is busy.
+metta_node_live_enqueue(Id, Delta) :-
+    retract(metta_node_live_buffer(Id, Limit, Before)),
+    ( Before == overflow -> After = overflow
+    ; Before < Limit -> After is Before + 1, assertz(metta_node_live_delta(Id, Delta))
+    ; After = overflow, retractall(metta_node_live_delta(Id, _)) ),
+    assertz(metta_node_live_buffer(Id, Limit, After)).
+
+metta_node_live_packet(Generation, Changed, Deltas, Out) :-
+    metta_node_number_text(Generation, Text),
+    maplist(metta_node_expr_wire, Changed, Snapshots),
+    metta_node_expr_wire(Snapshots, SnapshotWire),
+    metta_node_expr_wire(Deltas, DeltaWire),
+    metta_node_expr_wire([[n, Text], SnapshotWire, DeltaWire], Out).
 
 %%%%%%%%%% Derivation trees %%%%%%%%%%
 %

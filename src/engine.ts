@@ -11,6 +11,8 @@
  *   - `bridge.pl` sits beside this file's package root and speaks the job
  *     protocol documented there
  * Guarantees:
+ *   - resource control can run outside ambient transaction and snapshot
+ *     policies [tested: "opens and closes observations independently of speculative writes"; commit=WORKTREE].
  *   - Node and browser boot share the job and wire implementation
  *     [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  *   - metta_host_hold/3 makes jobs eager on their creating transaction's
@@ -772,8 +774,13 @@ export class Engine {
 
   /** Start a job. The scopes are established inside its own engine. */
   start(command: Command, scopes: readonly Scope[] = []): Job {
+    return this.control(command, [...this.scopes, ...scopes]);
+  }
+
+  /** @internal Resource bookkeeping has explicit scopes, independent of business-call policies. */
+  control(command: Command, scopes: readonly Scope[] = []): Job {
     const answer = this.once("metta_node_start(Sc, Cmd, Id)", {
-      Sc: [...this.scopes, ...scopes].map((scope) => [...scope]),
+      Sc: scopes.map((scope) => [...scope]),
       Cmd: command,
     });
     return new Job(this, Number(answer["Id"]));

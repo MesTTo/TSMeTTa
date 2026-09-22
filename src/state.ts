@@ -5,6 +5,8 @@
  *   - the engine carries `new-state`, `get-state` and `change-state!`
  *     [tested: "answers itself on write, as Map.set does"]
  * Guarantees:
+ *   - term position uses the same opaque handle as reads and writes
+ *     [tested: "uses spaces and mutable cells as their native atoms in every term position"; commit=WORKTREE].
  *   - `set` answers the CELL, so a write composes with a read in one
  *     expression, which is what `Map.prototype.set` and `Set.prototype.add`
  *     already do [tested: "reads, transforms and writes in one step"]
@@ -21,7 +23,7 @@
  *   Future Enhancements: None
  */
 
-import { type Atom, type Term, expr, sym, toAtom } from "./atom.ts";
+import { ATOM_OF, type Atom, type Term, expr, sym, toAtom } from "./atom.ts";
 import { type Space, hostValue } from "./space.ts";
 import { showsAs } from "./present.ts";
 
@@ -69,6 +71,8 @@ interface CellHost {
  * The handle is opaque and records its type when it is created, so a cell of
  * `Number` refuses a `String` at the write rather than at the next read.
  */
+export interface State<T extends Term = Term> { readonly [ATOM_OF]: Atom; }
+
 export class State<T extends Term = Term> {
   #host: CellHost;
   #space: Space;
@@ -85,6 +89,7 @@ export class State<T extends Term = Term> {
         ? expr(sym("new-state"), toAtom(initial))
         : expr(sym("new-state"), expr(sym(":"), toAtom(initial), toAtom(options.type)));
     this.handle = host.runOne(made, this.#space);
+    Object.defineProperty(this, ATOM_OF, { value: this.handle });
   }
 
   /** What the cell holds now. */

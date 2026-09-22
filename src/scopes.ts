@@ -13,7 +13,7 @@
  *     open transaction across host calls
  * Guarantees:
  *   - per-call policies remove only their own entries when disposed out of
- *     nesting order [tested: "removes only the policy being disposed even out of nesting order"; commit=484e554d80d0db7ed620d4ea609849fb0b81aadf].
+ *     nesting order [tested: "removes only the policy being disposed even out of nesting order"; commit=WORKTREE].
  *   - leaving a `using` block restores what the scope changed, whatever left it:
  *     a return, a throw, or the end of the block
  *   - a world's `commit()` applies its whole delta inside ONE engine
@@ -24,7 +24,7 @@
  *     world"; commit=6b117a66f6d1028496594942d4b4bdb4cc2b14fe]
  *   - settling a world releases its draft from both engine and surface
  *     ownership [tested: "evicts committed and restored world drafts from both
- *     host caches"; commit=484e554d80d0db7ed620d4ea609849fb0b81aadf]
+ *     host caches"; commit=WORKTREE]
  * Decides: a world is a DRAFT, not a suspended transaction. Adds go into a
  *   child space, which the engine's own parent declaration makes read through
  *   the parent and write locally; removals are journalled here and applied at

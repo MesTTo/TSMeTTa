@@ -14,7 +14,7 @@
  *     `onError`, or is re-raised on the next drain when there is none
  *   - `LiveView` projects the committed row multiset, so variable removals and
  *     writes made during opening cannot leave stale counts. Count reads use
- *     the cached snapshot [tested: "includes writes made while a view is opening", "recomputes a variable-pattern removal against the committed store"; commit=484e554d80d0db7ed620d4ea609849fb0b81aadf].
+ *     the cached snapshot [tested: "includes writes made while a view is opening", "recomputes a variable-pattern removal against the committed store"; commit=WORKTREE].
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

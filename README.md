@@ -317,18 +317,21 @@ await query.solve({ given: [S.route(S.detour)] }).count(); // 2
 await query.solve().count();                            // 1
 ```
 
-`solve({ given })` means `space.withFacts(given, query.term)`. That door runs
-`(progn (add-atom space fact)... term)` in an engine snapshot. It discards
-**all** evaluation writes, including the temporary facts, on success, an
-empty result, cancellation or a thrown error. Existing equal occurrences and
-their tokens survive. This is a closed native computation; host callbacks
-cannot suspend inside it. Use an ordinary solve for a query that calls async
-host code. Cancellation is per execution: `query.solve({ signal })` leaves
-the prepared query reusable.
+`solve({ given })` is `space.withFacts(given, query.term)`: the engine runs
+`(progn (add-atom space fact)... term)` in a snapshot and discards every
+evaluation write on **every** exit, the temporary facts included. Success, an
+empty result, cancellation and a thrown error are one case, not four, and
+that is the guarantee: no exit keeps a write. Occurrences the space already
+held, and their tokens, survive.
 
-An assumption scope spanning arbitrary JavaScript needs a shared engine
-service for removing the exact admitted occurrence. This surface does not
-implement that scope by deleting equal values.
+The snapshot is a closed native computation, so a host callback cannot
+suspend inside it; a query that awaits host code wants an ordinary solve.
+Cancellation is per execution, so `query.solve({ signal })` leaves the
+prepared query reusable.
+
+There is no assumption scope spanning arbitrary JavaScript. One would need a
+shared engine service that removes the exact occurrence it admitted, and
+deleting an equal value instead would remove someone else's.
 
 ## Transactions and speculation
 

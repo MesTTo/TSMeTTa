@@ -6,6 +6,13 @@ weighted fixpoints. The full suite grew from **655 to 689 passing tests**, with
 no failures or skips. README.md and llms.txt describe these APIs and the shared
 engine boundaries below. No dependency was added.
 
+The implementation is committed as `484e554d80d0db7ed620d4ea609849fb0b81aadf`;
+the header-only provenance commit is
+`dd0707a42eb721523e9c08454649650053ffb972`. Final completion is blocked by the
+superproject evidence checker's commit lookup: it cannot resolve a real commit
+in the independent Node repository. That checker is outside the Node-only edit
+boundary. The separate browser classifier failure also needs an engine repair.
+
 ## Implemented and documented
 
 | Capability | TypeScript notation and meaning | Evidence |
@@ -74,6 +81,13 @@ The manifest has 35 entries including the root and two non-code assets.
   browser test correctly expects a capability error for `hyperpose`; no local
   classifier or weakened assertion was introduced. The engine owner was asked
   to repair this outside the Node edit boundary.
+- **The evidence checker needs component-aware Git lookup.**
+  `tests/checks/check_evidence_tags.py:commit_problems` invokes `git cat-file`
+  only in the superproject. It therefore rejects the valid Node implementation
+  commit in all 15 pinned citations. `git -C extensions/node rev-parse --verify
+  '484e554d80d0db7ed620d4ea609849fb0b81aadf^{commit}'` succeeds. The checker owner
+  was asked to resolve pins in the source file's repository, retaining root
+  history for inherited citations. The headers keep their genuine provenance.
 
 ## Verification
 
@@ -87,12 +101,13 @@ sources, as explicitly requested. No other superproject lane was run.
 |---|---|---|
 | `npm ci` | Passed; 0 vulnerabilities | `ai-tmp/ai-depth-npm-ci.log` |
 | Baseline `npm test` at `ec3a0dd` | 655 passed, 0 failed, 0 skipped | Battery `ai-tmp/ai-baseline-fixed.log` |
-| Final `npm test` at snapshot `4662121a896f6d6a6e2a4d6076798605572aeaa7` | 689 passed, 0 failed, 0 skipped | Battery `ai-tmp/ai-depth-test5.log` |
+| Final `npm test` at commit `484e554d80d0db7ed620d4ea609849fb0b81aadf` | 689 passed, 0 failed, 0 skipped | Battery `ai-tmp/ai-depth-commit-test.log` |
 | `npm run typecheck` | Passed | Battery `ai-tmp/ai-depth-types2.log` |
 | `npm run build:dist` | Passed | Battery `ai-tmp/ai-depth-dist2.log` |
 | Imports through actual `tsmetta`, `tsmetta/live`, `tsmetta/algebra` exports | Passed: prepared/given/live/native weighted query smoke | Battery `ai-tmp/ai-depth-package.log` |
 | `npm run test:browser` | 23 passed, 1 failed, 0 skipped; shared platform refusal classification above | Battery `ai-tmp/ai-depth-browser2.log` |
-| `sh tools/check.sh evidence` | Passed globally; 0 findings | `ai-tmp/ai-depth-evidence3.log` |
+| `sh tools/check.sh evidence` before final pins | Passed globally; 0 findings | `ai-tmp/ai-depth-evidence3.log` |
+| `sh tools/check.sh evidence` with final pins | Failed: 15 Node commit-resolution findings caused by the root-only Git lookup | `ai-tmp/ai-depth-evidence-final.log` |
 | `jscpd --reporters ai --noTips src` | Passed; two existing clones, 0.1%; reviewed and unrelated | `ai-tmp/ai-depth-clones.log` |
 | `git diff --check` | Passed | Git exit status 0 |
 
@@ -144,8 +159,11 @@ spaces, typed atoms, arrays, tables, compensation, remote serving and discovery.
   `tested: names uses in
   examples/ch20-extending-the-engine/20-04-modules-and-the-catalog/_fixtures/imports/import_order/uses.metta,
   which cannot report a failure: it holds no (test ...) or (assert ...) form`.
-  Quoting the complete executed case names removed that ambiguity. The final
-  evidence run has zero findings globally.
+  Quoting the complete executed case names removed that ambiguity and the next
+  run had zero findings globally. Pinning to the actual implementation commit
+  exposed the checker defect above: `commit=484e554d80d0db7ed620d4ea609849fb0b81aadf
+  does not resolve to a commit`. All 15 final findings have this same cause;
+  none disputes the existence or execution of the cited case.
 
 Local tooling also rejected unsupported record edits with `unknown node
 fields: parent`, `'native-notation is not a proposition'`, and

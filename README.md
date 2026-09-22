@@ -6,6 +6,38 @@ SWI, no Python, no server, no compiler.
 Semantics are PeTTa's. This is a surface onto that engine, not a second
 implementation of the language.
 
+<!-- shared:what-is-metta -->
+## What MeTTa is
+
+MeTTa is a language for rewriting metagraphs. A program and its data are the
+same thing: atoms in a space, where an atom is a symbol, a number, a variable
+or an expression built from other atoms, and a space is the metagraph they
+form together.
+
+You write equations rather than statements, and the engine matches a pattern
+against the whole space at once. A query answers with every match rather than
+the first, so a rule that fits three ways yields three results and search is
+something you write down instead of something you implement.
+
+One space holds symbolic rules and grounded values side by side: a number, a
+matrix, a handle to a trained model. A rule can match on what a model produced
+and a model can be called from inside a rule, so the neurosymbolic case is
+ordinary here rather than an integration between two systems. Both halves are
+atoms in the same metagraph, read by the same matcher.
+<!-- /shared:what-is-metta -->
+
+## Why TypeScript
+
+TypeScript is where LLM tooling is written: MCP servers, agent loops, and the
+services around them. The engine runs inside your Node process on a
+WebAssembly build, so there is no system install, no sidecar process and no
+compiler in the way of shipping one -- which is what lets a tool server carry
+a reasoner instead of calling one.
+
+The type system earns its place: terms are typed as you build them, so a
+malformed query is a compile error rather than a runtime answer of no results,
+and the same bundle runs in a browser.
+
 ```sh
 npm ci
 ```

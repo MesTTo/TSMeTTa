@@ -290,12 +290,13 @@ export interface CapabilityErrorOptions extends MettaErrorOptions {
 }
 
 /**
- * A capability this deployment, or this restricted space, does not have.
+ * A capability this restricted space does not have.
  *
- * A refusal from a restricted space carries the three parts the engine names,
- * so a caller grants the missing capability without reading the sentence. A
- * refusal about the BUILD (a platform library this deployment was made
- * without) names none of them and carries its message alone.
+ * The refusal carries the three parts the engine names, so a caller grants the
+ * missing capability without reading the sentence. A refusal about the BUILD
+ * is {@link PlatformCapabilityError}, which extends this one: catching
+ * `CapabilityError` catches both readings, and both carry
+ * `ERR_METTA_CAPABILITY`.
  */
 export class CapabilityError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_CAPABILITY";
@@ -312,6 +313,34 @@ export class CapabilityError extends MettaError {
     this.space = options.space;
     this.operation = options.operation;
     this.capability = options.capability;
+  }
+}
+
+/** What the build lacked, and what having it would have cost to add. */
+export interface PlatformCapabilityErrorOptions extends CapabilityErrorOptions {
+  /** What this deployment would have to be built with. */
+  readonly requires?: string | undefined;
+  /** What stays unavailable until it is. */
+  readonly costs?: string | undefined;
+}
+
+/**
+ * A platform capability this BUILD was not made with.
+ *
+ * `space` is always undefined here: nothing granted this refusal away, so the
+ * repair is a build rather than a grant, which is why the engine declares it
+ * as its own kind rather than folding it into the row above.
+ */
+export class PlatformCapabilityError extends CapabilityError {
+  /** What this deployment would have to be built with, as the engine spells it. */
+  readonly requires: string | undefined;
+  /** What stays unavailable until it is. */
+  readonly costs: string | undefined;
+
+  constructor(message: string, options: PlatformCapabilityErrorOptions = {}) {
+    super(message, options);
+    this.requires = options.requires;
+    this.costs = options.costs;
   }
 }
 
@@ -626,6 +655,14 @@ const KINDS: Readonly<
       space: fields["space"],
       operation: fields["operation"],
       capability: fields["capability"],
+    }),
+  platform: (text, fields, carried) =>
+    new PlatformCapabilityError(text, {
+      ...carried,
+      operation: fields["operation"],
+      capability: fields["capability"],
+      requires: fields["requires"],
+      costs: fields["costs"],
     }),
   operation: (text, fields, carried) =>
     new OperationError(text, {

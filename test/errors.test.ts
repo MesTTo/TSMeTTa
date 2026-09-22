@@ -98,6 +98,7 @@ const EXPECTED_CODES: Readonly<Record<string, Code>> = {
   MettaSyntaxError: "ERR_METTA_SYNTAX",
   NameError: "ERR_METTA_NAME",
   OperationError: "ERR_METTA_OPERATION",
+  PlatformCapabilityError: "ERR_METTA_CAPABILITY",
   ProviderError: "ERR_METTA_PROVIDER",
   RestraintError: "ERR_METTA_RESTRAINT",
   ResultError: "ERR_METTA_ABSENT",

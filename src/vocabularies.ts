@@ -426,6 +426,7 @@ export const RefusalKind = {
   type: "type",
   assertion: "assertion",
   capability: "capability",
+  platform: "platform",
   operation: "operation",
   stack: "stack",
   source: "source",

@@ -245,10 +245,12 @@ export {
 // Errors: one family, one base, one `code` per condition.
 export {
   CapabilityError,
+  PlatformCapabilityError,
   CastError,
   AssertionError,
   type AssertionErrorOptions,
   type CapabilityErrorOptions,
+  type PlatformCapabilityErrorOptions,
   ClosedError,
   type Code,
   CompileError,

@@ -73,7 +73,9 @@ caller never matches the message. One class per kind the engine publishes:
 (`RestraintError.restraint`, `.limit`, `.call`), `interrupted`
 (`InterruptedError`), `value` and `type` (`WireError`, `CastError`),
 `assertion` (`AssertionError.operation`), `capability`
-(`CapabilityError.space`, `.operation`, `.capability`), `operation`
+(`CapabilityError.space`, `.operation`, `.capability`), `platform`
+(`PlatformCapabilityError.requires`, `.costs`, and the operation and
+capability it inherits), `operation`
 (`OperationError.operation`, `.kind`, `.expected`, `.culprit`), `stack`
 (`StackLimitError.limit`) and `source` (`SourceNotFoundError.source`); anything
 else is `EngineError`. A `limit` is `undefined` where a budget expired inside a

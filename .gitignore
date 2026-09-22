@@ -14,3 +14,8 @@ _runtime/
 # for every other build product.
 *.py[cod]
 __pycache__/
+
+# Scratch beside the sources. The ai- prefix is this workspace mark for a
+# personal file, so the rule covers the class rather than each log as it
+# appears; two were swept into a commit by `git add -A` before it existed.
+ai-*

@@ -53,9 +53,20 @@ export function mettaName(identifier: string): string {
   return identifier.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
 }
 
+/**
+ * tsName at the type level, so the two cannot drift.
+ *
+ * The signature below returns `Camel<S>`, which makes the compiler check
+ * this type against the runtime replace on every call rather than leaving
+ * them as two descriptions of one rule. A name with no hyphen, `match` or
+ * `+`, images onto itself.
+ */
+export type Camel<S extends string> =
+  S extends `${infer Head}-${infer Rest}` ? `${Head}${Capitalize<Camel<Rest>>}` : S;
+
 /** The TypeScript identifier a MeTTa name images to: `car-atom` is `carAtom`. */
-export function tsName(name: string): string {
-  return name.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+export function tsName<S extends string>(name: S): Camel<S> {
+  return name.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase()) as Camel<S>;
 }
 
 /**

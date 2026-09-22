@@ -49,7 +49,12 @@ function apply(head: string, ...args: readonly Term[]): Atom {
  * `neg` is absent on purpose: MeTTa has no unary minus head, so the word is a
  * composite `(- 0 x)` and only the free function can build it.
  */
-export const OPERATOR_HEADS: Readonly<Record<string, string>> = {
+// `as const satisfies` rather than a Record annotation: the annotation
+// erased the keys, so `keyof typeof OPERATOR_HEADS` was `string`, which
+// collapsed factories.ts's Head union back into an index signature and
+// undid the whole point of it. The satisfies clause keeps the check the
+// annotation was there for.
+export const OPERATOR_HEADS = {
   eq: "==",
   ne: "!=",
   lt: "<",
@@ -66,7 +71,7 @@ export const OPERATOR_HEADS: Readonly<Record<string, string>> = {
   sqrt: "sqrt-math",
   floor: "floor-math",
   ceil: "ceil-math",
-};
+} as const;
 
 // ---------------------------------------------------------------------------
 // Comparison. The ecosystem's own roster.

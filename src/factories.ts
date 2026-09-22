@@ -44,7 +44,8 @@ import {
   toAtom,
   variable,
 } from "./atom.ts";
-import { mettaName } from "./naming.ts";
+import type { CatalogName } from "./heads.ts";
+import { type Camel, mettaName } from "./naming.ts";
 import { OPERATOR_HEADS } from "./words.ts";
 
 /** An expression built by applying a name, carrying which name and with what. */
@@ -94,6 +95,32 @@ export interface SymFactory {
   <const N extends string>(spelling: N): Name<N>;
   readonly [key: string]: Name;
 }
+
+/**
+ * Every head a caller may write on `fn`, as this seat spells it.
+ *
+ * `Camel<CatalogName>` images the engine's own catalog, and the operator
+ * words are the other door onto the same heads: `add` reaches `+`, which no
+ * casing rule could produce. Both halves are needed, and deriving the union
+ * from only one of them was measured wrong in both directions -- from the
+ * catalog alone there is no `add`, from the Python seat's aliases there is
+ * no `gte`, because that seat takes the operator module's `ge`.
+ */
+export type Head = Camel<CatalogName> | keyof typeof OPERATOR_HEADS;
+
+/**
+ * `fn` with its known heads as ORDINARY PROPERTIES.
+ *
+ * The index signature on SymFactory is what lets `fn` reach any head at all,
+ * and it is also why `fn.add` read `Name | undefined` under
+ * `noUncheckedIndexedAccess`: TypeScript widens every index read under that
+ * flag, and a template-literal key, a mapped type with `-?` and a
+ * NonNullable value type were each measured and each still widen. An
+ * explicit property is the only shape that does not, so the heads the engine
+ * actually publishes are declared as properties and the index signature is
+ * left for the rest, where `| undefined` is honest.
+ */
+export type FnFactory = SymFactory & { readonly [K in Head]: Name };
 
 /** The variable factory, the same shape: `V.x` is `$x`, `V("x")` keeps the literal. */
 export interface VarFactory {
@@ -165,11 +192,17 @@ export const V: VarFactory = factory(
  * is `+`. Those are the same words the free functions export, which is fork 1
  * option C: one mechanism, two positions.
  */
-export const fn: SymFactory = factory(
+export const fn: FnFactory = factory(
   makeName,
-  (key) => (Object.hasOwn(OPERATOR_HEADS, key) ? (OPERATOR_HEADS[key] as string) : mettaName(key)),
+  // The table has literal keys now, so an arbitrary string cannot index it
+  // in the type system even though Object.hasOwn has just established the
+  // key is there. Widening the TABLE at the read is the narrow cast; casting
+  // the key would claim something about the key that is not known.
+  (key) => (Object.hasOwn(OPERATOR_HEADS, key)
+    ? (OPERATOR_HEADS as Readonly<Record<string, string>>)[key] as string
+    : mettaName(key)),
   "fn",
-) as unknown as SymFactory;
+) as unknown as FnFactory;
 
 /**
  * The anonymous variable: fresh at every occurrence, so two of them constrain

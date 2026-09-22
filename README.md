@@ -65,10 +65,18 @@ TypeScript's casing reaches MeTTa's hyphens: `fn.carAtom` is `car-atom`, and a
 defined `function balanceOf` installs `balance-of`. For a head outside
 identifier grammar, index it: `fn["prime?"]`.
 
-`fn` reaches any head at all, and pays for it with an index signature: under
-`noUncheckedIndexedAccess` every `fn.x` is `Atom | undefined`, because as far
-as the type is concerned the head might not be there. The operators and
-control forms are also ordinary typed functions, which are not:
+The 267 heads the engine publishes are ordinary PROPERTIES on `fn`, generated
+from its own catalog, so `fn.carAtom` is checked, autocompleted, and needs no
+`!` even under `noUncheckedIndexedAccess`. Any other head still resolves
+through the index signature, where `Name | undefined` is honest because that
+head may not be there; `fn["assert-equal"]` spells one exactly, and so does
+`fn("add-translator-rule!")`.
+
+A head is a property only if its host spelling images back onto the engine's:
+`assertEqual` is not one, because the catalog already spells it that way while
+`mettaName` would send `fn.assertEqual` to `assert-equal`, a different head.
+
+The operators and control forms are also ordinary functions:
 
 ```ts
 import { add, gte, If } from "tsmetta";

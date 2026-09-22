@@ -69,12 +69,19 @@ The 267 heads the engine publishes are ordinary PROPERTIES on `fn`, generated
 from its own catalog, so `fn.carAtom` is checked, autocompleted, and needs no
 `!` even under `noUncheckedIndexedAccess`. Any other head still resolves
 through the index signature, where `Name | undefined` is honest because that
-head may not be there; `fn["assert-equal"]` spells one exactly, and so does
-`fn("add-translator-rule!")`.
+head may not be there.
 
-A head is a property only if its host spelling images back onto the engine's:
-`assertEqual` is not one, because the catalog already spells it that way while
-`mettaName` would send `fn.assertEqual` to `assert-equal`, a different head.
+A head is a property only if its host spelling images back onto the engine's.
+`assertEqual` is not one: the catalog already spells it that way, and the map
+sends both `fn.assertEqual` and `fn["assertEqual"]` to `assert-equal`, a
+different head. The CALL form is the exact door, because it mints the name
+given rather than mapping it:
+
+```ts
+fn("assertEqual");        // assertEqual, the catalog's own spelling
+fn["assertEqual"];        // assert-equal -- mapped, like the property
+fn["prime?"];             // prime?, because the map leaves this one alone
+```
 
 The operators and control forms are also ordinary functions:
 

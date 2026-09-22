@@ -41,7 +41,7 @@
 % Guarantees:
 %   - error transport runs outside transaction/snapshot scopes so exceptions
 %     roll back before crossing; committed views refresh through the shared
-%     observer hook [tested: "retains separate commit deltas and excludes rollback and speculation", "treats incompatible deterministic and streamed callback results as logical failure"; commit=WORKTREE].
+%     observer hook [tested: "retains separate commit deltas and excludes rollback and speculation", "treats incompatible deterministic and streamed callback results as logical failure"; commit=484e554d80d0db7ed620d4ea609849fb0b81aadf].
 %   - foreign participant capture retains its original provider value and
 %     completion applications; metta_node_yield/1 still refuses capture in a
 %     transaction or speculate callback

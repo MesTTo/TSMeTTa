@@ -10,7 +10,7 @@
  *     [measured 2026-08-27; quote operand return rechecked 2026-08-30]
  * Guarantees:
  *   - disposable identities and committed live queries retain engine ownership
- *     [tested: "maintains joined rows and one progress boundary for an atomic batch"; commit=WORKTREE].
+ *     [tested: "maintains joined rows and one progress boundary for an atomic batch"; commit=484e554d80d0db7ed620d4ea609849fb0b81aadf].
  *   - `add`, `delete`, `has`, `size` and `clear` mean what `Set` means by them,
  *     so a space reads as the collection it is
  *   - `match` answers ROWS keyed by the pattern's own variable names, in

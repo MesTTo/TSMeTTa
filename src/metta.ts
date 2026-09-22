@@ -7,7 +7,7 @@
  *     here either builds a term or asks the engine one
  * Guarantees:
  *   - prepared queries and disposable spaces share the native Space doors
- *     [tested: "refuses a prepared execution after its space was released"; commit=WORKTREE].
+ *     [tested: "refuses a prepared execution after its space was released"; commit=484e554d80d0db7ed620d4ea609849fb0b81aadf].
  *   - browser evaluation uses the same surface as Node; host file paths refuse
  *     by name [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  *   - `await metta()` is the whole boot: a module may say it at top level

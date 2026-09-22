@@ -2,7 +2,7 @@
  * Purpose: verify standing-query lifetime and committed materialized answers.
  * Owns resources: the suite disposes its engine, views and subscriptions.
  * Guarantees: seeding cannot lose an intervening write and removals retain
- *   multiset meaning [tested: "matches fresh engine joins through 150 generated mutations"; commit=WORKTREE].
+ *   multiset meaning [tested: "matches fresh engine joins through 150 generated mutations"; commit=484e554d80d0db7ed620d4ea609849fb0b81aadf].
  */
 
 import { strict as assert } from "node:assert";

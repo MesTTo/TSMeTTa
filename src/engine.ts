@@ -12,7 +12,7 @@
  *     protocol documented there
  * Guarantees:
  *   - resource control can run outside ambient transaction and snapshot
- *     policies [tested: "opens and closes observations independently of speculative writes"; commit=WORKTREE].
+ *     policies [tested: "opens and closes observations independently of speculative writes"; commit=484e554d80d0db7ed620d4ea609849fb0b81aadf].
  *   - Node and browser boot share the job and wire implementation
  *     [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  *   - metta_host_hold/3 makes jobs eager on their creating transaction's

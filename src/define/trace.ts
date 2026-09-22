@@ -9,7 +9,7 @@
  *     accumulate, and an emission's clause is everything asked above it
  * Guarantees:
  *   - match guards and bounds use the same term builder as direct queries
- *     [tested: "preserves guards and limits when lowering a prepared generator query"; commit=WORKTREE].
+ *     [tested: "preserves guards and limits when lowering a prepared generator query"; commit=484e554d80d0db7ed620d4ea609849fb0b81aadf].
  *   - `yield v` EMITS and `yield* g` ASKS, and each spelling has exactly one
  *     meaning wherever it appears, with no rule about position
  *   - a body that branches on a symbolic binding refuses at definition time,

@@ -65,6 +65,18 @@ TypeScript's casing reaches MeTTa's hyphens: `fn.carAtom` is `car-atom`, and a
 defined `function balanceOf` installs `balance-of`. For a head outside
 identifier grammar, index it: `fn["prime?"]`.
 
+`fn` reaches any head at all, and pays for it with an index signature: under
+`noUncheckedIndexedAccess` every `fn.x` is `Atom | undefined`, because as far
+as the type is concerned the head might not be there. The operators and
+control forms are also ordinary typed functions, which are not:
+
+```ts
+import { add, gte, If } from "tsmetta";
+
+add(1, 2);                            // (+ 1 2), as (a: Term, b: Term) => Atom
+If(gte(V.age, 18), S.adult, S.minor); // (if (>= $age 18) adult minor)
+```
+
 ## Ask
 
 ```ts
@@ -224,14 +236,17 @@ The sets are TypeScript unions, so the compiler carries the correction
 instead of the engine refusing at run time. These two do not compile, which
 is the point:
 
-<!-- These are deliberate type errors and are not part of the runnable
-     snippet below; tsc's own text is quoted beside each. -->
+<!-- Deliberate type errors, self-contained, and not part of any runnable
+     snippet; each line carries tsc's own text. -->
 ```ts
+import { EffectClass } from "tsmetta/vocabularies";
+
 EffectClass.pureStrucural;
 // TS2551: Property 'pureStrucural' does not exist. Did you mean 'pureStructural'?
 
-m.op(shout, { effect: "purestructural" });
+const effect: EffectClass = "purestructural";
 // TS2820: Type '"purestructural"' is not assignable to type 'EffectClass'.
+//         Did you mean '"pureStructural"'?
 ```
 
 ### Errors carry a code, not prose

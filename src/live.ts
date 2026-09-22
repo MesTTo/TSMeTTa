@@ -2,7 +2,7 @@
  * Purpose: expose committed query multisets and timestamped occurrence deltas.
  * Owns resources: a native view until close; each iterator owns its delta queue.
  * Guarantees: snapshots and progress refer to complete committed segments;
- *   failures reach readers [tested: "reports a failed recomputation while other views see the committed write"; commit=WORKTREE].
+ *   failures reach readers [tested: "reports a failed recomputation while other views see the committed write"; commit=94e5fc7eb685b895dde2878e7054332a0cb61c7d].
  * Decides: values remain atoms; columns are query variable names or `value`.
  */
 

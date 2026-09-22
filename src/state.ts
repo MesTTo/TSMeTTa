@@ -6,7 +6,7 @@
  *     [tested: "answers itself on write, as Map.set does"]
  * Guarantees:
  *   - term position uses the same opaque handle as reads and writes
- *     [tested: "uses spaces and mutable cells as their native atoms in every term position"; commit=WORKTREE].
+ *     [tested: "uses spaces and mutable cells as their native atoms in every term position"; commit=94e5fc7eb685b895dde2878e7054332a0cb61c7d].
  *   - `set` answers the CELL, so a write composes with a read in one
  *     expression, which is what `Map.prototype.set` and `Set.prototype.add`
  *     already do [tested: "reads, transforms and writes in one step"]

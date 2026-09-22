@@ -11,7 +11,7 @@
  *     [source: engine/spaces/bounded_matching.pl, metta_top_match/5]
  * Guarantees:
  *   - `matchUnder` reduces the engine's `match-under` term; cycles and carrier
- *     laws belong to the engine [tested: "reaches a native fixpoint on a cyclic idempotent tagged program"; commit=WORKTREE].
+ *     laws belong to the engine [tested: "reaches a native fixpoint on a cyclic idempotent tagged program"; commit=94e5fc7eb685b895dde2878e7054332a0cb61c7d].
  *   - only laws CHECKED over a finite carrier, or a trusted shipped preset's,
  *     license answer fusion, and the decision is reported rather than assumed
  *     [tested: "fuses only under a law it has checked"]

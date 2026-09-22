@@ -10,7 +10,7 @@
  * Guarantees:
  *   - cancelled pulls close their source once, and guarded queries use native
  *     boolean unification before output bounds [tested: "closes an answer source once when cancellation precedes or follows its pull", "applies native limits after guards for rows and evaluated templates";
- *     commit=WORKTREE].
+ *     commit=94e5fc7eb685b895dde2878e7054332a0cb61c7d].
  *   - nothing runs until something consumes: building an ask costs no engine
  *     work at all
  *   - `await ans` executes and collapses, which is where Drizzle and Kysely put

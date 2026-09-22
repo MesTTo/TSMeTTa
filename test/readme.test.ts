@@ -6,7 +6,7 @@
  *     compiled test lanes
  * Guarantees:
  *   - the depth sections' TypeScript fences execute through the real runtime
- *     [tested: "executes the depth examples"; commit=WORKTREE].
+ *     [tested: "executes the depth examples"; commit=94e5fc7eb685b895dde2878e7054332a0cb61c7d].
  *   - the documented subpaths are EXACTLY the package's code-module exports,
  *     derived from its own exports map rather than from a list here
  *     [tested: "ties every documented subpath to a package export";

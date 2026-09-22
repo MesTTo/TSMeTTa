@@ -2,7 +2,7 @@
  * Purpose: verify query notation, disposable ownership and native carriers.
  * Owns resources: one engine and explicitly disposed spaces and cursors.
  * Guarantees: prepared and traced queries agree with their native terms
- *   [tested: "preserves guards and limits when lowering a prepared generator query"; commit=WORKTREE].
+ *   [tested: "preserves guards and limits when lowering a prepared generator query"; commit=94e5fc7eb685b895dde2878e7054332a0cb61c7d].
  */
 import { strict as assert } from "node:assert";
 import { after, before, describe, it } from "node:test";

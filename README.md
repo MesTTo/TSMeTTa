@@ -1,10 +1,24 @@
 # MeTTa in TypeScript
 
-The engine runs inside your Node process on a WebAssembly SWI-Prolog. No system
-SWI, no Python, no server, no compiler.
+```ts
+import { metta, S, V } from "tsmetta";
 
-Semantics are PeTTa's. This is a surface onto that engine, not a second
-implementation of the language.
+const m = await metta();
+m.add(S.parent(S.tom, S.bob), S.parent(S.bob, S.ann));
+
+// Rows are keyed by the pattern's own variable names.
+for await (const { child } of m.match(S.parent(S.tom, V.child))) {
+  console.log(String(child));                    // bob
+}
+
+// An ordinary TypeScript function becomes ONE equation the engine holds, so
+// the call costs no host crossing.
+const twice = m.define(function twice(n: number): number { return n * 2; });
+console.log(String(await twice(21).one()));      // 42
+```
+
+The engine is a WebAssembly SWI-Prolog that boots inside the Node process, and
+the same bundle runs in a browser. PeTTa defines what the language means.
 
 <!-- shared:what-is-metta -->
 ## What MeTTa is
@@ -29,25 +43,13 @@ atoms in the same metagraph, read by the same matcher.
 
 ## Why TypeScript
 
-TypeScript is where LLM tooling is written: MCP servers, agent loops, and the
-services around them. The engine runs inside your Node process on a
-WebAssembly build, so there is no system install, no sidecar process and no
-compiler in the way of shipping one -- which is what lets a tool server carry
-a reasoner instead of calling one.
-
-The type system earns its place: terms are typed as you build them, so a
-malformed query is a compile error rather than a runtime answer of no results,
-and the same bundle runs in a browser.
+A tool server can carry a reasoner instead of calling one: MCP servers, agent
+loops and the services around them are written in TypeScript, and the engine
+ships with the package rather than beside it.
 
 ```sh
 npm ci
-```
-
-```ts
-import { metta, S, V, fn } from "./src/index.ts";
-
-const m = await metta();
-await m.eval(fn.add(1, 2)).one();        // 3
+npm run typecheck
 ```
 
 ## Build terms, don't concatenate strings
@@ -211,15 +213,25 @@ alphaKey(S.f(V.x)) === alphaKey(S.f(V.y));                    // true, one key p
 
 ### Closed sets a typo cannot pass
 
-The engine's own value sets are TypeScript unions, so naming one wrongly is a
-compile error rather than a refusal at run time. The members carry the
-camelCase-to-hyphen map with them.
-
 ```ts
 import { Atomicity, EffectClass } from "tsmetta/vocabularies";
 
-Atomicity.atomicSingle;      // "atomic-single", the host spelling mapping to the meaning's
+Atomicity.atomicSingle;      // "atomic-single": the host's casing, the meaning's hyphens
 EffectClass.pureStructural;  // "pureStructural"
+```
+
+The sets are TypeScript unions, so the compiler carries the correction
+instead of the engine refusing at run time. These two do not compile, which
+is the point:
+
+<!-- These are deliberate type errors and are not part of the runnable
+     snippet below; tsc's own text is quoted beside each. -->
+```ts
+EffectClass.pureStrucural;
+// TS2551: Property 'pureStrucural' does not exist. Did you mean 'pureStructural'?
+
+m.op(shout, { effect: "purestructural" });
+// TS2820: Type '"purestructural"' is not assignable to type 'EffectClass'.
 ```
 
 ### Errors carry a code, not prose

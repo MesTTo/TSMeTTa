@@ -160,6 +160,51 @@ if (atom instanceof Expression) {
 // npm run typecheck checks the atom types and their compile-time tests.
 ```
 
+### Structure without an engine
+
+Unification, one-way matching and alpha-canonical keys are plain functions over
+atoms; nothing boots.
+
+```ts
+import { alphaEqual, alphaKey, matchTerms, unifies } from "tsmetta/matching";
+
+unifies(S.parent(V.a, S.bob), S.parent(S.tom, V.b));          // true
+String(matchTerms(S.parent(V.child, S.bob), S.parent(S.tom, S.bob))?.["child"]);
+// "tom", keyed by the pattern's own variable name
+
+alphaEqual(S.f(V.x), S.f(V.y));                               // true
+alphaKey(S.f(V.x)) === alphaKey(S.f(V.y));                    // true, one key per shape
+```
+
+### Closed sets a typo cannot pass
+
+The engine's own value sets are TypeScript unions, so naming one wrongly is a
+compile error rather than a refusal at run time. The members carry the
+camelCase-to-hyphen map with them.
+
+```ts
+import { Atomicity, EffectClass } from "tsmetta/vocabularies";
+
+Atomicity.atomicSingle;      // "atomic-single", the host spelling mapping to the meaning's
+EffectClass.pureStructural;  // "pureStructural"
+```
+
+### Errors carry a code, not prose
+
+One base class, one named subclass per condition a caller can act on, and a
+stable `code` to match on so the wording stays free to change.
+
+```ts
+import { CastError, CompileError } from "tsmetta/errors";
+
+new CastError("planted").code;   // "ERR_METTA_CAST"
+CompileError.defaultCode;        // "ERR_METTA_LOWER"
+```
+
+Every value above is printed by `examples/subpaths-snippet.ts` and asserted in
+`test/gallery.test.ts`, so the page cannot show a call the package does not
+have or an answer it does not give.
+
 ## Theories
 
 Equations group as a class, which is the grouping form and is required
@@ -238,18 +283,42 @@ for await (const count of every(1_000, () => jobs.size, { signal: controller.sig
 
 ### Public subpaths
 
-| Subpath | Exports |
+Every code-module entry point the package exports, which is what
+`package.json`'s own exports map says rather than a list kept here.
+
+| Subpath | What it is |
 |---|---|
-| `tsmetta/algebra` | `counting`, `tropical`, `prob`, `prov`, `ranked`, and `TaggedAnswer.under` |
-| `tsmetta/arrays` | typed arrays, `Tensor`, `EmbeddingStore`, and `installArrays` |
-| `tsmetta/remote` | `connect`, `serve`, `RemoteSpace`, and `Gateway` |
+| `tsmetta/algebra` | Weighted answers: `counting`, `tropical`, `prob`, `prov`, `ranked`, and `TaggedAnswer.under` |
+| `tsmetta/ambient` | One lazily booted engine behind free functions, so a first program needs no setup line: `add`, `define`, `evaluate`, `engine`, `catalog`, `loadFile` |
+| `tsmetta/arrays` | Typed arrays, `Tensor`, `EmbeddingStore`, and `installArrays` |
+| `tsmetta/atom` | The atom algebra: one interned immutable value per MeTTa atom, narrowing by `instanceof`, printing as MeTTa text. `Expression`, `Grounded`, `FloatAtom`, `Sym`, `SpaceHandle`, `ATOM_OF` |
+| `tsmetta/browser` | Fetch, validate and compile a browser runtime once per root: `prepareRuntime`, `mountInto`, `runtimeVersion`, `forgetRuntime` |
+| `tsmetta/config` | The process-wide settings the engine and the presentation layer read, and the one place an operator sets them: `config`, `Setting`, `Settings` |
+| `tsmetta/convert` | `registerType`, `project`, `build`, and `autoImage` |
+| `tsmetta/derivation` | One proof of one answer, as data: the equations that fired, the stored atoms they rested on, and the goals the walk could not see inside. `derivationOf`, `ProofNode`, `Step`, `Fact`, `Truncated`, `readable` |
+| `tsmetta/errors` | The error family: one base class carrying a stable machine-readable `code`, one named subclass per condition a caller can act on. `EngineError`, `CompileError`, `CastError`, `CapabilityError`, `ClosedError`, `Code` |
+| `tsmetta/events` | A fold over a space's writes: a standing query that carries state, steps once per matching write, and is itself readable. `fold`, `EventStream`, `publish`, `stream`, `STATELESS` |
+| `tsmetta/integrate` | `integrate`, `discover`, `entryPoints`, and reflection helpers |
 | `tsmetta/lint` | `RULES`, `Finding`, `lint`, and `lintFile` |
 | `tsmetta/manifest` | `boot`, `Boot`, and `VOCABULARY` |
-| `tsmetta/tables` | `tableSpace`, `arrayTables`, and `bridge` |
-| `tsmetta/convert` | `registerType`, `project`, `build`, and `autoImage` |
-| `tsmetta/integrate` | `integrate`, `discover`, `entryPoints`, and reflection helpers |
-| `tsmetta/structures` | `TabledMap`; tables are query-local because swipl-wasm has threads disabled, so forms within one `run()` reuse and later jobs recompute |
+| `tsmetta/matching` | The structural operations over atoms that need no engine at all: `unifies`, `matchTerms`, `alphaEqual`, `alphaKey`, `alphaCanonical`, `isGround`, `renameVariables` |
+| `tsmetta/parallel` | The coordination verbs, spelled with the platform's own concurrency rather than the engine's: `race`, `merge`, `parMap`, `spawn`, `every`, `Channel`, `Task` |
 | `tsmetta/paths` | `Path`, `path`, `reach`, and `installPaths`; the engine calls a registered operation instead of lifting a marker from a pattern |
+| `tsmetta/provider` | A space whose atoms live in TypeScript, answering match, add, remove and enumeration for a named space: `CAPABILITIES`, `CUSTOM_MATCH`, `Adder`, `BulkAdder`, `Enumerable`, `BoundedMatcher` |
+| `tsmetta/random` | One deterministic pseudo-random source, shared by everything here that draws: `Random` |
+| `tsmetta/remote` | `connect`, `serve`, `RemoteSpace`, and `Gateway` |
+| `tsmetta/saga` | Record what a sequence of effectful steps committed, and undo it in reverse by the compensations the program declared: `saga`, `Saga`, `compensates`, `compensations` |
+| `tsmetta/seam` | This seat's one extension seam, the seat-level twin of `engine/ext_points.pl` and of `metta.seam` on the Python seat: `GROUP`, `KINDS`, `Point`, `Declaration`, `Claim` |
+| `tsmetta/spaces` | Space views and combinators, every one an ordinary `SpaceProvider`: a live `Map` becomes queryable and two spaces read as one. `view`, `union`, `overlay`, `diff`, `mapped`, `objectView`, `readOnly` |
+| `tsmetta/strategies` | The rewriting strategies the engine's strategy library reifies, so a plan is built in TypeScript and then stored, queried, serialised and applied: `Id`, `Fail`, `Seq`, `Choice`, `All`, `One`, `Repeat`, `BottomUp`, `Innermost` |
+| `tsmetta/structures` | `TabledMap`; tables are query-local because swipl-wasm has threads disabled, so forms within one `run()` reuse and later jobs recompute |
+| `tsmetta/subscribe` | Standing queries: a pattern, a space, and something that happens every time an atom matching it arrives or leaves. `subscribe`, `Subscription`, `LiveView`, `Event` |
+| `tsmetta/tables` | `tableSpace`, `arrayTables`, and `bridge` |
+| `tsmetta/testing` | Generate atoms, check properties over them, and hold a space implemented in TypeScript to the contract the engine expects of one: `atoms`, `forAll`, `booleans`, `Arbitrary` |
+| `tsmetta/tokens` | Reader classes of the host's own: a full-token regex and the JavaScript function that turns a matching lexeme into an atom. `registerToken`, `unregisterToken`, `tokens`, `construct` |
+| `tsmetta/version` | The version this package declares, read from its own manifest: `version` |
+| `tsmetta/vocabularies` | The engine's own closed value sets as TypeScript unions, so a program that names one names it exactly and a typo is a compile error: `VOCABULARIES`, `EffectClass`, `OpKind`, `SpaceCapability`, `isValueOf`, `effectRank` |
+| `tsmetta/wire` | The codec between MeTTa atoms and the tagged wire terms the engine reads and writes, in both directions and at both strictnesses: `Wire`, `Tag`, `Transport`, `atomFromWire`, `decodeEngine` |
 
 ## Verify
 

@@ -85,6 +85,22 @@ describe("the gallery", () => {
     assert.deepEqual(printed.trim().split("\n"), ["bob", "42", "ann", "oracleIO"]);
   });
 
+  it("keeps the README's subpath examples running", () => {
+    const printed = execFileSync(process.execPath, [examplePath("subpaths-snippet")], {
+      encoding: "utf-8",
+      timeout: 120_000,
+    });
+    // Every value the README quotes beside these calls, in the order it
+    // quotes them. CompileError's code is ERR_METTA_LOWER rather than
+    // anything named after the class, which is exactly the kind of thing a
+    // page states wrongly when nothing runs it.
+    assert.deepEqual(printed.trim().split("\n"), [
+      "true", "tom", "true", "true",
+      "atomic-single", "pureStructural",
+      "ERR_METTA_CAST", "ERR_METTA_LOWER",
+    ]);
+  });
+
   it("costs a constant number of crossings per ask, however deep the reduction", () => {
     const printed = execFileSync(process.execPath, [galleryPath()], {
       encoding: "utf-8",

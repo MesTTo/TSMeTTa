@@ -196,7 +196,7 @@
     "prepare": "npm run build:dist --silent && npm run build:browser --silent",
     "prepublishOnly": "node tools/refuse-early-publish.mjs",
     "test": "npm run build --silent && node --test \"build/test/*.test.js\"",
-    "test:source": "node --test \"test/*.test.ts\"",
+    "test:source": "node tools/require-type-stripping.mjs && node --test \"test/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
     "build:browser": "node tools/bundle-runtime.mjs && node tools/build-browser.mjs",
     "test:browser": "npm run build:browser --silent && node --test tools/browser.test.mjs"

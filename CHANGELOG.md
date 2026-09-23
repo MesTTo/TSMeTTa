@@ -4,6 +4,14 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- Loading or importing a file copes with a directory that changes while it is
+  read. The mount copied every entry of the file's directory after a `stat`,
+  so an entry removed between the listing and the read, such as another
+  process's scratch file, or a symbolic link whose target is gone raised
+  ENOENT and the load failed. The mount now lists entries with their types,
+  never opens a file its filter refuses, stats only a link to follow it, and
+  skips an entry that is gone by the time it is read; the directory asked for
+  still has to exist.
 - An answer that is the symbol `Empty` crosses as that symbol at the term
   door and through the reader: `m.eval(S.noeval(S.Empty))` answers
   `[Empty]`, `m.evalStatus` reports it as a `value`, and

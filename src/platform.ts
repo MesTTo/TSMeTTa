@@ -14,11 +14,15 @@
  *   [tested: extensions/node/check.sh node-dist, which asserts a packed
  *   package resolves the runtime copy packed beside it;
  *   commit=c478620e8c8a6690212528c64c30012ab69acfa3].
+ *   mountInto copies what a host directory holds while it is read, skipping
+ *   an entry that is gone by the time it is read, so a directory another
+ *   process writes into can be mounted [tested: "loads a file whose directory
+ *   holds a link to nothing"; commit=WORKTREE].
  * Owns resources: synchronous reads close their file descriptors before
  *   returning; the caller owns the destination WebAssembly filesystem.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { type Dirent, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -149,30 +153,64 @@ export function readTextFile(path: string): string {
   return readFileSync(path, "utf8");
 }
 
-/** Copy a host directory into the caller's WebAssembly filesystem. */
+/**
+ * Copy a host directory into the caller's WebAssembly filesystem.
+ *
+ * The copy is of what the directory holds while it is read. An entry that is
+ * gone by the time it is read, a file another process removed after the
+ * listing or a symbolic link whose target is missing, has nothing to copy and
+ * is skipped, as a tree walker skips ENOENT mid-walk; only the directory asked
+ * for has to exist. The listing carries each entry's type, so a file `keep`
+ * refuses is never opened and only a symbolic link is stat'ed, to follow it.
+ */
 export function mountInto(
   fs: RuntimeFS,
   hostDir: string,
   virtualDir: string,
   keep?: (name: string) => boolean,
 ): void {
-  let entries: string[];
+  let entries: Dirent[];
   try {
-    entries = readdirSync(hostDir);
+    entries = readdirSync(hostDir, { withFileTypes: true });
   } catch (error) {
     throw new SourceNotFoundError(`${hostDir} is not a directory this host can read`, {
       cause: error,
     });
   }
+  copyEntries(fs, hostDir, virtualDir, entries, keep);
+}
+
+function copyEntries(
+  fs: RuntimeFS,
+  hostDir: string,
+  virtualDir: string,
+  entries: readonly Dirent[],
+  keep: ((name: string) => boolean) | undefined,
+): void {
   fs.mkdirTree(virtualDir);
-  for (const name of entries) {
-    const hostPath = join(hostDir, name);
-    const virtualPath = `${virtualDir}/${name}`;
-    if (statSync(hostPath).isDirectory()) {
-      mountInto(fs, hostPath, virtualPath, keep);
-    } else if (keep === undefined || keep(name)) {
-      fs.writeFile(virtualPath, readFileSync(hostPath));
+  for (const entry of entries) {
+    const hostPath = join(hostDir, entry.name);
+    const virtualPath = `${virtualDir}/${entry.name}`;
+    const directory = entry.isSymbolicLink()
+      ? present(() => statSync(hostPath).isDirectory())
+      : entry.isDirectory();
+    if (directory === true) {
+      const inner = present(() => readdirSync(hostPath, { withFileTypes: true }));
+      if (inner !== undefined) copyEntries(fs, hostPath, virtualPath, inner, keep);
+    } else if (directory === false && (keep === undefined || keep(entry.name))) {
+      const data = present(() => readFileSync(hostPath));
+      if (data !== undefined) fs.writeFile(virtualPath, data);
     }
+  }
+}
+
+/** A host read's result, or undefined when what it reads is no longer there. */
+function present<T>(read: () => T): T | undefined {
+  try {
+    return read();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
   }
 }
 

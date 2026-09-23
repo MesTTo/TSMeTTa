@@ -13,11 +13,14 @@
  *     inside it resolving beside it [tested: "imports a file by its host path,
  *     and a relative import inside it";
  *     commit=bf758a5e0654c691ad64e2a5d998fb7c2e39108b]
+ *   - a file loads whatever else its directory holds, a link to nothing
+ *     included [tested: "loads a file whose directory holds a link to
+ *     nothing"; commit=WORKTREE]
  * Open Obligations: None.
  */
 
 import { strict as assert } from "node:assert";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -60,6 +63,20 @@ describe("space.import", () => {
     kb.add(S.friend(S.a, S.b));
     assert.deepEqual(await kb.fn.find(kb, S.friend(V.x, V.y)), [TRUE]);
     assert.deepEqual(await kb.fn.find(kb, S.friend(S.b, V.y)), [FALSE]);
+  });
+
+  it("loads a file whose directory holds a link to nothing", async () => {
+    // What another process removes between the listing and the read looks the
+    // same to the mount as a link whose target is gone: nothing to copy.
+    const directory = mkdtempSync(join(tmpdir(), "tsmetta-mount-"));
+    try {
+      writeFileSync(join(directory, "main.metta"), "(= (mounted) yes)\n");
+      symlinkSync(join(directory, "removed.metta"), join(directory, "dangling.metta"));
+      m.loadFile(join(directory, "main.metta"));
+      assert.deepEqual(await m.fn.mounted(), [S.yes.atom]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("imports a file by its host path, and a relative import inside it", async () => {

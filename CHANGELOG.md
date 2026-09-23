@@ -12,9 +12,10 @@ Open Obligations: None. -->
   the engine's own. `const [a, b] = v` is MeTTa's pattern `let` and `switch`
   is its `case`; a run of `const`s is `let*`, a statement run for its effect
   is `chain`, and a bare `return;` or running off the end answers the unit.
-  `this` is the space the definition installs into, and a space's own `add`,
-  `delete`, `match` and `atoms` on `this` or on a space in `{ scope }` lower to
-  `add-atom`, `subtract-atom`, `match` and `get-atoms`. Until now each of these
+  `this` is the space the definition installs into, and a space's own `match`
+  and `atoms` on `this` or on a space in `{ scope }` lower to `match` and
+  `get-atoms`; `add` and `delete` refuse there, naming the head to call,
+  because their host doors are wider than any one head. Until now each of these
   refused at definition time with
   "reads a property" or "calls something that is not a plain name". The word
   door's heads live in one table, `WORD_HEADS`, that the builders and the

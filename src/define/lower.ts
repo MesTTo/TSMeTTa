@@ -225,14 +225,16 @@ function grounded(name: string, argument: AcornExpression | undefined, scope: Lo
  * The engine operation a `Space` method performs, by method name and arity.
  *
  * A lowered body says to a space what host code says to it, and the lowering
- * reads the method back as the operation the host door performs: `add` stores
- * one atom, `delete` subtracts one occurrence and answers whether one was
- * there, `match` with a template queries, and `atoms` lists the store. A
- * method outside this table has no one-operation meaning in a body.
+ * reads a method back only where one MeTTa head performs exactly what the
+ * host door does: `match` with a template queries and `atoms` lists the
+ * store. `add` and `delete` are absent on purpose, because their host doors
+ * are wider than any one head: `add` stores a headless atom that `add-atom`
+ * refuses, and `delete` of an unbound term drains the space where
+ * `subtract-atom` refuses it [source: engine/spaces/foreign.pl,
+ * 'subtract-atom'/3 and metta_host_remove_reported/3]. A body names the
+ * operation it means instead, `fn.addAtom(this, atom)`.
  */
 const SPACE_METHODS: Readonly<Record<string, { readonly head: string; readonly arity: number }>> = {
-  add: { head: "add-atom", arity: 1 },
-  delete: { head: "subtract-atom", arity: 1 },
   match: { head: "match", arity: 2 },
   atoms: { head: "get-atoms", arity: 0 },
 };
@@ -260,7 +262,7 @@ function spaceMethod(
   if (method === undefined || method.arity !== arity) {
     refuse(
       `${scope.selfName} calls ${member.property.name} on a space with ${String(arity)} arguments`,
-      `a lowered body reads ${Object.entries(SPACE_METHODS).map(([name, { arity: n }]) => `${name}/${String(n)}`).join(", ")} on a space; reach any other operation through fn`,
+      `a lowered body reads ${Object.entries(SPACE_METHODS).map(([name, { arity: n }]) => `${name}/${String(n)}`).join(", ")} on a space; name any other operation through fn, as fn.addAtom(this, atom) or fn.subtractAtom(this, atom)`,
     );
   }
   return { head: method.head, space: lowerExpression(receiver, bindings, scope) };

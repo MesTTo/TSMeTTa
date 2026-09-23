@@ -70,10 +70,10 @@ installs ONE equation. Inside it: arithmetic, comparisons, `if`, ternaries,
 `const` (a `let`; a run of them is `let*`), `const [a, [b, c]] = v` (a
 pattern `let`), `switch` (a `case`, `default` tried last), a statement run for
 its effect (`chain`), a bare `return;` or running off the end (the unit `()`)
-and recursion. `this` is the space the definition installs into, and
-`this.add(x)`, `this.delete(x)`, `this.match(p, t)` and `this.atoms()` lower to
-`add-atom`, `subtract-atom`, `match` and `get-atoms`; a space from `{ scope }`
-takes the same four methods. Atoms are mentioned as they are
+and recursion. `this` is the space the definition installs into:
+`this.match(p, t)` and `this.atoms()` lower to `match` and `get-atoms`, and a
+write names its head, `fn.addAtom(this, x)`; a space from `{ scope }` takes
+the same two methods. Atoms are mentioned as they are
 built: `S.name`, `S.f(a, b)`, `S["x"]`, `S("exact")`, `V.x`, `fn.carAtom(x)`,
 `G("text")`, `float(2)`. Word-door functions (`If`, `Let`, `Collapse`,
 `Superpose`, `Quote`, `Empty`, `Match`, `carAtom`, `neg`, `e`, `nil`, the

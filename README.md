@@ -661,20 +661,21 @@ all the lowering reads, the factories and words are recognised by NAME: a local
 binding of the same name shadows them, and a renamed import
 (`import { S as Sym }`) is not one of them.
 
-`this` is the space the definition lives in, so a body says to its space what
-host code says to one: `this.add(atom)` stores, `this.delete(atom)` subtracts
-one occurrence, `this.match(pattern, template)` queries and `this.atoms()`
-lists. A space the body reaches by closure is named in `{ scope }`, since the
-source is all the lowering reads. A statement run for its effect is MeTTa's
-`chain`, and running off the end answers the unit, `()`, as a TypeScript
-function without a return answers `undefined`:
+`this` is the space the definition lives in, and a body says to it what host
+code says: `this.match(pattern, template)` queries and `this.atoms()` lists,
+the two host doors one MeTTa head performs exactly. A write names the engine's
+own operation, `fn.addAtom(this, atom)`, because the host `add` and `delete`
+doors are wider than any one head. A space the body reaches by closure is
+named in `{ scope }`, since the source is all the lowering reads. A statement
+run for its effect is MeTTa's `chain`, and running off the end answers the
+unit, `()`, as a TypeScript function without a return answers `undefined`:
 
 ```ts
 import { type Space, type Term } from "tsmetta";
 
 const notes = m.space(S.notes);
 const note = m.define(function note(this: Space, text: string): Term {
-  this.add(S.noted(text)); // (chain (add-atom &notes (noted $text)) $_ ...)
+  fn.addAtom(this, S.noted(text)); // (chain (add-atom &notes (noted $text)) $_ ...)
   return this.match(S.noted(V.said), V.said);
 }, { space: notes });
 (await note("hello").toArray()).map(String); // ['"hello"']

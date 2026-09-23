@@ -26,7 +26,6 @@ import { after, before, describe, it } from "node:test";
 import {
   Collapse,
   Empty,
-  FALSE,
   type Space,
   alphaEqual,
   Expression,
@@ -330,7 +329,7 @@ describe("a lowered body mentions", () => {
     const kb = m.space(S.lowerKb);
     kb.add(S.item(1), S.item(2));
     const stamp = m.define(function stamp(this: Space, n: number): Term {
-      this.add(S.stamped(n));
+      fn.addAtom(this, S.stamped(n));
       return this.match(S.item(V.found), S.seen(V.found));
     }, { space: kb });
     assert.equal(stamp.equations.length, 1);
@@ -343,19 +342,21 @@ describe("a lowered body mentions", () => {
 
     const other = m.space(S.lowerOther);
     other.add(S.token(1));
-    const take = m.define(function take(): Term {
-      return other.delete(S.token(1));
-    }, { scope: { other } });
-    assert.deepEqual(await take(), [TRUE]);
-    assert.deepEqual(await take(), [FALSE]);
     const listed = m.define(function listed(): Term {
       return other.atoms();
     }, { scope: { other } });
-    assert.deepEqual(await listed(), []);
-    assert.throws(
-      () => m.define(function wrong(): Term { return other.match(S.token(V.n)); }, { scope: { other } }),
-      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /match\/2/.test(error.message),
-    );
+    assert.deepEqual(await listed(), [S.token(1)]);
+    // A host door wider than any one head is not read back in a body: delete
+    // of an unbound term drains, where subtract-atom refuses one.
+    for (const wrong of [
+      function wrongArity(): Term { return other.match(S.token(V.n)); },
+      function wrongDoor(): Term { return other.delete(S.token(1)); },
+    ]) {
+      assert.throws(
+        () => m.define(wrong, { scope: { other } }),
+        (error: MettaError) => error.code === "ERR_METTA_LOWER" && /fn\.subtractAtom/.test(error.message),
+      );
+    }
   });
 });
 

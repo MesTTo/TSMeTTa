@@ -23,7 +23,8 @@
  *   - an arrow function is MeTTa's lambda, `(v) => v < 2` being
  *     `(|-> ($v) (< $v 2))`, and a binder that shadows a name of the body
  *     around it is a fresh variable, as JavaScript gives it a new binding
- *     [tested: "is an arrow function, in a lowered body and from the host"]
+ *     [tested: "is an arrow function, in a lowered body and from the host";
+ *     commit=ba06ef5686de791a739eae88f770e72446ef8cea]
  *   - a name a function was defined by reaches the head that definition
  *     installed under, an exact one included, and a name two definitions
  *     share refuses rather than guessing which binding the source meant

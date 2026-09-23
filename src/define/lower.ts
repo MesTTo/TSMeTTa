@@ -37,7 +37,7 @@
  *     answers, exactly where the result is determined and within one ulp
  *     where ECMA-262 leaves the function implementation-approximated
  *     [tested: "runs Math's functions in the engine as TypeScript runs them,
- *     over every draw"; commit=PENDING]
+ *     over every draw"; commit=e6aef0745a5ac5001c42fcd6c98f758e19049a43]
  *   - a name a function was defined by reaches the head that definition
  *     installed under, an exact one included, and a name two definitions
  *     share refuses rather than guessing which binding the source meant
@@ -55,7 +55,7 @@
  *     [tested: "folds unary minus over number and bigint literals into
  *     literal atoms"; commit=cb81a53d7e040cea283df784b097f95f2868a866; and
  *     "keeps Math's JavaScript meaning, over the engine's own math heads";
- *     commit=PENDING]
+ *     commit=e6aef0745a5ac5001c42fcd6c98f758e19049a43]
  *   - a body mentions atoms through the factories and words by the names the
  *     package exports them under, S, V, fn, G, float, WORD_HEADS,
  *     OPERATOR_HEADS and WORD_CONSTANTS, each lowering to the atom the same

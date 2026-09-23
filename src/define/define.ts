@@ -1,7 +1,8 @@
 /**
  * Purpose: the doors a program installs meaning through: `define`, which
  *   lowers a plain function's source or traces a generator into equations the
- *   engine holds, and `op`, which keeps host code as host code the engine calls.
+ *   engine holds, `rules`, which admits a generator's equations as data, and
+ *   `op`, which keeps host code as host code the engine calls.
  * Assumes:
  *   - `fn.name` is the head, mapped through TypeScript's own casing, so
  *     `function balanceOf` installs `balance-of`; `{ name: "prime?" }` opts in
@@ -17,6 +18,9 @@
  *     `h(twice, 2)` passes the symbol `twice` and `G(twice)` stays the spelling
  *     for the live object [tested: "is its head wherever a term goes";
  *     commit=1b31519d1e4a9f26bc004dba6decc58aca96bd53]
+ *   - `rules` stores every equation its generator yields exactly as written,
+ *     over the generator's parameters as variables, or refuses before storing
+ *     any [tested: "a rule set"]
  *   - a later lowered body reaches a definition by the name its function was
  *     written with, whatever head it installed under, and refuses a name two
  *     definitions share [tested: "reaches a definition installed under an
@@ -37,10 +41,10 @@
  *   Future Enhancements: None
  */
 
-import { ATOM_OF, type Atom, type Sym, type Term, expr, sym, toAtom, variable } from "../atom.ts";
-import { type Answers, type AskOptions } from "../answers.ts";
+import { ATOM_OF, type Atom, Expression, Sym, type Term, expr, sym, toAtom, variable } from "../atom.ts";
+import { type Answers, type AskOptions, isGoalRequest } from "../answers.ts";
 import { type EffectClass, type OpKind } from "../engine.ts";
-import { MettaError, NameError } from "../errors.ts";
+import { CompileError, MettaError, NameError } from "../errors.ts";
 import { mettaName } from "../naming.ts";
 import { type Space } from "../space.ts";
 import { joinEffects } from "../vocabularies.ts";
@@ -57,6 +61,12 @@ export interface DefineOptions {
   readonly scope?: Readonly<Record<string, Term>>;
   /** An arrow type to declare beside the equations. */
   readonly type?: Term;
+}
+
+/** What `rules` may say about itself. */
+export interface RulesOptions {
+  /** Where the equations go. The engine's own self space, by default. */
+  readonly space?: Space;
 }
 
 /** What `op` may say about itself. */
@@ -284,6 +294,62 @@ function callable(
     },
     toString: (): string => head,
   }) as Defined;
+}
+
+/**
+ * Admit a generator's equations as data, and answer them.
+ *
+ * The generator notation `define` traces, admitted as data rather than traced
+ * into clauses: the parameters are the rule set's variables, named after the
+ * function's own, and every `yield` is one equation, `rewrite(lhs, rhs)`,
+ * stored exactly as written. It is the door for heads that are PATTERNS,
+ * `(= (depth leaf) 0)` beside `(= (depth (wrap $x)) ...)`, where a
+ * definition's head is always its function's parameters. Every yield is
+ * checked before any is stored, so a refused set lands nothing.
+ */
+export function rules(
+  install: Installer,
+  target: (...args: never[]) => Generator<unknown, unknown, unknown>,
+  options: RulesOptions = {},
+): readonly Expression[] {
+  const name = target.name === "" ? "a rule set" : target.name;
+  if (!isGenerator(target)) {
+    throw new CompileError(`${name} is not a generator; rules admits the equations a generator yields`, {
+      code: "ERR_METTA_TRACE",
+    });
+  }
+  const equations: Expression[] = [];
+  for (const yielded of target(...(paramsOf(target, target.length) as never[]))) {
+    if (isGoalRequest(yielded)) {
+      throw new CompileError(
+        `${name} asks a goal while its rules are written; a rule set is data, so build the term the rule holds`,
+        { code: "ERR_METTA_TRACE" },
+      );
+    }
+    const atom = toAtom(yielded as Term);
+    if (!isEquation(atom)) {
+      throw new CompileError(`${name} yields ${String(atom)}, which is not an equation; yield rewrite(lhs, rhs)`, {
+        code: "ERR_METTA_TRACE",
+      });
+    }
+    equations.push(atom);
+  }
+  if (equations.length === 0) {
+    throw new CompileError(`${name} yields no equation`, { code: "ERR_METTA_TRACE" });
+  }
+  (options.space ?? install.self).add(...equations);
+  for (const equation of equations) {
+    const lhs = equation.items[1];
+    if (lhs instanceof Expression && lhs.items[0] instanceof Sym) {
+      install.remember(lhs.items[0].name, lhs.items.length - 1);
+    }
+  }
+  return Object.freeze(equations);
+}
+
+/** `(= lhs rhs)`. */
+function isEquation(atom: Atom): atom is Expression {
+  return atom instanceof Expression && atom.items.length === 3 && atom.items[0] === sym("=");
 }
 
 /**

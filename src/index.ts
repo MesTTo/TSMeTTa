@@ -162,6 +162,7 @@ export {
   type DefineOptions,
   type Installer,
   type OpOptions,
+  type RulesOptions,
   isTracing,
 } from "./define/define.ts";
 export { type Body, type Clause, type TracedGoal } from "./define/trace.ts";

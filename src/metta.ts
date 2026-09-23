@@ -92,7 +92,16 @@ import {
 } from "./space.ts";
 import { type SpaceProvider, registerProvider, unregisterProvider } from "./provider.ts";
 import { view } from "./spaces.ts";
-import { type Defined, type DefineOptions, type OpOptions, define as defineDoor, isTracing, op as opDoor } from "./define/define.ts";
+import {
+  type Defined,
+  type DefineOptions,
+  type OpOptions,
+  type RulesOptions,
+  define as defineDoor,
+  isTracing,
+  op as opDoor,
+  rules as rulesDoor,
+} from "./define/define.ts";
 import { State, type StateOptions, type Widen } from "./state.ts";
 import { type TheoryClass, methodsOf } from "./theory.ts";
 import { atomFromWire, fromTransport, toTransport, wireFromAtom } from "./wire.ts";
@@ -602,6 +611,24 @@ export class MeTTa implements Disposable {
   /** Install a definition and answer the callable it names. */
   define(target: (...args: never[]) => unknown, options: DefineOptions = {}): Defined {
     return defineDoor(this.#installer(), target, options);
+  }
+
+  /**
+   * Admit the equations a generator yields, as written: the door for heads that
+   * are patterns, where `define`'s head is always its function's parameters.
+   *
+   * ```ts
+   * m.rules(function* depth(inner: Term) {
+   *   yield rewrite(S.depth(S.leaf), 0);
+   *   yield rewrite(S.depth(S.wrap(inner)), add(1, S.depth(inner)));
+   * });
+   * ```
+   */
+  rules(
+    target: (...args: never[]) => Generator<unknown, unknown, unknown>,
+    options: RulesOptions = {},
+  ): readonly Expression[] {
+    return rulesDoor(this.#installer(), target, options);
   }
 
   /** Keep a body as host code the engine calls. */

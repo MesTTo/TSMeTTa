@@ -181,7 +181,8 @@ String((await scores.match(S.score(S.ada, V.n)).one())["n"]); // "3"
 
 ### Definition doors
 
-Lower a function, trace a generator, or call host code from MeTTa.
+Lower a function, trace a generator, admit a generator's equations as data,
+or call host code from MeTTa.
 
 ```ts
 const twice = m.define(function twice(n: number): number { return n * 2; });
@@ -189,6 +190,11 @@ String(await twice(21).one()); // "42", an engine equation
 
 const colour = m.define(function* colour() { yield S.red; yield S.blue; });
 (await colour().toArray()).map(String); // ["red", "blue"], traced clauses
+
+m.rules(function* depth(inner: Term) {
+  yield rewrite(S.depth(S.leaf), 0);
+  yield rewrite(S.depth(S.wrap(inner)), add(1, S.depth(inner)));
+}); // two equations whose heads are patterns, stored as written
 
 const shout = m.op(function shout(text: string): string {
   return text.toUpperCase();
@@ -722,6 +728,24 @@ const note = m.define(function note(this: Space, text: string): Term {
   return this.match(S.noted(V.said), V.said);
 }, { space: notes });
 (await note("hello").toArray()).map(String); // ['"hello"']
+```
+
+A definition's head is always its function's parameters, so a family of
+equations whose heads are PATTERNS, one clause for `leaf` and one for
+`(wrap $inner)`, is written as the equations it is. `m.rules` takes the
+generator shape a traced `define` reads, runs it once with its parameters as
+the rule set's variables, and stores every equation it yields exactly as
+written, after checking them all:
+
+```ts
+import { add, rewrite, type Term } from "tsmetta";
+
+const depth = m.rules(function* depth(inner: Term) {
+  yield rewrite(S.depth(S.leaf), 0);
+  yield rewrite(S.depth(S.wrap(inner)), add(1, S.depth(inner)));
+});
+String(depth[1]); // "(= (depth (wrap $inner)) (+ 1 (depth $inner)))"
+String(await m.eval(S.depth(S.wrap(S.wrap(S.leaf)))).one()); // "2"
 ```
 
 ## The engine's functions, and its libraries

@@ -87,6 +87,10 @@ head `in` that `{ name: "in" }` installed; a name two definitions share
 refuses. What `define` returns is its head in term position, so `h(twice, 2)`
 passes the symbol and `G(twice)` the live object. A generator body is
 TRACED instead, which is the door for queries (`yield* m.match(...)`).
+Equations whose HEADS are patterns go through `m.rules(function* name(x, xs)
+{ yield rewrite(S.f(S.leaf), 0); ... })`: the generator runs once with its
+parameters as variables and every yield, which must be an equation, is stored
+as written; a goal or a non-equation refuses before anything lands.
 
 ## Asking the engine's functions, and importing
 

@@ -347,9 +347,9 @@ export class PlatformCapabilityError extends CapabilityError {
 /**
  * A body this surface could not turn into equations.
  *
- * `ERR_METTA_TRACE` when a generator body could not be traced,
- * `ERR_METTA_LOWER` when a plain body could not be lowered from its own
- * source. Both are the same failure to a caller: the definition did not
+ * `ERR_METTA_TRACE` when a generator body could not be traced or its rule set
+ * admitted, `ERR_METTA_LOWER` when a plain body could not be lowered from its
+ * own source. Both are the same failure to a caller: the definition did not
  * install, and the message names the construct and the remedy.
  */
 export class CompileError extends MettaError {

@@ -34,6 +34,13 @@ Open Obligations: None. -->
   `effectOf` and `disassemble` read a name string by the same rule. A name
   nothing defines yet refuses naming the mention door, `S.g(...)`, beside the
   ways to supply it.
+- `m.rules(function* name(x, xs) { yield rewrite(lhs, rhs); ... })` stores the
+  equations a generator yields exactly as written, with the generator's
+  parameters as their variables: the door for heads that are patterns, such
+  as `(= (depth leaf) 0)` beside `(= (depth (wrap $x)) ...)`, which `define`
+  cannot say because its head is always its function's parameters. Every
+  yield is checked before any lands, and a goal, a non-equation or an empty
+  set refuses with `ERR_METTA_TRACE`. PyMeTTa's `@m.rules` is the same door.
 - What `define` and `op` return is its head wherever a term goes: `h(twice,
   2)` asks `(h twice 2)`, where it used to ground the JavaScript function, and
   `G(twice)` is the spelling for the live object.

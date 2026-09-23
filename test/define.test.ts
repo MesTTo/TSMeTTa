@@ -522,6 +522,49 @@ describe("a traced body", () => {
   });
 });
 
+describe("a rule set", () => {
+  it("stores each yielded equation as written, over the generator's parameters as variables", async () => {
+    const depth = m.rules(function* depth(inner: Term) {
+      yield rewrite(S.depth(S.leaf), 0);
+      yield rewrite(S.depth(S.wrap(inner)), add(1, S.depth(inner)));
+    });
+    assert.deepEqual(depth.map(String), ["(= (depth leaf) 0)", "(= (depth (wrap $inner)) (+ 1 (depth $inner)))"]);
+    assert.ok(depth.every((equation) => m.self.has(equation)));
+    assert.equal(String(await m.eval(S.depth(S.wrap(S.wrap(S.leaf)))).one()), "2");
+  });
+
+  it("checks every yield before storing any, and refuses what is not an equation", () => {
+    const before = m.self.size;
+    assert.throws(
+      () =>
+        m.rules(function* halfWritten() {
+          yield rewrite(S.landed(), 1);
+          yield S.notAnEquation(2);
+        }),
+      (error: MettaError) => error.code === "ERR_METTA_TRACE" && /not an equation/.test(error.message),
+    );
+    assert.equal(m.self.size, before, "a refused rule set lands nothing");
+  });
+
+  it("refuses a goal, a body that yields nothing, and a plain function", () => {
+    assert.throws(
+      () =>
+        m.rules(function* asking() {
+          yield* m.match(S.anything(V.x));
+        }),
+      (error: MettaError) => error.code === "ERR_METTA_TRACE" && /asks a goal/.test(error.message),
+    );
+    assert.throws(
+      () => m.rules(function* silent() {}),
+      (error: MettaError) => error.code === "ERR_METTA_TRACE" && /no equation/.test(error.message),
+    );
+    assert.throws(
+      () => m.rules((() => rewrite(S.plain(), 1)) as never),
+      (error: MettaError) => error.code === "ERR_METTA_TRACE" && /not a generator/.test(error.message),
+    );
+  });
+});
+
 describe("a host operation", () => {
   it("dispatches the currently registered arity at a shared name", async () => {
     const first = m.op(function pickByArity(_value: number): string {

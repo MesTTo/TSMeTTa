@@ -4,6 +4,9 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- Run synchronous parsing inside a job so registered host token constructors
+  can answer; preserve named variables and propagate constructor failures.
+
 - Preserve literal source-query columns through the ambient free-function
   wrapper as well as the runtime method; verified by compile-time and runtime
   checks using a quoted dollar and one actual variable.

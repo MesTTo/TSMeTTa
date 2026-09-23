@@ -39,6 +39,8 @@
 %     PeTTa@ae66fa8e41dcd5539d614706bd4e5cfb34f9608d src/metta.pl,
 %     eval_20/6 clauses for '==' and '!='].
 % Guarantees:
+%   - the read command pumps host token constructors inside a job
+%     [tested: extensions/node/test/reader-boundary.test.ts; commit=WORKTREE].
 %   - error transport runs outside transaction/snapshot scopes so exceptions
 %     roll back before crossing; committed views refresh through the shared
 %     observer hook [tested: "retains separate commit deltas and excludes rollback and speculation", "treats incompatible deterministic and streamed callback results as logical failure"; commit=94e5fc7eb685b895dde2878e7054332a0cb61c7d].
@@ -870,6 +872,7 @@ metta_node_verb(commit, 3).
 metta_node_verb(platform, 0).
 metta_node_verb(trace, 3).
 metta_node_verb(forms, 1).
+metta_node_verb(read, 1).
 metta_node_verb(cast, 3).
 metta_node_verb(disassemble, 2).
 metta_node_verb(derivation, 3).
@@ -1230,6 +1233,9 @@ metta_node_command(trace, [Src0, Space0, Max0], [value, Wire]) :-
 % kind the engine's own reader gave it. The wire carries the parsed atom
 % beside its kind, so a caller that wants the terms does not pay a second
 % crossing per form to parse the text again.
+metta_node_command(read, [Source], [value, Wire]) :-
+    metta_node_read(Source, Wire).
+
 metta_node_command(forms, [Src0], [value, Wire]) :-
     metta_node_text(Src0, Src),
     metta_host_read_forms(Src, Pairs),

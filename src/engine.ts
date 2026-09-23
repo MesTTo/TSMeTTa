@@ -11,6 +11,8 @@
  *   - `bridge.pl` sits beside this file's package root and speaks the job
  *     protocol documented there
  * Guarantees:
+ *   - synchronous reading can call registered host token constructors
+ *     [tested: test/reader-boundary.test.ts; commit=WORKTREE].
  *   - asynchronous query completion waits for provider finalizers
  *     [tested: test/resource-table-boundary.test.ts; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  *   - resource control can run outside ambient transaction and snapshot
@@ -960,12 +962,15 @@ export class Engine {
     );
   }
 
-  // --- the codec doors, which need no engine --------------------------------
+  // --- source reading and codec round trips ---------------------------------
 
   /** One atom of MeTTa source, through the engine's own reader. */
   read(text: string): Atom {
-    const answer = this.once("metta_node_read(Src, Wire)", { Src: text });
-    return this.decodeAtom(answer["Wire"]);
+    const event = this.start(["read", text]).sync();
+    if (event === null || event.kind !== "value") {
+      throw new TransportError("the source reader returned no atom");
+    }
+    return event.atom;
   }
 
   /** An atom's round trip through the engine: decode it, then encode it back. */

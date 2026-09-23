@@ -6,7 +6,7 @@
  *     because the engine is WebAssembly and instantiating it is a promise
  * Guarantees:
  *   - `q` preserves literal query columns through the deferred wrapper
- *     [tested: "ambient source columns preserve the literal query"; commit=WORKTREE].
+ *     [tested: "ambient source columns preserve the literal query"; commit=d8bcc2de2cc2024b78637e8862a165cf14627da9].
  *   - importing this module boots NOTHING. The engine is created by the first
  *     verb that needs it, and a program that only builds terms never starts one
  *     [tested: "boots nothing until a verb needs the engine"]

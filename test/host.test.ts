@@ -7,17 +7,17 @@
  *     engine/host_patches.pl, which boot() mounts with the rest of engine/
  *   - npm's swipl-wasm, a devDependency and nothing else, is the stock host:
  *     SWI-Prolog's own WebAssembly build, whose home holds no declaration
- *     [tested: "refuses the stock npm swipl-wasm"; commit=WORKTREE]
+ *     [tested: "refuses the stock npm swipl-wasm"; commit=b18f7d31d58691f97112d0de67b0136bfd8a3291]
  * Guarantees:
  *   - the host in _host/ boots and evaluates [tested: "boots on the host this
- *     package carries"; commit=WORKTREE]
+ *     package carries"; commit=b18f7d31d58691f97112d0de67b0136bfd8a3291]
  *   - a requirement the host does not declare refuses boot with EngineError
  *     naming the missing patch [tested: "refuses a host whose declaration
- *     lacks a patch the engine requires"; commit=WORKTREE]
+ *     lacks a patch the engine requires"; commit=b18f7d31d58691f97112d0de67b0136bfd8a3291]
  *   - the stock npm swipl-wasm, put where this package keeps its host, refuses
  *     boot with EngineError carrying the engine's sentence, through the same
  *     boot() a consumer calls [tested: "refuses the stock npm swipl-wasm";
- *     commit=WORKTREE]
+ *     commit=b18f7d31d58691f97112d0de67b0136bfd8a3291]
  *   - a refusal writes nothing to the console [tested: both refusal cases]
  * Owns resources: one scratch directory per case under build/, which the
  *   next build deletes and each case removes on the way out.

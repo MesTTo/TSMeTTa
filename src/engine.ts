@@ -18,7 +18,7 @@
  *     host that does not declare every patch the engine requires is refused
  *     with EngineError carrying the engine's own sentence, as the Python seat
  *     refuses it [tested: "refuses a host whose declaration lacks a patch the
- *     engine requires", "refuses the stock npm swipl-wasm"; commit=WORKTREE]
+ *     engine requires", "refuses the stock npm swipl-wasm"; commit=b18f7d31d58691f97112d0de67b0136bfd8a3291]
  *   - synchronous reading can call registered host token constructors
  *     [tested: test/reader-boundary.test.ts; commit=9d6b109740b1744b734b53b563a3be8642d24c0e].
  *   - asynchronous query completion waits for provider finalizers

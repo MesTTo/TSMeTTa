@@ -111,6 +111,7 @@ export {
   not,
   or,
   pow,
+  rewrite,
   sqrt,
   sub,
   typed,

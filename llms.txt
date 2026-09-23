@@ -63,6 +63,19 @@ That last pair is the one to get right. `fn` maps a readable name onto the
 operation the engine actually has, so `fn.add` is `+`; `S.add` builds a term
 headed by the symbol `add`, which nothing defines, so it comes back unreduced.
 
+## A lowered body
+
+`m.define(function f(...) {...})` reads a plain function's own source and
+installs ONE equation. Inside it: arithmetic, comparisons, `if`, ternaries,
+`const` (a `let`), `const [a, [b, c]] = v` (a pattern `let`), `switch` (a
+`case`, `default` tried last) and recursion. Atoms are mentioned as they are
+built: `S.name`, `S.f(a, b)`, `S["x"]`, `S("exact")`, `V.x`, `fn.carAtom(x)`,
+`G("text")`, `float(2)`. Word-door functions (`If`, `Let`, `Collapse`,
+`Superpose`, `Quote`, `Empty`, `Match`, `carAtom`, `neg`, `e`, `nil`, the
+operator words) and constants (`TRUE`, `FALSE`, `UNIT`, `UNDEFINED`) are read
+by their exported names after the engine's own heads. A generator body is
+TRACED instead, which is the door for queries (`yield* m.match(...)`).
+
 ## Asking, lazily
 
 An answer set is a thenable and nothing runs until you await it:

@@ -616,6 +616,50 @@ The query and observation examples are exercised by `test/depth-parity.test.ts`
 and `test/live-parity.test.ts`; the existing satellite, provider, saga and remote
 suites cover those doors.
 
+## What a lowered body says
+
+A plain function handed to `define` is read from its own source and becomes
+one equation, so its body is TypeScript whose meaning is MeTTa. Arithmetic,
+comparisons, `if`, `const`, ternaries and recursion are the engine's own. An
+atom is mentioned the way it is built: `S.name` is a symbol, `S.pair(a, b)`
+an expression, `V.x` a variable, `fn.carAtom(x)` an engine call and
+`G("text")` a grounded literal. The word door's functions and constants
+(`If`, `Collapse`, `Superpose`, `carAtom`, `neg`, `e`, `TRUE`, `UNIT`) are
+read by the names this package exports them under, after the engine's own
+heads, so a definition of your own called `add` wins over the word.
+
+```ts
+import { Superpose, type Term } from "tsmetta";
+
+const classify = m.define(function classify(n: number): Term {
+  switch (n) {
+    case 0:
+      return S.zero;
+    default:
+      return n > 0 ? S.positive : S.negative;
+  }
+});
+(await classify(-3).one()).text; // "negative"
+
+const swap = m.define(function swap(pair: Term): Term {
+  const [left, right] = pair as [Term, Term]; // (let ($left $right) $pair ...)
+  return S.swapped(right, left);
+});
+String(await swap([1, 2]).one()); // "(swapped 2 1)"
+
+const signs = m.define(function signs(x: number): Term {
+  return Superpose([x, -x]);
+});
+(await signs(4).toArray()).map(String); // ["4", "-4"]
+```
+
+Array destructuring is MeTTa's pattern `let`, and a `switch` is its `case`:
+labels without statements share the next arm, a clause ending in `break`
+continues after the switch, and `default` is tried last whatever its position,
+as TypeScript tries it. Because the source is all the lowering reads, the
+factories and words are recognised by NAME: a local binding of the same name
+shadows them, and a renamed import (`import { S as Sym }`) is not one of them.
+
 ## Theories
 
 Equations group as a class, which is the grouping form and is required

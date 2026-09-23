@@ -10,6 +10,10 @@
  *   - a null literal lowers to MeTTa's empty expression rather than a symbol
  *     that only renders the same way [tested: "lowers null to the empty
  *     expression"; commit=191f969429df26e26769391d44234f20af481fff]
+ *   - a lowered body mentions atoms through S, V and fn, grounds literals
+ *     through G and float, and calls the word door's words, each lowering to
+ *     the atom the same spelling builds at run time; array destructuring is a
+ *     pattern let and a switch is a case [tested: "a lowered body mentions"]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -21,15 +25,29 @@ import { after, before, describe, it } from "node:test";
 
 import {
   Collapse,
+  Empty,
+  alphaEqual,
   Expression,
+  G,
+  If,
   type MeTTa,
   MettaError,
   S,
   Superpose,
+  TRUE,
   type Term,
+  UNIT,
   V,
+  carAtom,
+  e,
+  float,
+  fn,
   hostValue,
   metta,
+  neg,
+  nil,
+  rewrite,
+  toAtom,
 } from "../src/index.ts";
 
 let m: MeTTa;
@@ -192,6 +210,104 @@ describe("a lowered body", () => {
     assert.throws(
       () => m.define((n: number): number => n),
       (error: MettaError) => error.code === "ERR_METTA_NAME",
+    );
+  });
+});
+
+describe("a lowered body mentions", () => {
+  it("atoms through S, V and fn, as the same spellings build them", async () => {
+    const testFunc = m.define(function testFunc(): Term {
+      return S.result;
+    });
+    assert.deepEqual(testFunc.equations, [rewrite(S.testFunc(), S.result)]);
+    assert.deepEqual(await testFunc(), [S.result.atom]);
+
+    const pairOf = m.define(function pairOf(a: number, b: number): Term {
+      return S.pair(a, S["car-atom"].atom, S("isPrime"), V.free, fn.add(a, b));
+    });
+    assert.deepEqual(pairOf.equations, [
+      rewrite(S.pairOf(V.a, V.b), S.pair(V.a, S.carAtom, S("isPrime"), V.free, S["+"](V.a, V.b))),
+    ]);
+    // The engine renames an answer's free variable, so the answer is compared
+    // up to that renaming.
+    assert.ok(alphaEqual(await pairOf(1, 2).one(), S.pair(1, S.carAtom, S("isPrime"), V.free, 3)));
+  });
+
+  it("grounds literals through G and float, and refuses a host value", async () => {
+    const texts = m.define(function texts(): Term {
+      return e(G("a (b) c"), float(2), G(-3), G(true), G(7n));
+    });
+    assert.deepEqual(texts.equations, [rewrite(S.texts(), e("a (b) c", float(2), -3, true, 7n))]);
+    // A safe integer comes back as a number, whichever host type wrote it.
+    assert.deepEqual(await texts(), [e("a (b) c", float(2), -3, true, 7)]);
+    assert.throws(
+      () =>
+        m.define(function hosting(x: number): Term {
+          return G(x);
+        }),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /not a literal/.test(error.message),
+    );
+  });
+
+  it("the word door's words and constants, after the engine's own heads", async () => {
+    const worded = m.define(function worded(x: number): Term {
+      return If(x > 0, Collapse(Superpose([x, neg(x)])), e(TRUE, UNIT, nil(), carAtom([x, 2]), Empty()));
+    });
+    assert.deepEqual(worded.equations, [
+      rewrite(
+        S.worded(V.x),
+        S.if(S[">"](V.x, 0), S.collapse(S.superpose(e(V.x, S["-"](0, V.x)))), e(TRUE, UNIT, nil(), S.carAtom(e(V.x, 2)), S.empty())),
+      ),
+    ]);
+    assert.deepEqual(await worded(3), [e(3, -3)]);
+  });
+
+  it("a local binding of a factory's name, which shadows it", async () => {
+    const shadowed = m.define(function shadowed(S: number): number {
+      return S + 1;
+    });
+    assert.deepEqual(await shadowed(41), [toAtom(42)]);
+  });
+
+  it("an array pattern as MeTTa's pattern let", async () => {
+    const swapped = m.define(function swapped(pair: Term): Term {
+      const [first, [second, third]] = pair as [Term, [Term, Term]];
+      return [third, second, first];
+    });
+    assert.deepEqual(swapped.equations, [
+      rewrite(S.swapped(V.pair), S.let(e(V.first, e(V.second, V.third)), V.pair, e(V.third, V.second, V.first))),
+    ]);
+    assert.deepEqual(await swapped(e(1, e(2, 3))), [e(3, 2, 1)]);
+  });
+
+  it("a switch as a case, with shared labels, a late default and a break", async () => {
+    const sized = m.define(function sized(n: number): Term {
+      switch (n) {
+        default:
+          return S.many;
+        case 0:
+          return S.none;
+        case 1:
+        case 2:
+          return S.few;
+        case 3:
+          break;
+      }
+      return S.three;
+    });
+    assert.deepEqual(
+      await Promise.all([0, 1, 2, 3, 9].map(async (n) => (await sized(n).one()).text)),
+      ["none", "few", "few", "three", "many"],
+    );
+    assert.throws(
+      () =>
+        m.define(function open(n: number): Term {
+          switch (n) {
+            case 0:
+              return S.zero;
+          }
+        }),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /no default/.test(error.message),
     );
   });
 });

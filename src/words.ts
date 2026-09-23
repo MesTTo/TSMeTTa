@@ -73,37 +73,77 @@ export const OPERATOR_HEADS = {
   ceil: "ceil-math",
 } as const;
 
+/**
+ * The head every other word names: the value operations, the structure words
+ * and the capitalised control forms. The operator words are OPERATOR_HEADS.
+ *
+ * ONE table per family for two readers. The builders below build with them,
+ * and a lowered body reads the same words out of a function's own source
+ * (src/define/lower.ts), so `If(c, t, e)` built at run time and `If(c, t, e)`
+ * written in a lowered body are one head by construction rather than by two
+ * lists agreeing. `neg`, `e`, `nil` and `list` are absent because none of them
+ * is one head applied to its arguments.
+ */
+export const WORD_HEADS = {
+  minAtom: "min-atom",
+  maxAtom: "max-atom",
+  and: "and",
+  or: "or",
+  not: "not",
+  xor: "xor",
+  carAtom: "car-atom",
+  cdrAtom: "cdr-atom",
+  consAtom: "cons-atom",
+  getType: "get-type",
+  typed: ":",
+  arrow: "->",
+  rewrite: "=",
+  If: "if",
+  Let: "let",
+  LetStar: "let*",
+  Collapse: "collapse",
+  Superpose: "superpose",
+  Quote: "quote",
+  Empty: "empty",
+  In: "in",
+  Accept: "accept",
+  Refuse: "refuse",
+  Drop: "drop",
+  Match: "match",
+  unify: "unify",
+} as const;
+
 // ---------------------------------------------------------------------------
 // Comparison. The ecosystem's own roster.
 
 /** `(== a b)`. MeTTa's equality, which tells the integer 2 from the float 2.0. */
 export function eq(a: Term, b: Term): Atom {
-  return apply("==", a, b);
+  return apply(OPERATOR_HEADS.eq, a, b);
 }
 
 /** `(!= a b)`. */
 export function ne(a: Term, b: Term): Atom {
-  return apply("!=", a, b);
+  return apply(OPERATOR_HEADS.ne, a, b);
 }
 
 /** `(< a b)`. */
 export function lt(a: Term, b: Term): Atom {
-  return apply("<", a, b);
+  return apply(OPERATOR_HEADS.lt, a, b);
 }
 
 /** `(<= a b)`. */
 export function lte(a: Term, b: Term): Atom {
-  return apply("<=", a, b);
+  return apply(OPERATOR_HEADS.lte, a, b);
 }
 
 /** `(> a b)`. */
 export function gt(a: Term, b: Term): Atom {
-  return apply(">", a, b);
+  return apply(OPERATOR_HEADS.gt, a, b);
 }
 
 /** `(>= a b)`. */
 export function gte(a: Term, b: Term): Atom {
-  return apply(">=", a, b);
+  return apply(OPERATOR_HEADS.gte, a, b);
 }
 
 // ---------------------------------------------------------------------------
@@ -111,17 +151,17 @@ export function gte(a: Term, b: Term): Atom {
 
 /** `(+ a b)`. */
 export function add(a: Term, b: Term): Atom {
-  return apply("+", a, b);
+  return apply(OPERATOR_HEADS.add, a, b);
 }
 
 /** `(- a b)`. */
 export function sub(a: Term, b: Term): Atom {
-  return apply("-", a, b);
+  return apply(OPERATOR_HEADS.sub, a, b);
 }
 
 /** `(* a b)`. */
 export function mul(a: Term, b: Term): Atom {
-  return apply("*", a, b);
+  return apply(OPERATOR_HEADS.mul, a, b);
 }
 
 /**
@@ -131,17 +171,17 @@ export function mul(a: Term, b: Term): Atom {
  * divide to. This door names the head and normalises nothing.
  */
 export function div(a: Term, b: Term): Atom {
-  return apply("/", a, b);
+  return apply(OPERATOR_HEADS.div, a, b);
 }
 
 /** `(% a b)`. */
 export function mod(a: Term, b: Term): Atom {
-  return apply("%", a, b);
+  return apply(OPERATOR_HEADS.mod, a, b);
 }
 
 /** `(pow-math a b)`. */
 export function pow(a: Term, b: Term): Atom {
-  return apply("pow-math", a, b);
+  return apply(OPERATOR_HEADS.pow, a, b);
 }
 
 /**
@@ -151,37 +191,37 @@ export function pow(a: Term, b: Term): Atom {
  * is the composite the Python table records for the same word.
  */
 export function neg(x: Term): Atom {
-  return apply("-", 0, x);
+  return apply(OPERATOR_HEADS.sub, 0, x);
 }
 
 /** `(abs-math x)`. */
 export function abs(x: Term): Atom {
-  return apply("abs-math", x);
+  return apply(OPERATOR_HEADS.abs, x);
 }
 
 /** `(sqrt-math x)`. */
 export function sqrt(x: Term): Atom {
-  return apply("sqrt-math", x);
+  return apply(OPERATOR_HEADS.sqrt, x);
 }
 
 /** `(floor-math x)`. */
 export function floor(x: Term): Atom {
-  return apply("floor-math", x);
+  return apply(OPERATOR_HEADS.floor, x);
 }
 
 /** `(ceil-math x)`. */
 export function ceil(x: Term): Atom {
-  return apply("ceil-math", x);
+  return apply(OPERATOR_HEADS.ceil, x);
 }
 
 /** `(min-atom xs)`, over an expression of numbers. */
 export function minAtom(xs: Term): Atom {
-  return apply("min-atom", xs);
+  return apply(WORD_HEADS.minAtom, xs);
 }
 
 /** `(max-atom xs)`, over an expression of numbers. */
 export function maxAtom(xs: Term): Atom {
-  return apply("max-atom", xs);
+  return apply(WORD_HEADS.maxAtom, xs);
 }
 
 // ---------------------------------------------------------------------------
@@ -189,22 +229,22 @@ export function maxAtom(xs: Term): Atom {
 
 /** `(and a b)`. */
 export function and(a: Term, b: Term): Atom {
-  return apply("and", a, b);
+  return apply(WORD_HEADS.and, a, b);
 }
 
 /** `(or a b)`. */
 export function or(a: Term, b: Term): Atom {
-  return apply("or", a, b);
+  return apply(WORD_HEADS.or, a, b);
 }
 
 /** `(not a)`. */
 export function not(a: Term): Atom {
-  return apply("not", a);
+  return apply(WORD_HEADS.not, a);
 }
 
 /** `(xor a b)`. */
 export function xor(a: Term, b: Term): Atom {
-  return apply("xor", a, b);
+  return apply(WORD_HEADS.xor, a, b);
 }
 
 // ---------------------------------------------------------------------------
@@ -212,27 +252,27 @@ export function xor(a: Term, b: Term): Atom {
 
 /** `(car-atom xs)`. */
 export function carAtom(xs: Term): Atom {
-  return apply("car-atom", xs);
+  return apply(WORD_HEADS.carAtom, xs);
 }
 
 /** `(cdr-atom xs)`. */
 export function cdrAtom(xs: Term): Atom {
-  return apply("cdr-atom", xs);
+  return apply(WORD_HEADS.cdrAtom, xs);
 }
 
 /** `(cons-atom x xs)`. */
 export function consAtom(x: Term, xs: Term): Atom {
-  return apply("cons-atom", x, xs);
+  return apply(WORD_HEADS.consAtom, x, xs);
 }
 
 /** `(get-type x)`. */
 export function getType(x: Term): Atom {
-  return apply("get-type", x);
+  return apply(WORD_HEADS.getType, x);
 }
 
 /** `(: x T)`, a type CLAIM, which is a value here and never an annotation. */
 export function typed(x: Term, type: Term): Atom {
-  return apply(":", x, type);
+  return apply(WORD_HEADS.typed, x, type);
 }
 
 /** `(-> a b ... r)`, an arrow type as a value. */
@@ -240,7 +280,20 @@ export function arrow(...types: readonly Term[]): Atom {
   if (types.length < 2) {
     throw new NameError("an arrow type needs at least an argument and a result");
   }
-  return apply("->", ...types);
+  return apply(WORD_HEADS.arrow, ...types);
+}
+
+/**
+ * `(= head body)`: an equation as a VALUE, the rewrite it states.
+ *
+ * `define` installs equations; this names one, for a program that means the
+ * atom itself: to store it as data, to remove the very rewrite a definition
+ * added, or to ask which rewrites a space holds,
+ * `m.match(rewrite(S.f(V.x), V.body))`. It is not called `equation` because
+ * that name is already the theory door's method mark, `@equation`.
+ */
+export function rewrite(head: Term, body: Term): Atom {
+  return apply(WORD_HEADS.rewrite, head, body);
 }
 
 // ---------------------------------------------------------------------------
@@ -249,38 +302,38 @@ export function arrow(...types: readonly Term[]): Atom {
 
 /** `(if condition then else)`. */
 export function If(condition: Term, then: Term, otherwise: Term): Atom {
-  return apply("if", condition, then, otherwise);
+  return apply(WORD_HEADS.If, condition, then, otherwise);
 }
 
 /** `(let pattern value body)`. */
 export function Let(pattern: Term, value: Term, body: Term): Atom {
-  return apply("let", pattern, value, body);
+  return apply(WORD_HEADS.Let, pattern, value, body);
 }
 
 /** `(let* ((p1 v1) (p2 v2) ...) body)`. */
 export function LetStar(bindings: readonly (readonly [Term, Term])[], body: Term): Atom {
   const pairs = bindings.map(([pattern, value]) => expr(toAtom(pattern), toAtom(value)));
-  return expr(sym("let*"), exprOf(pairs), toAtom(body));
+  return expr(sym(WORD_HEADS.LetStar), exprOf(pairs), toAtom(body));
 }
 
 /** `(collapse x)`: every answer of `x`, as one expression. */
 export function Collapse(x: Term): Atom {
-  return apply("collapse", x);
+  return apply(WORD_HEADS.Collapse, x);
 }
 
 /** `(superpose (a b c))`: one answer per item. */
 export function Superpose(items: readonly Term[]): Atom {
-  return expr(sym("superpose"), exprOf(items.map(toAtom)));
+  return expr(sym(WORD_HEADS.Superpose), exprOf(items.map(toAtom)));
 }
 
 /** `(quote x)`: the atom, unreduced. */
 export function Quote(x: Term): Atom {
-  return apply("quote", x);
+  return apply(WORD_HEADS.Quote, x);
 }
 
 /** `(empty)`: no answers at all. */
 export function Empty(): Atom {
-  return expr(sym("empty"));
+  return expr(sym(WORD_HEADS.Empty));
 }
 
 // ---------------------------------------------------------------------------
@@ -307,9 +360,15 @@ export const UNDEFINED: Atom = sym("%Undefined%");
 /** The type every term has, which is what an unchecked position declares. */
 export const ATOM_TYPE: Atom = sym("Atom");
 
+/**
+ * The constants above, by the names this module exports them under, which is
+ * how a lowered body reads them out of a function's own source.
+ */
+export const WORD_CONSTANTS: Readonly<Record<string, Atom>> = { TRUE, FALSE, UNIT, UNDEFINED, ATOM_TYPE };
+
 /** `(in member container)`: membership, as a term. */
 export function In(member: Term, container: Term): Atom {
-  return apply("in", member, container);
+  return apply(WORD_HEADS.In, member, container);
 }
 
 // ---------------------------------------------------------------------------
@@ -323,22 +382,22 @@ export function In(member: Term, container: Term): Atom {
  * normalises on the way in.
  */
 export function Accept(atom?: Term): Atom {
-  return atom === undefined ? expr(sym("accept")) : apply("accept", atom);
+  return atom === undefined ? expr(sym(WORD_HEADS.Accept)) : apply(WORD_HEADS.Accept, atom);
 }
 
 /** `(refuse words)`: reject a write, with the judge's own reason. */
 export function Refuse(words: Term): Atom {
-  return apply("refuse", words);
+  return apply(WORD_HEADS.Refuse, words);
 }
 
 /** `(drop)`: skip a write silently, neither storing it nor refusing it. */
 export function Drop(): Atom {
-  return expr(sym("drop"));
+  return expr(sym(WORD_HEADS.Drop));
 }
 
 /** `(match space pattern template)`, the space query as a term. */
 export function Match(space: Term, pattern: Term, template: Term): Atom {
-  return apply("match", space, pattern, template);
+  return apply(WORD_HEADS.Match, space, pattern, template);
 }
 
 /**
@@ -371,7 +430,7 @@ export function unify(
   otherwise?: Term,
 ): Atom | Bindings | undefined {
   if (then === undefined || otherwise === undefined) return unifyTerms(a, b);
-  return apply("unify", a, b, then, otherwise);
+  return apply(WORD_HEADS.unify, a, b, then, otherwise);
 }
 
 // ---------------------------------------------------------------------------

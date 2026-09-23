@@ -4,6 +4,19 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- A lowered body mentions atoms the way a program builds them: `S.name`,
+  `S.f(a, b)`, `S["x"]`, `S("exact")`, `V.x`, `fn.carAtom(x)`, `G(literal)` and
+  `float(literal)` lower to the atoms those spellings build, and the word
+  door's functions and constants (`If`, `Collapse`, `Superpose`, `carAtom`,
+  `neg`, `e`, `nil`, `TRUE`, `UNIT` and the rest) lower to their heads after
+  the engine's own. `const [a, b] = v` is MeTTa's pattern `let` and `switch`
+  is its `case`. Until now each of these refused at definition time with
+  "reads a property" or "calls something that is not a plain name". The word
+  door's heads live in one table, `WORD_HEADS`, that the builders and the
+  lowering both read.
+- `rewrite(head, body)` builds `(= head body)`, an equation as a value, for a
+  program that stores, removes or matches equations as data.
+
 ## 0.0.1-alpha.1 - 2026-09-24
 
 - Boot the engine on a patched WebAssembly SWI-Prolog this package carries in

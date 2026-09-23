@@ -57,7 +57,7 @@
  *     values at", "names, for an atom class, the metatype the engine gives its
  *     atoms", "reads a term as itself, an array as an expression type, and a
  *     class by its name", "refuses a function that names no type, where it
- *     once became a host value"; commit=WORKTREE]
+ *     once became a host value"; commit=39e6ae2bd697d4029fd476d7d848ae9dc9602554]
  *   - `exprOf` interns through weak structural-hash buckets, verifies every
  *     collision by child identity and never materialises all child ids as text
  *     [tested: "interns a wide expression without joining every child id into

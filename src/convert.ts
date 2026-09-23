@@ -17,7 +17,7 @@
  *     structurally without being registered at all
  *   - a registered class, and any subclass of it, names its registration in
  *     a type position until it is unregistered [tested: "names a registered
- *     class by its registration, and a subclass by its base's"; commit=WORKTREE]
+ *     class by its registration, and a subclass by its base's"; commit=39e6ae2bd697d4029fd476d7d848ae9dc9602554]
  * Decides: a class may carry its OWN projection rather than register one. A
  *   `[TO_ATOM]()` method and a static `[FROM_ATOM]()` are consulted first, so
  *   a type you own needs no registration and no import from this module.

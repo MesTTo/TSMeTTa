@@ -16,10 +16,10 @@
  *   - the census answers present for a capability exactly when every library
  *     it rests on loads in SWI, and m.refusals is its absent rows
  *     [tested: "reads what this build does without from the engine's own
- *     census, and SWI agrees"; commit=WORKTREE]
+ *     census, and SWI agrees"; commit=39e6ae2bd697d4029fd476d7d848ae9dc9602554]
  *   - text holding U+0000 crosses from the engine into JavaScript and back
  *     whole [tested: "carries U+0000 in text from the engine into JavaScript
- *     and back"; commit=WORKTREE]
+ *     and back"; commit=39e6ae2bd697d4029fd476d7d848ae9dc9602554]
  *   - the swipl-wasm census names crypto and redis absent, SHA-256 still
  *     hashes through library(sha), and crypto-only operations or a Redis
  *     import refuse by capability rather than reaching an unknown predicate

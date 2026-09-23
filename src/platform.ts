@@ -17,7 +17,7 @@
  *   mountInto copies what a host directory holds while it is read, skipping
  *   an entry that is gone by the time it is read, so a directory another
  *   process writes into can be mounted [tested: "loads a file whose directory
- *   holds a link to nothing"; commit=WORKTREE].
+ *   holds a link to nothing"; commit=a151c899a11b3b8ffb405b23b67d1f2000ded4dd].
  * Owns resources: synchronous reads close their file descriptors before
  *   returning; the caller owns the destination WebAssembly filesystem.
  */

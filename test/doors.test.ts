@@ -15,7 +15,7 @@
  *     commit=bf758a5e0654c691ad64e2a5d998fb7c2e39108b]
  *   - a file loads whatever else its directory holds, a link to nothing
  *     included [tested: "loads a file whose directory holds a link to
- *     nothing"; commit=WORKTREE]
+ *     nothing"; commit=a151c899a11b3b8ffb405b23b67d1f2000ded4dd]
  * Open Obligations: None.
  */
 

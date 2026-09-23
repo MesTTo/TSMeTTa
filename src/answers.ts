@@ -18,7 +18,8 @@
  *     invented `.all()`; an Answers is a whole `Promise`, `catch` and
  *     `finally` included, so `assert.rejects(ans, ...)` and `Promise.all`
  *     take it as they take a promise [tested: "is a promise of its answers,
- *     lazily"; commit=6e6b82707a7e03130728f264802da835ac445f09]
+ *     lazily, so catch, finally and assert.rejects take it";
+ *     commit=bf758a5e0654c691ad64e2a5d998fb7c2e39108b]
  *   - leaving a `for await` early calls the iterator's `return()`, which closes
  *     the cursor and destroys the engine behind it, so an unbounded generator
  *     is safe to walk

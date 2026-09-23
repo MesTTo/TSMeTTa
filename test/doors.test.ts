@@ -10,7 +10,9 @@
  *     exact forms, and importing one makes the library's functions answer
  *     [tested: "imports a shipped library by name"]
  *   - a host path imports the file the process sees, with a relative import
- *     inside it resolving beside it [tested: "imports a file by its host path"]
+ *     inside it resolving beside it [tested: "imports a file by its host path,
+ *     and a relative import inside it";
+ *     commit=bf758a5e0654c691ad64e2a5d998fb7c2e39108b]
  * Open Obligations: None.
  */
 

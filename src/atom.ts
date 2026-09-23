@@ -43,7 +43,7 @@
  *   - a rational is a NUMBER: `G` interns one by value into a `RationalAtom`
  *     that prints as the engine writes it, and the standard order compares it
  *     exactly against the integers and floats, a float first on a tie
- *     [tested: "orders exactly among the other numbers"; commit=PENDING]
+ *     [tested: "orders exactly among the other numbers"; commit=658c2b5e82d165d281b5e72b3013d2dcebab4e35]
  *   - a float's text is the ENGINE's spelling and not JavaScript's: the digits
  *     are `Number.prototype.toString`'s shortest round trip and the layout is
  *     the arbiter's, so one atom has one text in this seat, the Python seat and

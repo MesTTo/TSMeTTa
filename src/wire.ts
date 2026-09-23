@@ -18,7 +18,7 @@
  *     the {@link Rational} it is, and back as the `1r3` spelling the engine's
  *     reader takes; the portable transport refuses one, because CODEC.md gives
  *     a rational no tag [tested: "carries a rational exactly across the engine
- *     transport, and refuses it on the portable one"; commit=PENDING]
+ *     transport, and refuses it on the portable one"; commit=658c2b5e82d165d281b5e72b3013d2dcebab4e35]
  *   - `fromTransport` is STRICT: it refuses the `o` tag [tested: "refuses the o tag,
  *     which only this host's own session can name"], because an `o`
  *     payload written down by somebody else is not a reference this host can

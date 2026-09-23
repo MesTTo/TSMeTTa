@@ -80,6 +80,10 @@
 %     [tested: "refuses a tag outside the grammar"]
 %   - metta_node_stop/1 is idempotent
 %     [tested: "closes a cursor that is abandoned before its first pull"]
+%   - the eval and source doors answer the symbol Empty as the data it is,
+%     so only an absent answer declines, where the engine's eval/2 prunes an
+%     Empty answer as a program does [tested: "answers the symbol Empty as
+%     data, and prunes only inside a program"]
 %   - no Prolog exception reaches the host: every synchronous call arrives
 %     through metta_node_do/2 and every job body through metta_node_guarded/3,
 %     so the outcome crosses as data
@@ -626,6 +630,25 @@ metta_node_answer(Term, [Wire, Text]) :-
 metta_node_group(Terms, Encoded) :-
     maplist(metta_node_answer, Terms, Encoded).
 
+% The evaluation the eval and source commands share: the engine's eval/2
+% without its last goal. eval/2 ends in `Out \== 'Empty'`, which is MeTTa
+% pruning a branch, and that is right INSIDE a program. At a door it is
+% wrong, because an answer that crosses is data and the symbol Empty is data
+% like any other: pruning it there made `(atom-replace a ((a Empty)))` answer
+% nothing, where the rewrite produced Empty. So only an absent answer declines
+% here. Pruning inside the program is untouched: `(superpose (a Empty b))`
+% still answers a and b, since superpose drops the element in its own
+% compiled body. A `!` directive keeps the engine's pruning too, because the
+% run door is the engine's own [source: metta_py_solution/4 in
+% extensions/python/metta/_binding/evaluation.pl, the same three goals, and
+% its test_empty_symbol_is_a_literal_rewrite; tested: "answers the symbol
+% Empty as data, and prunes only inside a program"].
+metta_node_eval(Module, Term, Result) :-
+    with_metta_module(Module,
+        (   translate_cached_expr(Term, Goals, Produced),
+            call_goals_in_(Module, Goals),
+            translator:metta_boundary_result(Term, Produced, Result) )).
+
 %%%%%%%%%% Jobs: one engine, suspended between events %%%%%%%%%%
 %
 % An SWI engine is a goal suspended between answers: it "can, if asked,
@@ -946,7 +969,7 @@ metta_node_command(eval, [Wire, Space0], [answer, Out, Text]) :-
     metta_node_decode(Wire, Term0),
     metta_substitute_self(Space, Term0, Term),
     space_module(Space, Module),
-    with_metta_module(Module, eval(Term, Result)),
+    metta_node_eval(Module, Term, Result),
     metta_node_answer(Result, [Out, Text]).
 
 % Evaluate MeTTa source text, through the engine's own reader. The substring
@@ -961,7 +984,7 @@ metta_node_command(source, [Src, Space0], [answer, Out, Text]) :-
     ;   Term = Term0
     ),
     space_module(Space, Module),
-    with_metta_module(Module, eval(Term, Result)),
+    metta_node_eval(Module, Term, Result),
     metta_node_answer(Result, [Out, Text]).
 
 % Run a program. The grouping walk, the working-dir defaulting and the load

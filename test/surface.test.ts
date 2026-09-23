@@ -351,6 +351,25 @@ describe("&self is the space the ask was made in", () => {
   });
 });
 
+describe("an answer that crosses is data", () => {
+  it("answers the symbol Empty as data, and prunes only inside a program", async () => {
+    // What a reduction produced crosses, Empty included, at the term door and
+    // through the reader alike; only an absent answer declines.
+    assert.deepEqual(await m.eval(S.noeval(S.Empty)), [S.Empty.atom]);
+    assert.deepEqual(await m.eval(m.parse("(noeval Empty)")), [S.Empty.atom]);
+    assert.deepEqual(await m.eval(S.empty()), []);
+    assert.deepEqual(
+      m.evalStatus(S.noeval(S.Empty)).map((row) => [row.status, row.text]),
+      [["value", "Empty"]],
+    );
+    // Inside a program Empty still prunes a branch, and a directive is the
+    // engine's own door, which prunes it as the program would.
+    assert.deepEqual((await m.eval(S.superpose([S.a, S.Empty, S.b]))).map(String), ["a", "b"]);
+    assert.deepEqual((await m.eval(S.collapse(S.noeval(S.Empty)))).map(String), ["()"]);
+    assert.deepEqual(m.run("!(noeval Empty)")[0]?.texts, []);
+  });
+});
+
 describe("a world", () => {
   it("drafts, and commit applies the whole delta", async () => {
     const kb = fresh();

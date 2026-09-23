@@ -7,7 +7,7 @@
 import { strict as assert } from "node:assert";
 import { after, before, describe, it } from "node:test";
 import {
-  ATOM_OF, type MeTTa, S, V, fn, metta, toAtom, variable,
+  ATOM_OF, type MeTTa, S, type Term, V, fn, metta, toAtom, variable,
 } from "../src/index.ts";
 import { counting, matchUnder, taggedFact, taggedRule } from "../src/algebra.ts";
 
@@ -157,12 +157,15 @@ describe("depth parity", () => {
 
   it("discards temporary facts and writes after an empty result or exception", async () => {
     using kb = m.space();
-    for (const target of [S.Empty, fn.carAtom(V.unbound)]) {
-      const answers = kb.withFacts([S.temp()], fn.progn(fn.addAtom(kb, S.sideEffect()), target));
-      if (toAtom(target).text === "Empty") assert.deepEqual(await answers, []);
-      else await assert.rejects(answers.toArray());
-      assert.equal(kb.size, 0);
-    }
+    const given = (target: Term) =>
+      kb.withFacts([S.temp()], fn.progn(fn.addAtom(kb, S.sideEffect()), target));
+    // No answer at all, the symbol Empty as the answer, and a raised error.
+    assert.deepEqual(await given(fn.empty()), []);
+    assert.equal(kb.size, 0);
+    assert.deepEqual(await given(S.Empty), [S.Empty.atom]);
+    assert.equal(kb.size, 0);
+    await assert.rejects(given(fn.carAtom(V.unbound)).toArray());
+    assert.equal(kb.size, 0);
     assert.throws(() => kb.withFacts([], () => 1), /TERM/);
   });
 

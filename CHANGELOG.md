@@ -4,6 +4,17 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- An answer that is the symbol `Empty` crosses as that symbol at the term
+  door and through the reader: `m.eval(S.noeval(S.Empty))` answers
+  `[Empty]`, `m.evalStatus` reports it as a `value`, and
+  `(atom-replace a ((a Empty)))` answers the `Empty` the rewrite produced. Both doors evaluated through the engine's `eval/2`, whose
+  last goal prunes an `Empty` answer as a program does, so they answered
+  nothing where PyMeTTa's doors answer `[Empty]`. Only an absent answer
+  declines now. Inside a program `Empty` still prunes a branch, so
+  `(superpose (a Empty b))` answers `a` and `b`, and a `!` directive in
+  `m.run` keeps the engine's pruning. A body run by `speculate` or
+  `withFacts` that ends in `Empty` answers it too; `(empty)` is the body that
+  answers nothing.
 - A failed assertion hands a harness its parts as atoms: `AssertionError`
   now carries `.actual`, `.expected`, `.missing` and `.excess` beside
   `.operation`, read off the refusal by the engine's own

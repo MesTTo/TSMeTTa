@@ -4,6 +4,10 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- Preserve literal source-query columns through the ambient free-function
+  wrapper as well as the runtime method; verified by compile-time and runtime
+  checks using a quoted dollar and one actual variable.
+
 - Repair corpus-discovered boundary defects: reject invalid tensor dimensions
   and fractional coordinates; preserve polymorphic schema variables and declared
   arities; type callable vocabulary names inherited from Function and Object.

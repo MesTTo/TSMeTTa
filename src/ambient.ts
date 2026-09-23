@@ -5,6 +5,8 @@
  *   - booting is asynchronous here where it is synchronous in an embedded SWI,
  *     because the engine is WebAssembly and instantiating it is a promise
  * Guarantees:
+ *   - `q` preserves literal query columns through the deferred wrapper
+ *     [tested: "ambient source columns preserve the literal query"; commit=WORKTREE].
  *   - importing this module boots NOTHING. The engine is created by the first
  *     verb that needs it, and a program that only builds terms never starts one
  *     [tested: "boots nothing until a verb needs the engine"]
@@ -30,6 +32,7 @@ import type { Defined, DefineOptions, OpOptions } from "./define/define.ts";
 import type { AnswerGroup, BootOptions, MeTTa } from "./metta.ts";
 import { metta } from "./metta.ts";
 import type { Space } from "./space.ts";
+import type { SourceRow } from "./types/sexpr.ts";
 
 let held: Promise<MeTTa> | undefined;
 let options: BootOptions = {};
@@ -152,8 +155,8 @@ export function evaluate(term: Term, askOptions: AskOptions = {}): Answers<Atom>
 }
 
 /** A source query, typed from its own text, in the default engine. */
-export function q(source: string, askOptions: AskOptions = {}): Answers<Row> {
-  return deferred<Row>(`q(${source})`, (surface) => surface.q(source, askOptions));
+export function q<const Source extends string>(source: Source, askOptions: AskOptions = {}): Answers<SourceRow<Source>> {
+  return deferred<SourceRow<Source>>(`q(${source})`, (surface) => surface.q(source, askOptions));
 }
 
 /** Run MeTTa source in the default engine. */

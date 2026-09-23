@@ -13,7 +13,7 @@
  *     by another engine's table and once released [tested: "names one engine
  *     value by one atom per id and names, and writes it back as it came",
  *     "refuses a handle on the portable transport, from another engine, or once
- *     released"; commit=WORKTREE]
+ *     released"; commit=9fb8f322b3049a97a1f924c722e4cd36067bbdd2]
  *   - round-trip space provenance follows structural positions and is disabled
  *     after equal-length shapes diverge while scalar leaf changes preserve
  *     later sibling paths [tested: "does not align provenance across a shape change",

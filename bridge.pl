@@ -48,7 +48,7 @@
 %     released or never-issued id is existence_error(metta_native_handle, Id)
 %     [tested: extensions/node/test/binding.test.ts, "holds a native engine
 %     value by reference and hands back the very same value", "lets the engine
-%     drop a value once the last atom naming it is collected"; commit=WORKTREE]
+%     drop a value once the last atom naming it is collected"; commit=9fb8f322b3049a97a1f924c722e4cd36067bbdd2]
 %   - the read command pumps host token constructors inside a job
 %     [tested: extensions/node/test/reader-boundary.test.ts; commit=9d6b109740b1744b734b53b563a3be8642d24c0e].
 %   - error transport runs outside transaction/snapshot scopes so exceptions

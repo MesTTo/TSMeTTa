@@ -21,7 +21,7 @@
  *     transport, and refuses it on the portable one"; commit=658c2b5e82d165d281b5e72b3013d2dcebab4e35]
  *   - `fromTransport` is STRICT: it refuses the `o` and `h` tags [tested:
  *     "refuses the o and h tags, which only this host's own session can name";
- *     commit=WORKTREE], because a payload of either written down by somebody
+ *     commit=9fb8f322b3049a97a1f924c722e4cd36067bbdd2], because a payload of either written down by somebody
  *     else is not a reference this host can honour, while the private engine
  *     transport carries `["o", id]` for an id this host handed out and
  *     `["h", "Id|N|Names|Text"]` for one the engine did
@@ -30,7 +30,7 @@
  *     refused by another engine's table and once released [tested: "names one
  *     engine value by one atom per id and names, and writes it back as it
  *     came", "refuses a handle on the portable transport, from another engine,
- *     or once released"; commit=WORKTREE]
+ *     or once released"; commit=9fb8f322b3049a97a1f924c722e4cd36067bbdd2]
  *   - a `p` name decodes to an interned {@link SpaceHandle}, so one name is one
  *     handle [tested: "decodes a portable space reference into an interned
  *     handle"]

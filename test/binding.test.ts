@@ -25,7 +25,7 @@
  *     on this side and dropped by the engine with the next crossing, and so is
  *     one whose last atom is collected [tested: "holds a native engine value by
  *     reference and hands back the very same value", "lets the engine drop a
- *     value once the last atom naming it is collected"; commit=WORKTREE]
+ *     value once the last atom naming it is collected"; commit=9fb8f322b3049a97a1f924c722e4cd36067bbdd2]
  *   - the swipl-wasm census names crypto and redis absent, SHA-256 still
  *     hashes through library(sha), and crypto-only operations or a Redis
  *     import refuse by capability rather than reaching an unknown predicate

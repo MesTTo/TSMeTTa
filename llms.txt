@@ -159,7 +159,8 @@ caller never matches the message. One class per kind the engine publishes:
 (`TimeLimitError.limit`, `InferenceLimitError.limit`), `restraint`
 (`RestraintError.restraint`, `.limit`, `.call`), `interrupted`
 (`InterruptedError`), `value` and `type` (`WireError`, `CastError`),
-`assertion` (`AssertionError.operation`), `capability`
+`assertion` (`AssertionError.operation`, and as atoms `.actual`, `.expected`,
+`.missing` and `.excess`), `capability`
 (`CapabilityError.space`, `.operation`, `.capability`), `platform`
 (`PlatformCapabilityError.requires`, `.costs`, and the operation and
 capability it inherits), `operation`
@@ -184,6 +185,13 @@ catch (e) {
   if (e instanceof RestraintError) console.log(e.restraint, e.limit, e.call);
 }
 ```
+
+A failed assertion hands a harness its parts as ATOMS, read off the refusal by
+the engine's own classifier: `.actual` is what a `test` produced or an
+`assert`'s goal, `.expected` what the source asked for, and `.missing` and
+`.excess` the answers a bag comparison found absent and extra. A part the form
+does not carry is `undefined`, which differs from the empty bag: two empty bags
+say the answers agree and differ only in order.
 
 ## Spaces
 

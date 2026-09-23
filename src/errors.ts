@@ -39,6 +39,11 @@
  *     commit=f33b7ab0200e6dc74c88fb4c7f827bf545a447ed]
  *   - a bound the engine could not name is `undefined` rather than 0
  *     [tested: "carries a limit on a resource refusal"; commit=52e95b50cc5acdc0e41f97b444ab244ad1301433]
+ *   - a failed assertion carries its actual, expected, missing and excess as
+ *     atoms, read by the engine's own classifier, undefined where the form has
+ *     no such part and empty bags where the answers only differ in order
+ *     [tested: "hands a harness the parts of a failed assertion as atoms";
+ *     commit=PENDING]
  *   - a reduction that failed across several nondeterministic branches raises
  *     the platform's own `AggregateError` with one `cause`-chained entry per
  *     branch, rather than an error shape invented here
@@ -58,6 +63,7 @@
  *   Future Enhancements: None
  */
 
+import type { Atom } from "./atom.ts";
 import type { RefusalKind } from "./vocabularies.ts";
 
 /** The stable codes. Match on these; the prose beside them is free to change. */
@@ -530,8 +536,23 @@ export class TransportError extends MettaError {
   static override readonly defaultCode: Code = "ERR_METTA_TRANSPORT";
 }
 
-/** Which assertion form failed. */
-export interface AssertionErrorOptions extends MettaErrorOptions {
+/**
+ * What a failed assertion said, as the engine's own classifier reads it off
+ * the refusal: the atoms a harness compares instead of parsing the sentence.
+ */
+export interface AssertionParts {
+  /** What the claim produced: a `test`'s actual value, an `assert`'s goal. */
+  readonly actual?: Atom | undefined;
+  /** What the source asked for, where the form carries a value to compare. */
+  readonly expected?: Atom | undefined;
+  /** The answers expected and not produced, where the form compared answer bags. */
+  readonly missing?: readonly Atom[] | undefined;
+  /** The answers produced and not expected, where the form compared answer bags. */
+  readonly excess?: readonly Atom[] | undefined;
+}
+
+/** Which assertion form failed, and its parts. */
+export interface AssertionErrorOptions extends MettaErrorOptions, AssertionParts {
   /** The form the engine reports through, `assert` or `test`. */
   readonly operation?: string | undefined;
 }
@@ -554,9 +575,30 @@ export class AssertionError extends MettaError {
    */
   readonly operation: string | undefined;
 
+  /** What the claim produced: a `test`'s actual value, an `assert`'s goal. */
+  readonly actual: Atom | undefined;
+
+  /** What the source asked for, where the form carries a value to compare. */
+  readonly expected: Atom | undefined;
+
+  /**
+   * The answers expected and not produced, where the form compared answer
+   * bags; undefined where it compared none, which is a different answer from
+   * the empty bag, since two empty bags say the answers agree and differ only
+   * in order.
+   */
+  readonly missing: readonly Atom[] | undefined;
+
+  /** The answers produced and not expected, under the same convention. */
+  readonly excess: readonly Atom[] | undefined;
+
   constructor(message: string, options: AssertionErrorOptions = {}) {
     super(message, options);
     this.operation = options.operation;
+    this.actual = options.actual;
+    this.expected = options.expected;
+    this.missing = options.missing;
+    this.excess = options.excess;
   }
 }
 
@@ -629,7 +671,10 @@ function measure(fields: Fields, name: string): number | undefined {
  * refusal" true here.
  */
 const KINDS: Readonly<
-  Record<RefusalKind, (text: string, fields: Fields, carried: MettaErrorOptions) => MettaError>
+  Record<
+    RefusalKind,
+    (text: string, fields: Fields, carried: MettaErrorOptions, parts: AssertionParts) => MettaError
+  >
 > = {
   syntax: (text, fields, carried) =>
     new MettaSyntaxError(text, { ...carried, line: measure(fields, "line") }),
@@ -647,8 +692,8 @@ const KINDS: Readonly<
   interrupted: (text, _fields, carried) => new InterruptedError(text, carried),
   value: (text, _fields, carried) => new WireError(text, carried),
   type: (text, _fields, carried) => new CastError(text, carried),
-  assertion: (text, fields, carried) =>
-    new AssertionError(text, { ...carried, operation: fields["operation"] }),
+  assertion: (text, fields, carried, parts) =>
+    new AssertionError(text, { ...carried, ...parts, operation: fields["operation"] }),
   capability: (text, fields, carried) =>
     new CapabilityError(text, {
       ...carried,
@@ -709,9 +754,10 @@ export function engineError(
   kind: string,
   fields: Fields = {},
   carried: MettaErrorOptions = {},
+  parts: AssertionParts = {},
 ): MettaError {
   const build = Object.hasOwn(KINDS, kind) ? KINDS[kind as RefusalKind] : undefined;
-  return build === undefined ? new EngineError(text, carried) : build(text, fields, carried);
+  return build === undefined ? new EngineError(text, carried) : build(text, fields, carried, parts);
 }
 
 /**

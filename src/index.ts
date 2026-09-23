@@ -257,6 +257,7 @@ export {
   CastError,
   AssertionError,
   type AssertionErrorOptions,
+  type AssertionParts,
   type CapabilityErrorOptions,
   type PlatformCapabilityErrorOptions,
   ClosedError,

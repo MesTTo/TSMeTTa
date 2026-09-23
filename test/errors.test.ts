@@ -286,6 +286,36 @@ describe("an assertion failure crossing the seat", () => {
     );
   });
 
+  // The same diagnosis as data: the parts the engine's classifier reads off
+  // the ball, which the Python seat's AssertionFailure carries too.
+  it("hands a harness the parts of a failed assertion as atoms", () => {
+    const failure = (source: string): AssertionError => {
+      try {
+        m.run(source);
+      } catch (raised) {
+        assert.ok(raised instanceof AssertionError);
+        return raised;
+      }
+      assert.fail(`${source} did not fail`);
+    };
+    const bags = failure("!(assertEqualToResult (superpose (1 1)) (1 2))");
+    assert.equal(bags.operation, "assert");
+    assert.equal(String(bags.actual), "(assertEqualToResult (superpose (1 1)) (1 2))");
+    assert.equal(bags.expected, undefined);
+    assert.deepEqual(bags.missing?.map(String), ["2"]);
+    assert.deepEqual(bags.excess?.map(String), ["1"]);
+
+    const values = failure("!(test (+ 1 1) 3)");
+    assert.equal(values.operation, "test");
+    assert.deepEqual([String(values.actual), String(values.expected)], ["2", "3"]);
+    assert.equal(values.missing, undefined, "a test compares values, not answer bags");
+    assert.equal(values.excess, undefined);
+
+    // Two EMPTY bags say the answers agree and differ only in order.
+    const order = failure("!(assertEqual (superpose (1 2)) (superpose (2 1)))");
+    assert.deepEqual([order.missing, order.excess], [[], []]);
+  });
+
   // Both bags empty is the permutation diagnosis rather than a puzzle, and it
   // is the one thing assertEqual's term equality fails on while the answers
   // themselves agree.

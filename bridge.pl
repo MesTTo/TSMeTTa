@@ -1,8 +1,12 @@
 % Guarantees: an engine refusal crosses as [error, Text, Kind, Fields, Ground,
-%   Remedy], the last two being the engine's own (refusal ...) row for that
-%   kind with the remedy's <field> holes already filled, both flat and as text
-%   [tested: extensions/node/test/errors.test.ts,
-%   "carries the ground and the filled remedy of every kind"; commit=f33b7ab0200e6dc74c88fb4c7f827bf545a447ed].
+%   Remedy, Parts], Ground and Remedy being the engine's own (refusal ...) row
+%   for that kind with the remedy's <field> holes already filled, both flat and
+%   as text [tested: extensions/node/test/errors.test.ts,
+%   "carries the ground and the filled remedy of every kind"; commit=f33b7ab0200e6dc74c88fb4c7f827bf545a447ed],
+%   and Parts a failed assertion's actual, expected, missing and excess as
+%   encoded terms, each empty where the form carries none [tested:
+%   extensions/node/test/errors.test.ts, "hands a harness the parts of a failed
+%   assertion as atoms"; commit=PENDING].
 % Guarantees: metta_node_render/2 scopes message capture through
 %   metta_engine:metta_with_trailed/3
 %   [source: extensions/node/bridge.pl:metta_node_render/2; commit=40b71fc99571872ca5fc85cdaf7902b467166539].
@@ -190,7 +194,7 @@ metta_node_do(Goal, Outcome) :-
 % and would reach the WebAssembly boundary -- the one thing this file exists
 % to prevent. An unclassifiable ball is `engine`, which is what every ball was
 % before this table existed.
-metta_node_error(Ball, [error, Text, Kind, Fields, Ground, Remedy]) :-
+metta_node_error(Ball, [error, Text, Kind, Fields, Ground, Remedy, Parts]) :-
     metta_node_render(Ball, Text),
     (   catch(metta_host_error_kind(Ball, Classified, Pairs), _, fail)
     ->  Kind = Classified,
@@ -198,7 +202,25 @@ metta_node_error(Ball, [error, Text, Kind, Fields, Ground, Remedy]) :-
     ;   Kind = engine,
         Fields = []
     ),
-    metta_node_error_reading(Ball, Ground, Remedy).
+    metta_node_error_reading(Ball, Ground, Remedy),
+    metta_node_assertion_parts(Kind, Ball, Parts).
+
+% A failed assertion's four parts, read off the ball by the engine's own
+% classifier, the one the Python seat reads: the value produced (a test's
+% actual, an assert's goal), the value asked for, and the two answer bags a
+% comparison over answers computed. Each crosses as an encoded TERM rather
+% than as text, because a harness compares them as atoms, and a part the form
+% does not carry crosses empty, which is a different answer from the empty bag
+% `()`. Any other kind carries no parts. Guarded like the kind above, since this
+% too runs inside the recovery.
+metta_node_assertion_parts(assertion, Ball, Parts) :-
+    catch(metta_assertion_failure(Ball, _, Actual, Expected, Missing, Excess), _, fail),
+    !,
+    maplist(metta_node_part_wire, [Actual, Expected, Missing, Excess], Parts).
+metta_node_assertion_parts(_, _, []).
+
+metta_node_part_wire(Part, []) :- var(Part), !.
+metta_node_part_wire(Part, Wire) :- metta_node_encode(Part, Wire).
 
 % The catalog's declaration for this refusal, rendered once by the engine and
 % carried beside the sentence: the authority the refusal stands on, and the

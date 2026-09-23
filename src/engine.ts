@@ -75,6 +75,7 @@ import { Atom, Expression, G, Grounded, lift } from "./atom.ts";
 import { config } from "./config.ts";
 import { type EffectClass, type OpKind as CatalogOpKind, effectRank } from "./vocabularies.ts";
 import {
+  type AssertionParts,
   CapabilityError,
   ClosedError,
   EngineError,
@@ -111,7 +112,11 @@ export { forgetRuntime, packageRoot, repoRoot };
  * remedy's `<field>` holes already filled from this refusal. Both are empty
  * arrays where the kind carries no row.
  */
-function refusal(outcome: readonly unknown[], where?: string): MettaError {
+function refusal(
+  outcome: readonly unknown[],
+  decode: (tokens: unknown) => Atom,
+  where?: string,
+): MettaError {
   const said = hostText(outcome[1]).trimEnd();
   const flat = (outcome[3] ?? []) as readonly unknown[];
   const fields: Record<string, string> = {};
@@ -123,7 +128,27 @@ function refusal(outcome: readonly unknown[], where?: string): MettaError {
     hostText(outcome[2]),
     fields,
     declared(outcome[4], outcome[5]),
+    assertionParts(outcome[6], decode),
   );
+}
+
+/**
+ * A failed assertion's four parts, decoded, or none where the refusal carried none.
+ *
+ * Each crossed as an encoded term, empty where the form carries no such part;
+ * the two bags crossed as one expression each, whose items are the answers.
+ */
+function assertionParts(parts: unknown, decode: (tokens: unknown) => Atom): AssertionParts {
+  const carried = (parts ?? []) as readonly unknown[];
+  if (carried.length !== 4) return {};
+  const part = (tokens: unknown): Atom | undefined =>
+    (tokens as readonly unknown[]).length === 0 ? undefined : decode(tokens);
+  const bag = (tokens: unknown): readonly Atom[] | undefined => {
+    const held = part(tokens);
+    return held instanceof Expression ? held.items : undefined;
+  };
+  const [actual, expected, missing, excess] = carried;
+  return { actual: part(actual), expected: part(expected), missing: bag(missing), excess: bag(excess) };
 }
 
 /** The `(ground ...)` and `(remedy ...)` halves of one refusal row, as options. */
@@ -490,7 +515,7 @@ export class Job {
       }
       if (tag === "error") {
         this.close();
-        throw refusal(event);
+        throw refusal(event, (tokens) => this.#engine.decodeAtom(tokens));
       }
       if (tag !== "call" && tag !== "pull") {
         return { done: true, event: this.#engine.decodeEvent(tag, event) };
@@ -766,7 +791,7 @@ export class Engine {
     }
     const outcome = result["Outcome"] as readonly unknown[];
     const kind = hostText(outcome[0]);
-    if (kind === "error") throw refusal(outcome, `running ${goal}`);
+    if (kind === "error") throw refusal(outcome, (tokens) => this.decodeAtom(tokens), `running ${goal}`);
     if (kind !== "ok") throw new EngineError(`the engine goal failed: ${goal}`);
     return result;
   }

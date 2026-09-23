@@ -4,6 +4,16 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- A failed assertion hands a harness its parts as atoms: `AssertionError`
+  now carries `.actual`, `.expected`, `.missing` and `.excess` beside
+  `.operation`, read off the refusal by the engine's own
+  `metta_assertion_failure/6`, the classifier the Python seat's
+  `AssertionFailure` reads. `.actual` is what a `test` produced or an
+  `assert`'s goal; `.missing` and `.excess` are the answers a bag comparison
+  found absent and extra, `undefined` where the form compared no bags and
+  empty where the answers agree and differ only in order. They were in the
+  message only, which a harness had to parse. The bridge's refusal frame grows
+  a seventh element carrying the four parts as encoded terms.
 - The engine transport reads a whole rational, `6r2`, as the integer it is,
   as the Python seat does.
 - A MeTTa rational crosses into TypeScript as the exact number it is: a

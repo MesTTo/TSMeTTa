@@ -13,6 +13,13 @@
  *   - Number and BigInt cross the signed-i64 boundary without losing a digit
  *   - an abandoned stream leaves the rest of an unbounded generator uncomputed
  *   - nothing the engine says reaches the host's console
+ *   - the census answers present for a capability exactly when every library
+ *     it rests on loads in SWI, and m.refusals is its absent rows
+ *     [tested: "reads what this build does without from the engine's own
+ *     census, and SWI agrees"; commit=WORKTREE]
+ *   - text holding U+0000 crosses from the engine into JavaScript and back
+ *     whole [tested: "carries U+0000 in text from the engine into JavaScript
+ *     and back"; commit=WORKTREE]
  *   - the swipl-wasm census names crypto and redis absent, SHA-256 still
  *     hashes through library(sha), and crypto-only operations or a Redis
  *     import refuse by capability rather than reaching an unknown predicate
@@ -61,7 +68,9 @@ import {
   exprOf,
   float,
   hostText,
+  hostValue,
   isError,
+  lib,
   metta,
   packageRoot,
   repoRoot,
@@ -103,6 +112,14 @@ after(() => {
   m.dispose();
 });
 
+/**
+ * A census requirement as Prolog reads it: one library spec, or a list of
+ * them, bound as `Specs`. The engine writes the requirement with term_string,
+ * so its own reader is the parser.
+ */
+const specsOf = (requires: string): string =>
+  `Requires = ${requires}, ( is_list(Requires) -> Specs = Requires ; Specs = [Requires] )`;
+
 describe("boot", () => {
   it("carries partial applications as the Python wire's expression", () => {
     const answer = m.run("!(* 2)")[0]?.answers[0];
@@ -126,10 +143,29 @@ describe("boot", () => {
     }
   });
 
-  it("reads what this build does without from the engine's own census", () => {
+  it("reads what this build does without from the engine's own census, and SWI agrees", () => {
+    const census = m.engine.capabilities();
+    assert.ok(census.length > 0, "the census answered nothing, so this test proves nothing");
+    for (const row of census) {
+      // Present exactly when every library the row rests on LOADS, which is
+      // stronger than the census's own resolution check: a library whose
+      // source is here and whose foreign half is not raises something other
+      // than a missing source, and that escapes this catch and fails the test.
+      const verdict = m.engine.once(
+        `${specsOf(row.requires)}, ` +
+          "( forall(member(Spec, Specs), " +
+          "catch(census_probe:use_module(Spec), error(existence_error(source_sink, _), _), fail)) " +
+          "-> Loads = yes ; Loads = no )",
+      );
+      assert.equal(
+        String(verdict["Loads"]) === "yes",
+        row.present,
+        `${row.capability} rests on ${row.requires}`,
+      );
+    }
     assert.deepEqual(
-      m.refusals.map(({ capability }) => capability).sort(),
-      ["concurrency", "crypto", "deadlines", "redis", "subprocess"],
+      m.refusals.map(({ capability }) => capability),
+      census.filter((row) => !row.present).map(({ capability }) => capability),
     );
   });
 
@@ -163,9 +199,13 @@ describe("boot", () => {
     assert.deepEqual((seen["L"] as unknown[]).map(Number), [2]);
   });
 
-  it("names the library each absence needs, and what it costs", () => {
+  it("names the libraries each absence needs, and what it costs", () => {
     for (const refusal of m.refusals) {
-      assert.match(refusal.requires, /^library\(\w+\)$/);
+      const read = m.engine.once(
+        `${specsOf(refusal.requires)}, ` +
+          "( Specs \\== [], forall(member(Spec, Specs), Spec = library(_)) -> Named = yes ; Named = no )",
+      );
+      assert.equal(String(read["Named"]), "yes", `${refusal.capability} requires ${refusal.requires}`);
       assert.ok(
         refusal.costs.length > 20,
         `${refusal.capability} says nothing about what it costs`,
@@ -675,6 +715,18 @@ describe("the codec, through the engine", () => {
     const answer = m.run("!(* 1000000000000 1000000000000)")[0]!.answers[0]!;
     assert.ok(answer instanceof Grounded);
     assert.equal(answer.value, 1000000000000000000000000n);
+  });
+
+  it("carries U+0000 in text from the engine into JavaScript and back", async () => {
+    // The host decoded engine text up to its first NUL, so a string holding
+    // one arrived cut short; a string is its code points, all of them. The
+    // engine builds the text here, so the engine-to-host direction is the one
+    // under test before the host hands it back.
+    const strings = m.space().import(lib.string);
+    const text = await strings.fn.stringFromCodes([97, 0, 129418]).one();
+    assert.equal(hostValue(text), "a\u0000\u{1F98A}");
+    assert.deepEqual(await strings.fn.stringCodes(text), [exprOf([G(97), G(0), G(129418)])]);
+    assert.deepEqual(await strings.fn.stringCodes("a\u0000b"), [exprOf([G(97), G(0), G(98)])]);
   });
 
   it("carries Number and BigInt across the signed-i64 boundary", () => {

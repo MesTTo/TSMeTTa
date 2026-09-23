@@ -17,6 +17,17 @@ Open Obligations: None. -->
   for. A function that is no class raises `NameError`; a constructor used to
   cross into the type as an opaque host value, so `arrow(Number, Number)`
   built `(-> (js Function) (js Function))`.
+- The WebAssembly host is rebuilt. Text holding U+0000 crosses from the
+  engine whole, where it was cut at the first NUL; the shipped libraries'
+  native halves and SWI's archive, utf8proc, yaml and OSSP UUID packages are
+  linked in, utf8proc with the engine's two patches, so `nfkc-casefold`
+  drops default-ignorable code points and `unicode_map/3` no longer aborts on
+  an empty result;
+  and `m.engine.capabilities()` answers what a load would, each
+  row decided the first time anything reads it. This build names nine
+  capabilities absent: concurrency, crypto, deadlines, environment-listing,
+  http, https, redis, socket and subprocess. A row nothing had loaded used to
+  read present, so http, https, socket and environment-listing did.
 - Loading or importing a file copes with a directory that changes while it is
   read. The mount copied every entry of the file's directory after a `stat`,
   so an entry removed between the listing and the read, such as another

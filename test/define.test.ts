@@ -203,6 +203,25 @@ describe("a lowered body", () => {
     assert.equal(String(await hypotenuse(3, 4).one()), "25");
   });
 
+  it("lowers the bitwise operators onto the bit- family, over unbounded integers", async () => {
+    const bits = m.define(function bits(a: bigint, b: bigint): Term {
+      return [a & b, a | b, a ^ b, ~a, a << 62n, a >> 1n];
+    });
+    assert.equal(
+      String(bits.equations[0]),
+      "(= (bits $a $b) ((bit-and $a $b) (bit-or $a $b) (bit-xor $a $b) (bit-not $a) (bit-shift-left $a 62) (bit-shift-right $a 1)))",
+    );
+    // 12 << 62 in 32-bit JavaScript numbers would wrap; the engine's integer does not.
+    assert.equal(String(await bits(12n, 10n).one()), "(8 14 6 -13 55340232221128654848 6)");
+    assert.throws(
+      () =>
+        m.define(function unsignedShift(a: number): number {
+          return a >>> 1;
+        }),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /unbounded/.test(error.message),
+    );
+  });
+
   it("lowers a conditional expression and the logical operators", () => {
     const pick = m.define(function pick(a: number, b: number): number {
       return a > b && a > 0 ? a : b;

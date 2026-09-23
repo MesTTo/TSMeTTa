@@ -43,8 +43,10 @@
  *     switch is a case whose default is tried last [tested: "a lowered body
  *     mentions"; commit=a9632282fd7f0cbd697a1d2ac353b6888dd9d849]
  * Decides: the lowering is a TRANSLATION, not an interpretation. `===` becomes
- *   the engine's `==`, `%` becomes the engine's `%`, and a call becomes an
- *   expression, so what runs is MeTTa and the TypeScript was only notation.
+ *   the engine's `==`, `%` becomes the engine's `%`, the bitwise operators
+ *   become the `bit-` family over MeTTa's unbounded integers, as a bigint's
+ *   are rather than a number's 32 bits, and a call becomes an expression, so
+ *   what runs is MeTTa and the TypeScript was only notation.
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -133,6 +135,14 @@ const BINARY: Readonly<Record<string, string>> = {
   ">": ">",
   ">=": ">=",
   "**": "pow-math",
+  // JavaScript has no operator overloading, so each of these means exactly one
+  // integer operation, and the engine's bit family is that operation. `>>>`
+  // is absent: an unsigned shift has no meaning over unbounded integers.
+  "&": "bit-and",
+  "|": "bit-or",
+  "^": "bit-xor",
+  "<<": "bit-shift-left",
+  ">>": "bit-shift-right",
 };
 
 const LOGICAL: Readonly<Record<string, string>> = {
@@ -701,6 +711,12 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
     case "BinaryExpression": {
       const binary = node as { operator: string; left: AcornExpression; right: AcornExpression };
       const head = BINARY[binary.operator];
+      if (binary.operator === ">>>") {
+        refuse(
+          `${scope.selfName} uses the unsigned shift >>>`,
+          "MeTTa's integers are unbounded, so there is no top bit to shift a zero into; >> is the arithmetic shift",
+        );
+      }
       if (head === undefined) {
         refuse(
           `${scope.selfName} uses the operator ${binary.operator}`,
@@ -746,9 +762,10 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
       if (unary.operator === "-") return expr(sym("-"), toAtom(0), inner);
       if (unary.operator === "+") return inner;
       if (unary.operator === "!") return expr(sym("not"), inner);
+      if (unary.operator === "~") return expr(sym("bit-not"), inner);
       refuse(
         `${scope.selfName} uses the unary operator ${unary.operator}`,
-        "MeTTa has negation as (- 0 x) and not; the rest have no meaning here",
+        "MeTTa has negation as (- 0 x), not and bit-not; the rest have no meaning here",
       );
       break;
     }

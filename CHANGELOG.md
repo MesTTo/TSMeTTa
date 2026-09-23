@@ -34,6 +34,11 @@ Open Obligations: None. -->
   `effectOf` and `disassemble` read a name string by the same rule. A name
   nothing defines yet refuses naming the mention door, `S.g(...)`, beside the
   ways to supply it.
+- A lowered body's `&`, `|`, `^`, `~`, `<<` and `>>` become the engine's
+  `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-shift-left` and
+  `bit-shift-right`, which work over unbounded integers as a `bigint`'s
+  operators do; they used to refuse as operators the engine has no head for.
+  `>>>` refuses naming why: an unsigned shift has no meaning without a top bit.
 - `m.rules(function* name(x, xs) { yield rewrite(lhs, rhs); ... })` stores the
   equations a generator yields exactly as written, with the generator's
   parameters as their variables: the door for heads that are patterns, such

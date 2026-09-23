@@ -12,7 +12,7 @@
  *     protocol documented there
  * Guarantees:
  *   - synchronous reading can call registered host token constructors
- *     [tested: test/reader-boundary.test.ts; commit=WORKTREE].
+ *     [tested: test/reader-boundary.test.ts; commit=9d6b109740b1744b734b53b563a3be8642d24c0e].
  *   - asynchronous query completion waits for provider finalizers
  *     [tested: test/resource-table-boundary.test.ts; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  *   - resource control can run outside ambient transaction and snapshot

@@ -2,7 +2,7 @@
  * Purpose: exercise host token construction through synchronous reader doors.
  * Owns resources: each runtime and token registration are released on every exit.
  * Guarantees: parse pumps constructors and propagates their failures
- *   [tested: npm test; commit=WORKTREE].
+ *   [tested: npm test; commit=9d6b109740b1744b734b53b563a3be8642d24c0e].
  * Open Obligations: None.
  */
 import { strict as assert } from "node:assert";

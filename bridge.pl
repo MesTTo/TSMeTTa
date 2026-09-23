@@ -40,7 +40,7 @@
 %     eval_20/6 clauses for '==' and '!='].
 % Guarantees:
 %   - the read command pumps host token constructors inside a job
-%     [tested: extensions/node/test/reader-boundary.test.ts; commit=WORKTREE].
+%     [tested: extensions/node/test/reader-boundary.test.ts; commit=9d6b109740b1744b734b53b563a3be8642d24c0e].
 %   - error transport runs outside transaction/snapshot scopes so exceptions
 %     roll back before crossing; committed views refresh through the shared
 %     observer hook [tested: "retains separate commit deltas and excludes rollback and speculation", "treats incompatible deterministic and streamed callback results as logical failure"; commit=94e5fc7eb685b895dde2878e7054332a0cb61c7d].

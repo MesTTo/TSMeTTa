@@ -20,6 +20,10 @@
  *     names already registered with this engine, and an explicitly supplied
  *     scope; anything else refuses, which is what makes a minified build fail
  *     loudly instead of silently building the wrong term
+ *   - an arrow function is MeTTa's lambda, `(v) => v < 2` being
+ *     `(|-> ($v) (< $v 2))`, and a binder that shadows a name of the body
+ *     around it is a fresh variable, as JavaScript gives it a new binding
+ *     [tested: "is an arrow function, in a lowered body and from the host"]
  *   - a name a function was defined by reaches the head that definition
  *     installed under, an exact one included, and a name two definitions
  *     share refuses rather than guessing which binding the source meant
@@ -444,6 +448,12 @@ export function lower(target: (...args: never[]) => unknown, given: LowerScope):
   const free = given.free ?? new Set<string>();
   const scope: LowerScope = { ...given, free };
   const parsed = parseFunction(Function.prototype.toString.call(target));
+  if ((parsed as { async?: boolean }).async === true) {
+    refuse(
+      `${scope.selfName} is an async function`,
+      "a lowered body runs in the engine, where there is nothing to await; host code the engine calls is op's",
+    );
+  }
   const bindings = new Map<string, Atom>();
   const params: Atom[] = [];
   parsed.params.forEach((param: Pattern, index: number) => {
@@ -857,6 +867,8 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
       );
       break;
     }
+    case "ArrowFunctionExpression":
+      return lowerLambda(node, bindings, scope);
     case "AwaitExpression":
       refuse(
         `${scope.selfName} awaits`,
@@ -870,6 +882,47 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
     `${scope.selfName} uses a ${node.type}, which has no MeTTa meaning`,
     "write the body as a generator, where a goal is a yield*, or register it with op so it runs as host code",
   );
+}
+
+/**
+ * An arrow function as MeTTa's lambda: `(v) => v < 2` is `(|-> ($v) (< $v 2))`.
+ *
+ * The arrow's parameters are the lambda's binders. One that shares its name
+ * with a binding of the body around it gets a fresh variable, as JavaScript's
+ * shadowing gives it a new binding: were it the enclosing equation's own
+ * variable, the call would bind it before the lambda ever ran, and
+ * `(= (f $x) (|-> ($x) ...))` would answer `(|-> (5) ...)` for `(f 5)`.
+ */
+function lowerLambda(node: AcornExpression, bindings: Bindings, scope: LowerScope): Atom {
+  const arrow = node as unknown as {
+    async: boolean;
+    params: readonly Pattern[];
+    body: AcornExpression | BlockStatement;
+  };
+  if (arrow.async) {
+    refuse(
+      `${scope.selfName} writes an async arrow`,
+      "a MeTTa lambda runs in the engine, where there is nothing to await",
+    );
+  }
+  const inner = new Map(bindings);
+  const binders = arrow.params.map((param) => {
+    if (param.type !== "Identifier") {
+      refuse(
+        `a lambda in ${scope.selfName} takes a ${param.type}`,
+        "name each parameter: a MeTTa lambda binds variables",
+      );
+    }
+    const name = (param as { name: string }).name;
+    const binder = bindings.has(name) ? fresh(name) : variable(name);
+    inner.set(name, binder);
+    return binder;
+  });
+  const body =
+    arrow.body.type === "BlockStatement"
+      ? lowerBlock((arrow.body as BlockStatement).body, inner, scope)
+      : lowerExpression(arrow.body as AcornExpression, inner, scope);
+  return expr(sym("|->"), exprOf(binders), body);
 }
 
 /**

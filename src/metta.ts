@@ -95,10 +95,12 @@ import { view } from "./spaces.ts";
 import {
   type Defined,
   type DefineOptions,
+  type LambdaOptions,
   type OpOptions,
   type RulesOptions,
   define as defineDoor,
   isTracing,
+  lambda as lambdaDoor,
   op as opDoor,
   rules as rulesDoor,
 } from "./define/define.ts";
@@ -629,6 +631,14 @@ export class MeTTa implements Disposable {
     options: RulesOptions = {},
   ): readonly Expression[] {
     return rulesDoor(this.#installer(), target, options);
+  }
+
+  /**
+   * A TypeScript arrow as a MeTTa lambda term, lowered from its own source:
+   * `m.lambda((x: number) => x * 2)` is `(|-> ($x) (* $x 2))`.
+   */
+  lambda(target: (...args: never[]) => unknown, options: LambdaOptions = {}): Atom {
+    return lambdaDoor(this.#installer(), target, options);
   }
 
   /** Keep a body as host code the engine calls. */

@@ -34,6 +34,14 @@ Open Obligations: None. -->
   `effectOf` and `disassemble` read a name string by the same rule. A name
   nothing defines yet refuses naming the mention door, `S.g(...)`, beside the
   ways to supply it.
+- An arrow function in a lowered body is MeTTa's lambda: `(v) => v < limit`
+  lowers to `(|-> ($v) (< $v $limit))`, closing over the body's own names,
+  where it used to refuse as an ArrowFunctionExpression. A binder that shadows
+  a name of the body around it gets a fresh variable, since the enclosing
+  equation's own variable would be bound by the call first. `m.lambda(arrow)`
+  lowers an arrow from host code into the same term. An async function now
+  refuses at definition time, naming op, where one without an `await` used to
+  lower as if it were synchronous.
 - An answer set and a spawned `Task` are whole Promises, `catch` and `finally`
   included, through one abstract face, `PromiseFace`, whose `then` each
   implements; they were `PromiseLike`, so `assert.rejects(m.eval(term), ...)`

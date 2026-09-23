@@ -41,7 +41,7 @@
  *   Future Enhancements: None
  */
 
-import { ATOM_OF, type Atom, Expression, Sym, type Term, expr, sym, toAtom, variable } from "../atom.ts";
+import { ATOM_OF, type Atom, Expression, Sym, type Term, expr, exprOf, sym, toAtom, variable } from "../atom.ts";
 import { type Answers, type AskOptions, isGoalRequest } from "../answers.ts";
 import { type EffectClass, type OpKind } from "../engine.ts";
 import { CompileError, MettaError, NameError } from "../errors.ts";
@@ -67,6 +67,12 @@ export interface DefineOptions {
 export interface RulesOptions {
   /** Where the equations go. The engine's own self space, by default. */
   readonly space?: Space;
+}
+
+/** What `lambda` may say about itself. */
+export interface LambdaOptions {
+  /** Values the arrow reaches by name that its own source cannot resolve. */
+  readonly scope?: Readonly<Record<string, Term>>;
 }
 
 /** What `op` may say about itself. */
@@ -294,6 +300,29 @@ function callable(
     },
     toString: (): string => head,
   }) as Defined;
+}
+
+/**
+ * A TypeScript arrow as a MeTTa lambda term, `(|-> (params) body)`.
+ *
+ * The arrow is lowered from its own source exactly as a definition's body is,
+ * and nothing is installed: the term is a value to pass, apply or store.
+ * `m.lambda((x: number) => x * 2)` is `(|-> ($x) (* $x 2))`. A lambda has no
+ * head, so its own name, if it has one, does not reach it.
+ */
+export function lambda(
+  install: Installer,
+  target: (...args: never[]) => unknown,
+  options: LambdaOptions = {},
+): Atom {
+  const lowered = lower(target, {
+    selfName: "a lambda",
+    knows: (name) => install.knows(name),
+    headsOf: (identifier) => install.headsOf(identifier),
+    declared: () => install.declared(),
+    ...(options.scope === undefined ? {} : { scope: options.scope }),
+  });
+  return expr(sym("|->"), exprOf(lowered.params), lowered.body);
 }
 
 /**

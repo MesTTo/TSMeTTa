@@ -270,7 +270,7 @@ describe("a lowered body", () => {
         m.define(async function waiting(x: number): Promise<number> {
           return await Promise.resolve(x);
         }),
-      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /awaits/.test(error.message),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /async function/.test(error.message) && /op/.test(error.message),
     );
   });
 
@@ -554,6 +554,49 @@ describe("a traced body", () => {
           yield* m.match(S.parent(x, V.y));
         }),
       (error: MettaError) => error.code === "ERR_METTA_TRACE" && /emits nothing/.test(error.message),
+    );
+  });
+});
+
+describe("a lambda", () => {
+  it("is an arrow function, in a lowered body and from the host", async () => {
+    const double = m.lambda((x: number) => x * 2);
+    assert.equal(String(double), "(|-> ($x) (* $x 2))");
+    assert.equal(String(await m.eval([double, 21]).one()), "42");
+    assert.equal(String(await m.eval(fn.forall(fn.superpose([1, 3]), m.lambda((v: number) => v < 2))).one()), "false");
+
+    const below = m.define(function below(limit: number): Term {
+      return (v: number) => v < limit;
+    });
+    assert.equal(String(below.equations[0]), "(= (below $limit) (|-> ($v) (< $v $limit)))");
+    assert.equal(String(await m.eval([S.below(2), 1]).one()), "true");
+
+    const adder = m.define(function adder(k: number): number {
+      const plus = (a: number, b: number) => a + b + k;
+      return plus(1, 2);
+    });
+    assert.equal(String(await adder(10).one()), "13", "a const holding a lambda applies it, and the lambda reads k");
+  });
+
+  it("gives a binder that shadows the body around it a fresh variable", async () => {
+    const shadow = m.define(function shadow(x: number): Term {
+      return (x: number) => x + 1;
+    });
+    assert.match(String(shadow.equations[0]), /^\(= \(shadow \$x\) \(\|-> \(\$x__\d+\) \(\+ \$x__\d+ 1\)\)\)$/);
+    assert.equal(String(await m.eval([S.shadow(5), 1]).one()), "2", "the call binds the head's $x, not the lambda's");
+  });
+
+  it("refuses an async arrow and a destructured binder", () => {
+    assert.throws(
+      () => m.lambda(async (x: number) => x),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /async/.test(error.message),
+    );
+    assert.throws(
+      () =>
+        m.define(function pairwise(): Term {
+          return ([a, b]: number[]) => a + b;
+        }),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /ArrayPattern/.test(error.message),
     );
   });
 });

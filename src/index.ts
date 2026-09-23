@@ -161,6 +161,7 @@ export {
   type Defined,
   type DefineOptions,
   type Installer,
+  type LambdaOptions,
   type OpOptions,
   type RulesOptions,
   isTracing,

@@ -91,6 +91,10 @@ head `in` that `{ name: "in" }` installed; a name two definitions share
 refuses. What `define` returns is its head in term position, so `h(twice, 2)`
 passes the symbol and `G(twice)` the live object. A generator body is
 TRACED instead, which is the door for queries (`yield* m.match(...)`).
+An arrow function in a body is a lambda, `(v) => v < k` being
+`(|-> ($v) (< $v $k))` (a binder shadowing a body name is renamed fresh), and
+`m.lambda(arrow)` lowers one from host code into the term, applied as
+`m.eval([lam, 21])`.
 Equations whose HEADS are patterns go through `m.rules(function* name(x, xs)
 { yield rewrite(S.f(S.leaf), 0); ... })`: the generator runs once with its
 parameters as variables and every yield, which must be an equation, is stored

@@ -678,6 +678,19 @@ all the lowering reads, the factories and words are recognised by NAME: a local
 binding of the same name shadows them, and a renamed import
 (`import { S as Sym }`) is not one of them.
 
+An arrow function is MeTTa's lambda: `(v: number) => v < limit` in a body is
+`(|-> ($v) (< $v $limit))`, closing over the body's own names, and a binder
+that shadows one of them gets a fresh variable as JavaScript gives it a new
+binding. `m.lambda` lowers an arrow the same way from host code, answering the
+term to pass, apply or store:
+
+```ts
+const twice = m.lambda((x: number) => x * 2);
+String(twice); // "(|-> ($x) (* $x 2))"
+String(await m.eval([twice, 21]).one()); // "42"
+String(await m.eval(fn.forall(fn.superpose([1, 3]), m.lambda((v: number) => v < 2))).one()); // "false"
+```
+
 A body reaches another definition by the name its function was written with.
 A head TypeScript cannot spell, such as `in`, a keyword there, is installed
 with `{ name }`, and a later body calling the function's own name lowers to

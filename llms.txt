@@ -304,9 +304,8 @@ There is no pandas adapter or SQL dialect translator in core.
 `taggedFact` and `taggedRule` build its data. `counting` counts proofs, `prob`
 combines weights, `S.product(...)` combines carriers and `S.formula(S.prob)`
 accounts for overlapping proofs. The engine owns the fixpoint and laws.
-Pass a carrier name or term, not a host `Algebra` object. The older
-`evaluate`/`TaggedAnswer` API retains host derivation trees; it is a separate
-existing facility, not the native query path.
+Pass a carrier name or term; a host `Algebra` object raises
+`AlgebraDeclarationError`.
 
 ## Remote serving and application doors
 

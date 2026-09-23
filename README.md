@@ -47,6 +47,24 @@ A tool server can carry a reasoner instead of calling one: MCP servers, agent
 loops and the services around them are written in TypeScript, and the engine
 ships with the package rather than beside it.
 
+## Installation
+
+```sh
+npm install tsmetta
+```
+
+The engine is SWI-Prolog compiled to WebAssembly and ships inside the package,
+so nothing is installed beside it and no native build runs. The surfaces below
+are subpath imports of the same package.
+
+```ts
+import { metta, S, V } from "tsmetta";
+import { matchUnder } from "tsmetta/algebra";
+import { tableSpace } from "tsmetta/tables";
+```
+
+From a checkout of this repository instead:
+
 ```sh
 npm ci
 npm run typecheck
@@ -504,24 +522,27 @@ already producing typed arrays need no library-specific door in core.
 ## Algebras and semirings
 
 ```ts
-import { matchUnder, taggedFact, taggedRule } from "tsmetta/algebra";
+import { Algebra, matchUnder, taggedFact, taggedRule } from "tsmetta/algebra";
 
 using weighted = m.space();
 weighted.add(taggedFact(0.5, S.a()), taggedFact(0.2, S.b()),
   taggedRule(1, S.c(), S.a(), S.b()));
 String((await matchUnder(weighted, S.c(), "prob").one()).tag); // "0.1"
 String((await matchUnder(weighted, S.c(), "counting").one()).tag); // "1" proof
+
+// Carriers are terms, so they compose: one that counts the proofs underneath
+// the probability is the product of the two.
+const overlapping = S.product(S.prob, S.counting);
+
+// The carrier names an ENGINE declaration. A host object is not one.
+matchUnder(weighted, S.c(), new Algebra({ /* ... */ }));
+// AlgebraDeclarationError: matchUnder needs an engine carrier name or term;
+//   declare the algebra in the catalog and pass its name
 ```
 
-`matchUnder(space, pattern, carrier)` is `(match-under space carrier pattern)`.
-It returns `{ value, tag }` atoms. The engine owns fixpoints, carrier laws,
-guards and cyclic evaluation. Carrier terms compose, including
-`S.product(S.prob, S.counting)` and `S.formula(S.prob)` for overlapping proofs.
-Carrier declarations are queryable in `m.catalog`. Pass a declared name or
-carrier term; a host `Algebra` object is not an engine declaration.
-
-The older `evaluate`/`TaggedAnswer` API retains host derivation trees. It is a
-separate existing host facility; use `matchUnder` for native language semantics.
+`matchUnder(space, pattern, carrier)` is `(match-under space carrier pattern)`,
+and it answers `{ value, tag }` atoms. The engine owns fixpoints, carrier laws,
+guards and cyclic evaluation, and `m.catalog` holds the declarations.
 
 ## Tables and SQL
 

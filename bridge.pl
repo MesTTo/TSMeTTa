@@ -452,9 +452,9 @@ metta_node_handle_names([V|Vs], N0, N, [Name|Names], [A=V|Pairs]) :-
 % terms are variants and a literal '$VAR'(N) cannot pass for a variable
 % [source: extensions/python/metta/_binding/handles.pl, the registry;
 % extensions/cmetta 0f7fd79, compound handles keyed injectively;
-% ai-tmp/ai-provider-carry.md, the Node design]. An id is minted by flag/3 and
-% never issued twice, so a released id stays an error rather than naming
-% another value.
+% extensions/python 5b0b9227, the carried provider door's variant key]. An id
+% is minted by flag/3 and never issued twice, so a released id stays an error
+% rather than naming another value.
 :- dynamic metta_node_handle/2, metta_node_handle_key/2.
 
 metta_node_handle_keep(Term, Id) :-

@@ -517,9 +517,10 @@ let nextSession = 1;
  * naming an id. An atom lives as long as JavaScript holds it, and when the
  * last atom naming an id is collected, or `release()` is called on one, the id
  * waits here until the engine's next crossing carries its release, so a
- * finaliser never calls into the engine [source: ai-tmp/ai-provider-carry.md,
- * the Node design; extensions/python/metta/_binding/runtime.py, the deferred
- * release]. An id the same value crosses back under before that crossing
+ * finaliser never calls into the engine [source:
+ * extensions/python/metta/_binding/runtime.py, _defer_record_erase, which
+ * queues a dropped record's erase for the next crossing the same way].
+ * An id the same value crosses back under before that crossing
  * stays: the engine answered it, so it is live again. The table dies with
  * its engine.
  */

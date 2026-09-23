@@ -26,7 +26,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { type MeTTa, metta, repoRoot } from "../src/index.ts";
+import { type Atom, type MeTTa, S, V, alphaEqual, e, metta, repoRoot } from "../src/index.ts";
 
 import * as errors from "../src/errors.ts";
 
@@ -314,6 +314,14 @@ describe("an assertion failure crossing the seat", () => {
     // Two EMPTY bags say the answers agree and differ only in order.
     const order = failure("!(assertEqual (superpose (1 2)) (superpose (2 1)))");
     assert.deepEqual([order.missing, order.excess], [[], []]);
+
+    // The parts cross as one term, so two distinct variables stay two: encoded
+    // one part at a time, each bag would have named its first variable alike
+    // and the host would have read one variable shared between them.
+    const open = failure("!(assertEqualToResult (superpose ((f $x))) ((g $x)))");
+    const [missing, excess] = [open.missing?.[0] as Atom, open.excess?.[0] as Atom];
+    assert.ok(alphaEqual(e(missing, excess), e(S.g(V.a), S.f(V.b))));
+    assert.ok(!alphaEqual(e(missing, excess), e(S.g(V.a), S.f(V.a))));
   });
 
   // Both bags empty is the permutation diagnosis rather than a puzzle, and it

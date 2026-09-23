@@ -135,19 +135,21 @@ function refusal(
 /**
  * A failed assertion's four parts, decoded, or none where the refusal carried none.
  *
- * Each crossed as an encoded term, empty where the form carries no such part;
- * the two bags crossed as one expression each, whose items are the answers.
+ * They crossed as ONE term, so a variable the parts share stays one variable:
+ * four slots, each empty where the form carries no such part and otherwise
+ * holding it, the two bags as an expression whose items are the answers.
  */
 function assertionParts(parts: unknown, decode: (tokens: unknown) => Atom): AssertionParts {
-  const carried = (parts ?? []) as readonly unknown[];
-  if (carried.length !== 4) return {};
-  const part = (tokens: unknown): Atom | undefined =>
-    (tokens as readonly unknown[]).length === 0 ? undefined : decode(tokens);
-  const bag = (tokens: unknown): readonly Atom[] | undefined => {
-    const held = part(tokens);
+  if ((parts as readonly unknown[] | undefined ?? []).length === 0) return {};
+  const slots = decode(parts);
+  if (!(slots instanceof Expression) || slots.items.length !== 4) return {};
+  const part = (slot: Atom | undefined): Atom | undefined =>
+    slot instanceof Expression ? slot.items[0] : undefined;
+  const bag = (slot: Atom | undefined): readonly Atom[] | undefined => {
+    const held = part(slot);
     return held instanceof Expression ? held.items : undefined;
   };
-  const [actual, expected, missing, excess] = carried;
+  const [actual, expected, missing, excess] = slots.items;
   return { actual: part(actual), expected: part(expected), missing: bag(missing), excess: bag(excess) };
 }
 

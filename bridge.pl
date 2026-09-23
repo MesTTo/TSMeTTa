@@ -3,8 +3,8 @@
 %   for that kind with the remedy's <field> holes already filled, both flat and
 %   as text [tested: extensions/node/test/errors.test.ts,
 %   "carries the ground and the filled remedy of every kind"; commit=f33b7ab0200e6dc74c88fb4c7f827bf545a447ed],
-%   and Parts a failed assertion's actual, expected, missing and excess as
-%   encoded terms, each empty where the form carries none [tested:
+%   and Parts a failed assertion's actual, expected, missing and excess as one
+%   encoded term of four slots, each empty where the form carries none [tested:
 %   extensions/node/test/errors.test.ts, "hands a harness the parts of a failed
 %   assertion as atoms"; commit=c8ce18f24ac8192e77ddc1f173f3c5229cf58345].
 % Guarantees: metta_node_render/2 scopes message capture through
@@ -208,19 +208,22 @@ metta_node_error(Ball, [error, Text, Kind, Fields, Ground, Remedy, Parts]) :-
 % A failed assertion's four parts, read off the ball by the engine's own
 % classifier, the one the Python seat reads: the value produced (a test's
 % actual, an assert's goal), the value asked for, and the two answer bags a
-% comparison over answers computed. Each crosses as an encoded TERM rather
-% than as text, because a harness compares them as atoms, and a part the form
-% does not carry crosses empty, which is a different answer from the empty bag
-% `()`. Any other kind carries no parts. Guarded like the kind above, since this
-% too runs inside the recovery.
+% comparison over answers computed. They cross as ONE encoded term, a slot per
+% part holding the part or nothing, because the encoder names variables per
+% term: four separate encodings would give a variable the parts share two
+% names and two distinct variables one. An absent slot is a different answer
+% from the empty bag `()`, which is a present slot holding `()`. Any other kind
+% carries no parts. Guarded like the kind above, since this too runs inside
+% the recovery.
 metta_node_assertion_parts(assertion, Ball, Parts) :-
     catch(metta_assertion_failure(Ball, _, Actual, Expected, Missing, Excess), _, fail),
     !,
-    maplist(metta_node_part_wire, [Actual, Expected, Missing, Excess], Parts).
+    maplist(metta_node_part_slot, [Actual, Expected, Missing, Excess], Slots),
+    metta_node_encode(Slots, Parts).
 metta_node_assertion_parts(_, _, []).
 
-metta_node_part_wire(Part, []) :- var(Part), !.
-metta_node_part_wire(Part, Wire) :- metta_node_encode(Part, Wire).
+metta_node_part_slot(Part, []) :- var(Part), !.
+metta_node_part_slot(Part, [Part]).
 
 % The catalog's declaration for this refusal, rendered once by the engine and
 % carried beside the sentence: the authority the refusal stands on, and the

@@ -40,11 +40,18 @@ await build({
       build.onResolve({ filter: /^\.\/platform\.ts$/ }, () => ({
         path: fileURLToPath(new URL("../src/platform-browser.ts", import.meta.url)),
       }));
-      // The emscripten loader in _host/ keeps its Node-only branches, which
-      // require these. npm-swipl-wasm's own webpack recipe excludes Node
-      // builtins for the web target for the same reason.
+      // The emscripten loader in _host/ requires modules only in its Node
+      // branches, which a browser never takes: its web path reads globals, the
+      // WebSocket constructor where Node's branch requires the ws package. So
+      // everything the loader names by bare specifier resolves to an empty
+      // module here. The rule is the importer rather than a list of names,
+      // because a host build that links more of emscripten requires more:
+      // build-4's OSSP UUID link brought the socket layer and two require("ws")
+      // [source: _host/swipl-web.cjs at 4ab1b06, SOCKFS's createPeer and
+      // listen]. npm-swipl-wasm's own webpack recipe excludes Node builtins for
+      // the web target for the same reason.
       // https://github.com/SWI-Prolog/npm-swipl-wasm/blob/abae5e515658fa80a6f4a189b86b192b9ae02c7e/webpack.config.js
-      build.onResolve({ filter: /^(node:)?(fs|crypto)$/ }, (args) => {
+      build.onResolve({ filter: /^[^./]/ }, (args) => {
         if (!/[\\/]_host[\\/]swipl-web\.cjs$/.test(args.importer)) return;
         return { path: args.path, namespace: "inactive-node" };
       });

@@ -86,6 +86,8 @@ S.parent(S.alice, S.bob)     // (parent alice bob)
 V.p                          // $p
 fn.add(1, 2)                 // (+ 1 2)
 fn.carAtom(S.x)              // (car-atom x)
+seg(V.rest)                  // (:seg $rest), a gap standing for a run of children
+seg()                        // ..., the anonymous gap
 ```
 
 TypeScript's casing reaches MeTTa's hyphens: `fn.carAtom` is `car-atom`, and a

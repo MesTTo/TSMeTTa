@@ -63,6 +63,11 @@ That last pair is the one to get right. `fn` maps a readable name onto the
 operation the engine actually has, so `fn.add` is `+`; `S.add` builds a term
 headed by the symbol `add`, which nothing defines, so it comes back unreduced.
 
+A gap stands for a RUN of children: `seg(V.rest)` is `(:seg $rest)`, whose
+match answers the run it took as one expression, and `seg()` is the anonymous
+gap `...`, each occurrence its own, so `S.order(seg())` matches an `order` of
+any arity.
+
 ## A lowered body
 
 `m.define(function f(...) {...})` reads a plain function's own source and

@@ -4,6 +4,12 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- `seg()` with no name is MeTTa's anonymous gap `...`, each occurrence its own
+  variable as `_` is for one child, so `S.order(seg())` matches an `order` of
+  any arity; `seg` took a name only, and the gap had no spelling but the
+  bracket door's `S["..."]`. PyMeTTa writes it with Python's `...`, which
+  TypeScript has no literal for. A space's rows now have a test reading a run
+  through a named gap and every arity through an anonymous one.
 - `Math`'s functions in a lowered body keep their JavaScript meaning on the
   engine's own math heads, where every Math call refused as a call to
   something that is not a plain name. `Math.abs(a - b) < 2` lowers to

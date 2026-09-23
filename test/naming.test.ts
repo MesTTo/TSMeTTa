@@ -122,4 +122,8 @@ describe("segments", () => {
     assert.equal(String(seg(V.before)), "(:seg $before)");
     assert.equal(String(seg("after")), "(:seg $after)");
   });
+
+  it("spells the anonymous gap with no name, the engine's own symbol", () => {
+    assert.equal(seg(), sym("..."));
+  });
 });

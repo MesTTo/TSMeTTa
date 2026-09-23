@@ -36,6 +36,7 @@ import {
   expr,
   hostValue,
   metta,
+  seg,
   space,
   sym,
 } from "../src/index.ts";
@@ -171,6 +172,16 @@ describe("rows", () => {
     assert.equal(rows.length, 1);
     assert.equal(rows[0]!["f"], sym("twice"));
     assert.equal(hostValue(rows[0]!["n"] as never), 3);
+  });
+
+  it("read a run through a gap, a named one answering the run it took", async () => {
+    const kb = fresh();
+    kb.add(S.order(7, S.x, S.y), S.order(8), S.note(1));
+    assert.equal(await kb.match(S.order(seg())).count(), 2, "one gap reads every arity");
+    const runs = async (id: number): Promise<string[]> =>
+      (await kb.match(S.order(id, seg(V.rest)))).map(({ rest }) => String(rest));
+    assert.deepEqual(await runs(7), ["(x y)"]);
+    assert.deepEqual(await runs(8), ["()"], "zero children is a run");
   });
 
   it("answer an empty row for a ground pattern that matches", async () => {

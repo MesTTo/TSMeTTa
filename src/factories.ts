@@ -230,9 +230,13 @@ export { fresh };
  *
  * `S.div(seg(V.before), S.li(V.x), seg(V.after))` finds an `li` among its
  * siblings WITH its context bound, which the fixed-arity pattern languages
- * approximate and a sequence variable generalises.
+ * approximate and a sequence variable generalises. With no name, `seg()` is
+ * MeTTa's anonymous gap `...`, every occurrence its own variable as `_` is for
+ * one child, so `S.order(seg())` reads an `order` of any arity. PyMeTTa spells
+ * that gap with Python's own `...`, a literal TypeScript does not have.
  */
-export function seg(name: Var | string): Atom {
+export function seg(name?: Var | string): Atom {
+  if (name === undefined) return sym("...");
   return expr(sym(":seg"), typeof name === "string" ? variable(name) : name);
 }
 

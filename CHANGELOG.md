@@ -4,6 +4,8 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+## 0.0.1-alpha.1 - 2026-09-24
+
 - Boot the engine on a patched WebAssembly SWI-Prolog this package carries in
   `_host/`, in place of npm's `swipl-wasm`, which carries fourteen of the
   defects the engine's host-workaround patches fix. The host is SWI-Prolog
@@ -39,6 +41,21 @@ Open Obligations: None. -->
   check from enclosing package self-reference; correct executable carrier and
   browser-export documentation.
 
+### Migration
+
+`swipl-wasm` is no longer a dependency of this package: the SWI-Prolog it runs
+is `_host/`, and `swipl-wasm` stays only as a devDependency, the stock host the
+suite proves is refused. `metta()` refuses a host without the engine's patches,
+so an application that swapped in its own SWI-Prolog build needs one declared
+by MesTTo/MeTTa's `tools/pymetta-host/declare-host.sh`.
+
+Tensor dimensions and coordinates now reject invalid numeric indices. Schema
+callables check their declared arity at compile time. A generator declared pure
+reports `nondeterministicReadOnly`; awaiting a truncated query waits for its
+provider's finalizer. Repeated table columns must hold equal terms.
+
+## 0.0.1-alpha.0 - 2026-09-22
+
 - Add prepared queries with native joins, guards and limits. The query exposes
   its term and columns, reuses its encoding, and reads fresh answers on each solve.
 - Add temporary facts through `Space.withFacts` and `PreparedQuery.solve({given})`.
@@ -61,17 +78,6 @@ Open Obligations: None. -->
   removal. GraphQL frameworks and SQL drivers remain extension-package concerns.
 
 ### Migration
-
-`swipl-wasm` is no longer a dependency of this package: the SWI-Prolog it runs
-is `_host/`, and `swipl-wasm` stays only as a devDependency, the stock host the
-suite proves is refused. `metta()` refuses a host without the engine's patches,
-so an application that swapped in its own SWI-Prolog build needs one declared
-by MesTTo/MeTTa's `tools/pymetta-host/declare-host.sh`.
-
-Tensor dimensions and coordinates now reject invalid numeric indices. Schema
-callables check their declared arity at compile time. A generator declared pure
-reports `nondeterministicReadOnly`; awaiting a truncated query waits for its
-provider's finalizer. Repeated table columns must hold equal terms.
 
 Existing unguarded matches keep their behavior. A template that is an ordinary
 host object must be wrapped in `G`; atom-bearing handles are templates directly.

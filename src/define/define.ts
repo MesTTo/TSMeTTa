@@ -1,6 +1,7 @@
 /**
- * Purpose: the three doors a program installs meaning through: `define` for an
- *   equation the engine holds, `op` for host code the engine calls, and
+ * Purpose: the doors a program installs meaning through: `define`, which
+ *   lowers a plain function's source or traces a generator into equations the
+ *   engine holds, and `op`, which keeps host code as host code the engine calls.
  * Assumes:
  *   - `fn.name` is the head, mapped through TypeScript's own casing, so
  *     `function balanceOf` installs `balance-of`; `{ name: "prime?" }` opts in
@@ -12,6 +13,13 @@
  *     [tested: test/resource-table-boundary.test.ts; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  *   - what `define` returns IS the callable, and calling it ASKS, so there is
  *     one call door rather than three
+ *   - what `define` and `op` return is its head in term position, so
+ *     `h(twice, 2)` passes the symbol `twice` and `G(twice)` stays the spelling
+ *     for the live object [tested: "is its head wherever a term goes"]
+ *   - a later lowered body reaches a definition by the name its function was
+ *     written with, whatever head it installed under, and refuses a name two
+ *     definitions share [tested: "reaches a definition installed under an
+ *     exact head by its function's own name"]
  *   - a definition costs ZERO host crossings per call: the whole body is in the
  *     engine
  *   - `op` keeps host code as host code, and its yields are what it costs
@@ -28,7 +36,7 @@
  *   Future Enhancements: None
  */
 
-import { type Atom, type Sym, type Term, expr, sym, toAtom, variable } from "../atom.ts";
+import { ATOM_OF, type Atom, type Sym, type Term, expr, sym, toAtom, variable } from "../atom.ts";
 import { type Answers, type AskOptions } from "../answers.ts";
 import { type EffectClass, type OpKind } from "../engine.ts";
 import { MettaError, NameError } from "../errors.ts";
@@ -74,7 +82,10 @@ export interface OpOptions extends DefineOptions {
  * A name this engine holds a meaning for.
  *
  * Calling it ASKS, which is the one call door. Its `atom` MENTIONS it, which is
- * what a body writes when it means the term and not the answers.
+ * what a body writes when it means the term and not the answers, and so does
+ * the callable itself wherever a term goes: `S.memoize(twice, 2)` builds
+ * `(memoize twice 2)`, because mentioning a function is holding its symbol.
+ * `G(twice)` is the spelling for the live object.
  */
 export interface Defined {
   (...args: readonly Term[]): Answers<Atom>;
@@ -82,6 +93,8 @@ export interface Defined {
   readonly head: string;
   /** The head as an atom, for a mention. */
   readonly atom: Sym;
+  /** The head again, under the key term conversion reads. */
+  readonly [ATOM_OF]: Sym;
   /** How many arguments the head takes. */
   readonly arity: number;
   /** The equations this definition put in the space, for a program that reads its own. */
@@ -102,8 +115,13 @@ export interface Installer {
   unregister(name: string, arity: number): void;
   /** Ask a term. */
   ask(term: Atom, space: Space, options?: AskOptions): Answers<Atom>;
-  /** Note that a head now exists. */
-  remember(name: string, arity: number): void;
+  /**
+   * Note that a head now exists, and the name of the function that installed
+   * it, when it has one, so a later body calling that name reaches the head.
+   */
+  remember(name: string, arity: number, identifier?: string): void;
+  /** The heads installed by a function of this name, which a body calls it by. */
+  headsOf(identifier: string): readonly string[];
   /** Every head this engine knows, so a refusal can name the nearest one. */
   declared(): Iterable<string>;
 }
@@ -207,32 +225,39 @@ export function define(
       space: toAtom(space),
       ...(target.name === "" ? {} : { selfIdentifier: target.name }),
       knows: (name) => install.knows(name),
+      headsOf: (identifier) => install.headsOf(identifier),
       declared: () => install.declared(),
       ...(options.scope === undefined ? {} : { scope: options.scope }),
     });
     // The lowering names the head's parameters from the source, so the
     // equation is written over those and not over the ones minted above.
-    return finish(install, head, lowered.params, [lowered.body], space, options, arity);
+    return finish(install, target, head, lowered.params, [lowered.body], space, options);
   }
-  return finish(install, head, params, bodies, space, options, arity);
+  return finish(install, target, head, params, bodies, space, options);
 }
 
 function finish(
   install: Installer,
+  target: (...args: never[]) => unknown,
   head: string,
   params: readonly Atom[],
   bodies: readonly Atom[],
   space: Space,
   options: DefineOptions,
-  arity: number,
 ): Defined {
   const equations = bodies.map((body) => equationOf(head, params, body));
   if (options.type !== undefined) {
     space.add(expr(sym(":"), sym(head), toAtom(options.type)));
   }
   space.add(...equations);
-  install.remember(head, arity);
-  return callable(install, head, arity, equations, space);
+  remember(install, target, head);
+  return callable(install, head, target.length, equations, space);
+}
+
+/** Record the head, under the function's own name when it has one. */
+function remember(install: Installer, target: (...args: never[]) => unknown, head: string): void {
+  if (target.name === "") install.remember(head, target.length);
+  else install.remember(head, target.length, target.name);
 }
 
 function callable(
@@ -245,6 +270,9 @@ function callable(
   const symbol = sym(head);
   const ask = (...args: readonly Term[]): Answers<Atom> =>
     install.ask(expr(symbol, ...args.map(toAtom)), space);
+  // The key is a symbol, so it is defined rather than assigned, as the name
+  // factory defines it on every `S.name`.
+  Object.defineProperty(ask, ATOM_OF, { value: symbol });
   return Object.assign(ask, {
     head,
     atom: symbol,
@@ -291,7 +319,7 @@ export function op(
   if (options.type !== undefined) {
     space.add(expr(sym(":"), sym(head), toAtom(options.type)));
   }
-  install.remember(head, arity);
+  remember(install, target, head);
   const defined = callable(install, head, arity, [], space);
   return Object.assign(defined, {
     forget: (): void => {

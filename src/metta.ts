@@ -232,6 +232,8 @@ export class MeTTa implements Disposable {
   #engine: Engine;
   #spaces = new Map<SpaceIdentity, Space>();
   #known = new Set<string>();
+  /** The heads each defining function's own name installed, for `#head` and the lowering. */
+  #installedBy = new Map<string, Set<string>>();
   #scopes: Scope[] = [];
 
   /** The engine's own default space. */
@@ -607,6 +609,21 @@ export class MeTTa implements Disposable {
     return opDoor(this.#installer(), target, options);
   }
 
+  /**
+   * The engine head behind a name, a symbol or a defined callable.
+   *
+   * A name is read the way a lowered body reads it: the head a function of
+   * that name was defined under, else the casing map's image of it.
+   */
+  #head(name: string | Sym | Defined): string {
+    if (typeof name !== "string") return name instanceof Sym ? name.name : name.head;
+    const installed = [...(this.#installedBy.get(name) ?? [])];
+    if (installed.length > 1) {
+      throw new NameError(`two definitions were written with the name ${name} (${installed.join(", ")}); pass the one you mean`);
+    }
+    return installed[0] ?? mettaName(name);
+  }
+
   #installer(): Parameters<typeof defineDoor>[0] {
     const surface = this;
     return {
@@ -626,9 +643,14 @@ export class MeTTa implements Disposable {
       },
       ask: (term: Atom, space: Space, options?: AskOptions): Answers<Atom> =>
         surface.ask(term, space, options),
-      remember: (name: string): void => {
+      remember: (name: string, _arity: number, identifier?: string): void => {
         surface.#known.add(name);
+        if (identifier === undefined) return;
+        const heads = surface.#installedBy.get(identifier) ?? new Set<string>();
+        heads.add(name);
+        surface.#installedBy.set(identifier, heads);
       },
+      headsOf: (identifier: string): readonly string[] => [...(surface.#installedBy.get(identifier) ?? [])],
       declared: (): Iterable<string> => surface.#known,
     };
   }
@@ -858,7 +880,7 @@ export class MeTTa implements Disposable {
    * engine has deferred is compiled by asking for it.
    */
   disassemble(name: string | Sym | Defined, space: Space = this.self): string {
-    const head = headOf(name);
+    const head = this.#head(name);
     const event = this.#engine.start(["disassemble", space.reference, head]).sync();
     if (event === null || event.kind !== "value") {
       throw new NameError(`${head} has no compiled clauses in ${space.name}`);
@@ -904,12 +926,7 @@ export class MeTTa implements Disposable {
 
   /** The effect class the engine holds for an operation. */
   effectOf(name: string | Sym | Defined): EffectClass | "unknown" {
-    const head =
-      typeof name === "string"
-        ? mettaName(name)
-        : name instanceof Sym
-          ? name.name
-          : name.head;
+    const head = this.#head(name);
     const event = this.#engine.start(["effect", head]).sync();
     if (event === null || event.kind !== "value") return "unknown";
     return String(hostValue(event.atom)) as EffectClass | "unknown";
@@ -1045,11 +1062,6 @@ function containsVariable(identity: Expression): boolean {
   return false;
 }
 
-/** The engine head behind a name, a symbol or a defined callable. */
-function headOf(name: string | Sym | Defined): string {
-  if (typeof name === "string") return mettaName(name);
-  return name instanceof Sym ? name.name : name.head;
-}
 
 /**
  * The provider behind a backing value.

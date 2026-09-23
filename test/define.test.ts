@@ -37,6 +37,7 @@ import {
   If,
   type MeTTa,
   MettaError,
+  NameError,
   S,
   Superpose,
   TRUE,
@@ -78,6 +79,11 @@ function findDivisor(n: number, d: number): number {
   if (d * d > n) return n;
   if (n % d === 0) return d;
   return findDivisor(n, d + 1);
+}
+
+/** Installed under an exact head, `even?`, and called by this name. */
+function isEven(n: number): boolean {
+  return n % 2 === 0;
 }
 
 describe("a lowered body", () => {
@@ -127,6 +133,40 @@ describe("a lowered body", () => {
     assert.equal(isPrime.head, "prime?");
     assert.equal(String(await isPrime(53537257).one()), "true");
     assert.equal(String(await isPrime(91).one()), "false");
+  });
+
+  it("reaches a definition installed under an exact head by its function's own name", async () => {
+    m.define(isEven, { name: "even?" });
+    const evens = m.define(function evens(a: number, b: number): number {
+      return (isEven(a) ? 1 : 0) + (isEven(b) ? 1 : 0);
+    });
+    assert.match(String(evens.equations[0]), /\(even\? \$a\)/);
+    assert.equal(String(await evens(2, 3).one()), "1");
+    assert.equal(m.disassemble("isEven"), m.disassemble("even?"), "the surface reads a name the way a body does");
+  });
+
+  it("refuses a name two definitions were written with, rather than guessing", () => {
+    m.define(
+      function doubled(n: number): number {
+        return n * 2;
+      },
+      { name: "doubled-a" },
+    );
+    m.define(
+      function doubled(n: number): number {
+        return n + n;
+      },
+      { name: "doubled-b" },
+    );
+    assert.throws(
+      () =>
+        m.define(function usesDoubled(n: number): number {
+          return doubled(n);
+        }),
+      (error: MettaError) =>
+        error.code === "ERR_METTA_LOWER" && /doubled-a, doubled-b/.test(error.message) && /scope/.test(error.message),
+    );
+    assert.throws(() => m.disassemble("doubled"), NameError);
   });
 
   it("costs no host crossing per call, because the whole body is in the engine", async () => {
@@ -198,7 +238,7 @@ describe("a lowered body", () => {
     );
   });
 
-  it("refuses a free name nothing defines, naming the three ways to supply it", () => {
+  it("refuses a free name nothing defines, naming the ways to supply it and to mention it", () => {
     assert.throws(
       () =>
         m.define(function reaching(n: number): number {
@@ -207,7 +247,8 @@ describe("a lowered body", () => {
       (error: MettaError) =>
         error.code === "ERR_METTA_LOWER" &&
         /somethingUndeclared/.test(error.message) &&
-        /scope/.test(error.message),
+        /scope/.test(error.message) &&
+        error.message.includes("S.somethingUndeclared(...)"),
     );
   });
 
@@ -404,6 +445,7 @@ describe("a lowered body mentions", () => {
 
 declare function somethingUndeclared(n: number): unknown;
 declare function toString(n: number): unknown;
+declare function doubled(n: number): number;
 
 describe("a traced body", () => {
   it("becomes a nest of goals, which is what a conjunction is in MeTTa", async () => {
@@ -609,6 +651,19 @@ describe("the call door", () => {
     assert.equal(String(twice.atom), "twice");
     assert.equal(String(S.twice(21)), "(twice 21)", "a mention runs nothing");
     assert.equal(String(await twice(21).one()), "42");
+  });
+
+  it("is its head wherever a term goes", async () => {
+    const triple = m.define(function triple(n: number): number {
+      return n * 3;
+    });
+    assert.equal(toAtom(triple), triple.atom);
+    assert.equal(String(S.twiceOf(triple, 2)), "(twice-of triple 2)");
+    const applied = m.define(function applied(f: (n: number) => number, n: number): number {
+      return f(n);
+    });
+    assert.equal(String(await applied(triple, 7).one()), "21", "the host hands the engine the symbol it applies");
+    assert.notEqual(G(triple), triple.atom, "G grounds the live object");
   });
 
   it("forgets a definition when asked", async () => {

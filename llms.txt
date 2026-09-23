@@ -81,7 +81,11 @@ built: `S.name`, `S.f(a, b)`, `S["x"]`, `S("exact")`, `V.x`, `fn.carAtom(x)`,
 `G("text")`, `float(2)`. Word-door functions (`If`, `Let`, `Collapse`,
 `Superpose`, `Quote`, `Empty`, `Match`, `carAtom`, `neg`, `e`, `nil`, the
 operator words) and constants (`TRUE`, `FALSE`, `UNIT`, `UNDEFINED`) are read
-by their exported names after the engine's own heads. A generator body is
+by their exported names after the engine's own heads. Another definition is
+called by the name its function was written with, `isIn(x, xs)` reaching the
+head `in` that `{ name: "in" }` installed; a name two definitions share
+refuses. What `define` returns is its head in term position, so `h(twice, 2)`
+passes the symbol and `G(twice)` the live object. A generator body is
 TRACED instead, which is the door for queries (`yield* m.match(...)`).
 
 ## Asking the engine's functions, and importing

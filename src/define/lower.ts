@@ -20,6 +20,11 @@
  *     names already registered with this engine, and an explicitly supplied
  *     scope; anything else refuses, which is what makes a minified build fail
  *     loudly instead of silently building the wrong term
+ *   - a name a function was defined by reaches the head that definition
+ *     installed under, an exact one included, and a name two definitions
+ *     share refuses rather than guessing which binding the source meant
+ *     [tested: "reaches a definition installed under an exact head by its
+ *     function's own name"]
  *   - an explicit scope contributes only its own properties
  *     [tested: "does not resolve inherited names from an explicit lowering scope";
  *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
@@ -75,6 +80,15 @@ export interface LowerScope {
   readonly space?: Atom;
   /** Whether a head is already known to the engine. */
   readonly knows: (name: string) => boolean;
+  /**
+   * The heads installed by a function of this name.
+   *
+   * The lowering reads a function's source without the module around it, so
+   * `isIn(x, xs)` in a body cannot see that `isIn` was defined under the head
+   * `in`. The engine that installed it can, and says so here: the symbol table
+   * a compiler keeps when a source name and its linker symbol differ.
+   */
+  readonly headsOf?: (identifier: string) => readonly string[];
   /** Values a caller supplied by name, for a closure the source cannot reach. */
   readonly scope?: Readonly<Record<string, Term>>;
   /** Every head the engine knows, so a refusal can name the nearest one. */
@@ -840,10 +854,11 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
  * A free name, resolved against the three places a lowered body may reach.
  *
  * The function's own name is recursion; a head the engine already knows is an
- * ordinary call; a value the caller supplied by name is a closure this side
- * could not have read. Everything else refuses, and that refusal is what makes
- * a minified build say so at definition time rather than build a term out of
- * `t` and `n`.
+ * ordinary call, reached by the name its defining function was written with
+ * or by that head's own spelling; a value the caller supplied by name is a
+ * closure this side could not have read. Everything else refuses, and that
+ * refusal is what makes a minified build say so at definition time rather
+ * than build a term out of `t` and `n`.
  */
 function resolve(name: string, scope: LowerScope, position: string): Atom {
   if (name === scope.selfIdentifier || name === scope.selfName) return sym(scope.selfName);
@@ -851,6 +866,15 @@ function resolve(name: string, scope: LowerScope, position: string): Atom {
   if (scope.scope !== undefined && Object.hasOwn(scope.scope, name)) {
     return toAtom(scope.scope[name] as Term);
   }
+  const installed = scope.headsOf?.(name) ?? [];
+  if (installed.length > 1) {
+    refuse(
+      `${scope.selfName} calls ${name}, and two definitions were written with that name (${installed.join(", ")})`,
+      `pass the one this body means in { scope: { ${name} } }`,
+    );
+  }
+  const [head] = installed;
+  if (head !== undefined) return sym(head);
   const mapped = mettaName(name);
   if (scope.knows(mapped)) return sym(mapped);
   if (scope.knows(name)) return sym(name);
@@ -863,8 +887,11 @@ function resolve(name: string, scope: LowerScope, position: string): Atom {
   // that IS declared, and saying which turns a refusal into a fix.
   const near = scope.declared === undefined ? undefined : nearest(mapped, scope.declared());
   const looksLike = near === undefined ? "" : `; nearest declared: ${near}`;
+  // A name nothing defines YET is data, and the mention door says so: the
+  // term `(g)` is `S.g()` whether or not `g` ever becomes a function.
+  const mention = position === "a head" ? `S.${name}(...)` : `S.${name}`;
   refuse(
     `${scope.selfName} reaches ${name} as ${position}, and nothing here defines it${looksLike}`,
-    `define it first, register it with op, or pass it in { scope: { ${name} } }`,
+    `define it first, register it with op, pass it in { scope: { ${name} } }, or mention it as ${mention} where the term is data`,
   );
 }

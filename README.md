@@ -661,6 +661,29 @@ all the lowering reads, the factories and words are recognised by NAME: a local
 binding of the same name shadows them, and a renamed import
 (`import { S as Sym }`) is not one of them.
 
+A body reaches another definition by the name its function was written with.
+A head TypeScript cannot spell, such as `in`, a keyword there, is installed
+with `{ name }`, and a later body calling the function's own name lowers to
+that head: the engine recorded which head the name installed, the one fact
+the source alone cannot carry. A name two definitions were written with
+refuses rather than guess. What `define` returns is its head wherever a term
+goes, so a definition passes as a value, and `G(isIn)` is the spelling for the
+live object:
+
+```ts
+import { Let, TRUE, type Term } from "tsmetta";
+
+const isIn = m.define(function isIn(x: Term, xs: Term): Term {
+  return Let(TRUE, fn.isMember(x, xs), x);
+}, { name: "in" });
+const digit = m.define(function digit(x: Term): Term {
+  return isIn(x, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+});
+String(digit.equations[0]); // "(= (digit $x) (in $x (0 1 2 3 4 5 6 7 8 9)))"
+(await digit(7).toArray()).map(String); // ["7"]
+String(S.tested(isIn, 7)); // "(tested in 7)"
+```
+
 A structural case is the word door's `caseOf` chain, which a body writes the
 way host code builds it: each handler destructures the variables its pattern
 binds, and `.otherwise` is the catch-all where `.end()` leaves none. A body

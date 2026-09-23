@@ -25,6 +25,18 @@ Open Obligations: None. -->
   pattern's variables, `.otherwise` the catch-all arm and `.end()` none; `_`
   is the anonymous variable; and `match` and `atoms` read back on a parameter
   or const declared as a `Space`.
+- A lowered body reaches a definition by the name its function was written
+  with, even when `{ name }` installed it under a head the casing map cannot
+  produce: `isIn(x, xs)` lowers to `(in $x $xs)` after
+  `m.define(function isIn(...), { name: "in" })`, where it used to refuse as a
+  name nothing defines. The engine records which heads each defining name
+  installed, a name two definitions share refuses naming both, and
+  `effectOf` and `disassemble` read a name string by the same rule. A name
+  nothing defines yet refuses naming the mention door, `S.g(...)`, beside the
+  ways to supply it.
+- What `define` and `op` return is its head wherever a term goes: `h(twice,
+  2)` asks `(h twice 2)`, where it used to ground the JavaScript function, and
+  `G(twice)` is the spelling for the live object.
 - `space.fn` and `m.fn` ASK the engine's functions: `m.fn.carAtom(x)` is
   `m.eval(fn.carAtom(x))`, spelled by the map `fn` uses, which is now one
   exported function, `fnHead`.

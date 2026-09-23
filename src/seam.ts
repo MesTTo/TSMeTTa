@@ -511,13 +511,14 @@ export async function publish(surface: {
 // nothing can enumerate. The implementations live in their own modules.
 //
 // This seat names no third-party library anywhere, so there is no registrant
-// module beside this one: its two non-relative imports are swipl-wasm, the
-// engine it mounts, and acorn, the parser its own `define` lowering uses, and
-// neither decides behaviour toward a CLASS of libraries. It has no frame
-// library notion at all, and its array notion is the platform's own TypedArray
-// family, which every numeric library in this runtime already produces, so
-// there is nothing here to declare a `frame` or an `array` point for; the
-// Python seat has both because Python has neither of those universals.
+// module beside this one: its one non-relative import is acorn, the parser its
+// own `define` lowering uses, and the SWI-Prolog it runs the engine on is its
+// own build in _host/, so neither decides behaviour toward a CLASS of
+// libraries. It has no frame library notion at all, and its array notion is
+// the platform's own TypedArray family, which every numeric library in this
+// runtime already produces, so there is nothing here to declare a `frame` or
+// an `array` point for; the Python seat has both because Python has neither of
+// those universals.
 
 /** How a host class crosses, both ways. */
 export interface TypeFields {

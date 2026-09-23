@@ -8,8 +8,9 @@
 #     shared harness in ext/metta-benchmarking/metta_benchmarking.py. One baseline
 #     format and one regression protocol across every component is the point,
 #     and DEVELOPING.md says not to copy the harness into another seat.
-#   - node, swipl-wasm, and a made TypeScript build, because the workloads run
-#     the compiled build.
+#   - node and a made TypeScript build, because the workloads run the
+#     compiled build, which boots the WebAssembly SWI-Prolog committed in
+#     _host/.
 # Guarantees:
 #   - it does not FETCH and it does not BUILD. Each missing step is announced
 #     with the command that supplies it and this exits 125, because a gate that
@@ -41,7 +42,7 @@ bounded() { sh "$ROOT/tools/bounded.sh" "$@"; }
 #
 # These exited 0, so the lane reported `ok` for a run that compared not one
 # row. Measured 2026-09-20: node-bench answered `ok` in a battery whose
-# node_modules had never been installed, printing the swipl-wasm note below,
+# node_modules had never been installed, printing the install note below,
 # while the same lane on a battery carrying the install found six cases outside
 # the band -- one inference regression and five improvements wanting a re-pin.
 # A benchmark that cannot see is the failure this repository has already been
@@ -55,9 +56,9 @@ unmeasured() {
 if ! command -v node >/dev/null 2>&1; then
     unmeasured "node not found, the Node benchmarks will not run"
 fi
-if [ ! -d "$HERE/node_modules/swipl-wasm" ]; then
+if [ ! -d "$HERE/node_modules/typescript" ]; then
     unmeasured "run 'npm ci --prefix extensions/node', the Node benchmarks \
-will not run without swipl-wasm"
+will not run without the TypeScript compiler their build needs"
 fi
 if [ ! -f "$HERE/build/benchmarks/run.js" ]; then
     unmeasured "run 'npm run build --prefix extensions/node', the Node \

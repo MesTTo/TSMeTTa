@@ -1,7 +1,7 @@
 /**
  * Purpose: bundle the shared public surface with the browser source loader.
- * Guarantees: Node imports in swipl-wasm's inactive branches never reach the
- *   consumer's resolver. [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
+ * Guarantees: Node imports in the host loader's inactive branches never reach
+ *   the consumer's resolver. [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  */
 import { build } from "esbuild";
 import { readFileSync, rmSync, statSync } from "node:fs";
@@ -32,9 +32,7 @@ await build({
   target: "es2023",
   define: {
     __METTA_PACKAGE_VERSION__: JSON.stringify(manifest.version),
-    __SWIPL_DATA_SIZE__: String(statSync(new URL(
-      "./swipl-web.data", import.meta.resolve("swipl-wasm/dist/swipl/swipl-web.js"),
-    )).size),
+    __SWIPL_DATA_SIZE__: String(statSync(new URL("../_host/swipl-web.data", import.meta.url)).size),
   },
   plugins: [{
     name: "browser-runtime",
@@ -42,18 +40,16 @@ await build({
       build.onResolve({ filter: /^\.\/platform\.ts$/ }, () => ({
         path: fileURLToPath(new URL("../src/platform-browser.ts", import.meta.url)),
       }));
-      build.onResolve({ filter: /^swipl-wasm\/dist\/swipl-node\.js$/ }, () => ({
-        path: "node-factory", namespace: "inactive-node",
-      }));
-      // swipl-wasm 8.0.6's web loader retains these Node-only branches.
-      // Its own webpack recipe also excludes Node builtins for the web target.
+      // The emscripten loader in _host/ keeps its Node-only branches, which
+      // require these. npm-swipl-wasm's own webpack recipe excludes Node
+      // builtins for the web target for the same reason.
       // https://github.com/SWI-Prolog/npm-swipl-wasm/blob/abae5e515658fa80a6f4a189b86b192b9ae02c7e/webpack.config.js
       build.onResolve({ filter: /^(node:)?(fs|crypto)$/ }, (args) => {
-        if (!args.importer.includes("node_modules/swipl-wasm/")) return;
+        if (!/[\\/]_host[\\/]swipl-web\.cjs$/.test(args.importer)) return;
         return { path: args.path, namespace: "inactive-node" };
       });
-      build.onLoad({ filter: /.*/, namespace: "inactive-node" }, (args) => ({
-        contents: args.path === "node-factory" ? "export default undefined;" : "export default {};",
+      build.onLoad({ filter: /.*/, namespace: "inactive-node" }, () => ({
+        contents: "export default {};",
         loader: "js",
       }));
     },

@@ -12,13 +12,30 @@ Open Obligations: None. -->
 npm ci --prefix extensions/node
 ```
 
-That fetches swipl-wasm and builds the TypeScript, the browser bundle and the
-engine copy the package mounts, through the package's own `prepare` script, so
-a checkout that has run it carries dist/, browser/ and _runtime/. Node 22.18 or
-newer, which is what package.json declares. `prepare` rather than `prepack`
-because it is the one script npm's directory fetcher runs, so
-`npm install file:/path/to/extensions/node` gets a package with the engine in
-it.
+That fetches the compiler and test tooling and builds the TypeScript, the
+browser bundle and the engine copy the package mounts, through the package's
+own `prepare` script, so a checkout that has run it carries dist/, browser/ and
+_runtime/. Node 22.18 or newer, which is what package.json declares. `prepare`
+rather than `prepack` because it is the one script npm's directory fetcher
+runs, so `npm install file:/path/to/extensions/node` gets a package with the
+engine in it.
+
+## The host
+
+The engine runs on a patched WebAssembly SWI-Prolog this package carries in
+`_host/`: `swipl-web.cjs`, emscripten's loader, beside `swipl-web.wasm` and
+`swipl-web.data`, the data image holding SWI's library and, at
+/swipl/metta-host.pl inside it, the declaration of the patches the build
+carries. It is SWI-Prolog 10.1.14 with every patch in MesTTo/MeTTa's
+`tests/checks/host_workarounds/` applied, compiled by npm-swipl-wasm's own
+recipe through that repository's `tools/wasm-host/build.sh`. Node requires the
+loader from `_host/`; the browser build bundles it and fetches the other two
+from `_runtime/wasm/`.
+
+Every boot runs the engine's host check before the engine loads. A host that
+does not declare every required patch, npm's `swipl-wasm` among them, is
+refused with `EngineError` (`ERR_METTA_ENGINE`) carrying the engine's own
+sentence, which names each missing patch, and nothing reaches the console.
 
 ## First call
 
@@ -386,8 +403,8 @@ its reason: it reads a `package.json`, which a browser page has neither of.
 This seat declares NO `frame` point and NO `array` point: it has no frame
 notion, and its array notion is the platform's own `TypedArray` family, which
 every numeric library in this runtime already produces. It names no third-party
-library anywhere; `swipl-wasm` is the engine it mounts and `acorn` the parser
-its `define` lowering uses.
+library anywhere; the SWI-Prolog it runs the engine on is its own build in
+`_host/` and `acorn` is the parser its `define` lowering uses.
 
 ## Integrating a library
 

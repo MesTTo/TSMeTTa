@@ -31,7 +31,8 @@
  *     source it was built from and ties the package to one SWI version, and a
  *     host `.so` is meaningless to a WebAssembly engine
  *   - runtime.json carries source text and extension metadata, and wasm/
- *     carries the matching swipl-wasm browser assets
+ *     carries the binary and data image of the host in _host/, the one the
+ *     browser build bundles the loader of
  *     [source: extensions/node/tools/bundle-runtime.mjs:collect; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  */
 
@@ -92,8 +93,7 @@ writeFileSync(join(BUNDLE, "runtime.json"), JSON.stringify({ version: 1, files }
 
 const wasm = join(BUNDLE, "wasm");
 mkdirSync(wasm, { recursive: true });
-const swipl = dirname(fileURLToPath(import.meta.resolve("swipl-wasm/dist/swipl/swipl-web.js")));
 for (const name of ["swipl-web.wasm", "swipl-web.data"]) {
-  cpSync(join(swipl, name), join(wasm, name));
+  cpSync(join(PACKAGE, "_host", name), join(wasm, name));
 }
 console.log(`bundle-runtime: ${TREES.join(", ")}, extension controls, bridge and browser assets copied into _runtime/`);

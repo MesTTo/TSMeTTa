@@ -3,7 +3,8 @@
  *   inventory, the codec through the engine's reader and writer, the program
  *   runner, and the lazy answer surface.
  * Assumes:
- *   - swipl-wasm is installed; `npm ci` fetches it
+ *   - the WebAssembly SWI-Prolog in _host/ boots; it is committed, so no
+ *     install fetches it
  * Guarantees:
  *   - partial applications and compound edge cases share Python's expression
  *     wire grammar [tested: "carries partial applications as the Python wire's expression",

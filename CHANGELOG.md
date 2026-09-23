@@ -4,6 +4,21 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- Boot the engine on a patched WebAssembly SWI-Prolog this package carries in
+  `_host/`, in place of npm's `swipl-wasm`, which carries fourteen of the
+  defects the engine's host-workaround patches fix. The host is SWI-Prolog
+  10.1.14 with every patch applied, built by npm-swipl-wasm's own recipe with
+  the declaration of its patches packed into its home, and it is the one host
+  for Node and the browser build alike. Every boot now runs the engine's host
+  check before the engine loads; a host that does not declare every required
+  patch is refused with `EngineError` carrying the engine's own sentence, with
+  nothing written to the console. The loader is required once per process,
+  because running its factory reassigns its module's exports to the LZ4 codec
+  emscripten embeds in it. `benchmarks/baseline.json` is re-stamped for the
+  new host with every pin kept: against npm's host on one box the inference
+  rows are unchanged except `query-rows`, which the boot check's first-call
+  warm-up moves by one, and every instruction row moves inside its band.
+
 - Run synchronous parsing inside a job so registered host token constructors
   can answer; preserve named variables and propagate constructor failures.
 
@@ -46,6 +61,12 @@ Open Obligations: None. -->
   removal. GraphQL frameworks and SQL drivers remain extension-package concerns.
 
 ### Migration
+
+`swipl-wasm` is no longer a dependency of this package: the SWI-Prolog it runs
+is `_host/`, and `swipl-wasm` stays only as a devDependency, the stock host the
+suite proves is refused. `metta()` refuses a host without the engine's patches,
+so an application that swapped in its own SWI-Prolog build needs one declared
+by MesTTo/MeTTa's `tools/pymetta-host/declare-host.sh`.
 
 Tensor dimensions and coordinates now reject invalid numeric indices. Schema
 callables check their declared arity at compile time. A generator declared pure

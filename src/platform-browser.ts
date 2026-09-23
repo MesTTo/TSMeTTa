@@ -40,7 +40,8 @@
  *   costs nothing beside compiling 2.1 MB again.
  */
 
-import { EngineError, SourceNotFoundError, UnsupportedError } from "./errors.ts";
+import type { Swipl } from "./engine.ts";
+import { CapabilityError, EngineError, SourceNotFoundError, UnsupportedError } from "./errors.ts";
 import type { PreparedRuntime, RuntimeFS } from "./platform.ts";
 
 declare const __METTA_PACKAGE_VERSION__: string;
@@ -50,6 +51,23 @@ declare const __SWIPL_DATA_SIZE__: number;
 export const packageRoot: string = new URL("../", import.meta.url).href;
 /** The source and wasm assets emitted by the browser build. */
 export const repoRoot: string = new URL("../_runtime/", import.meta.url).href;
+
+/**
+ * Start the host this package carries, which the browser build bundles.
+ *
+ * Imported where it is used rather than at the top, so a module that only
+ * reads this one's other exports never loads the 190 kB loader.
+ */
+export async function loadSWIPL(options: Record<string, unknown>): Promise<Swipl> {
+  const module = await import("../_host/swipl-web.cjs");
+  if (typeof module.default !== "function") {
+    throw new CapabilityError(
+      "the WebAssembly SWI-Prolog's loader did not expose its factory: it is CommonJS; " +
+        "use tsmetta's browser bundle or a bundler with CommonJS conversion",
+    );
+  }
+  return await module.default(options) as Swipl;
+}
 
 /** Host filesystem paths have no browser counterpart. */
 export function resolvePath(_path: string): string {
@@ -240,8 +258,8 @@ async function prepareBase(base: URL): Promise<PreparedRuntime> {
   // Compile and fetch here: the generated loader's async preRun data download
   // otherwise leaves its factory pending when the request fails, and a module
   // compiled here is one this function can refuse by name. Emscripten exposes
-  // both injection hooks through swipl-wasm's factory configuration.
-  // https://cdn.jsdelivr.net/npm/swipl-wasm@8.0.6/dist/swipl/swipl-web.js
+  // both injection hooks through the loader's factory configuration
+  // [source: _host/swipl-web.cjs, createWasm and loadPackage].
   const dataUrl = new URL("wasm/swipl-web.data", base);
   const [module, data] = await Promise.all([
     compileEngine(new URL("wasm/swipl-web.wasm", base)),
@@ -281,7 +299,7 @@ async function prepareBase(base: URL): Promise<PreparedRuntime> {
       // `new Promise` executor whose only resolution is this callback: a throw
       // from here rejects the boot, where a rejected promise inside would
       // leave the factory pending forever
-      // [source: node_modules/swipl-wasm/dist/swipl/swipl-web.js, createWasm].
+      // [source: _host/swipl-web.cjs, createWasm].
       instantiateWasm: (
         imports: WebAssembly.Imports,
         ready: (instance: WebAssembly.Instance) => void,

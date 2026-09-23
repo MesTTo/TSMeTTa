@@ -1,16 +1,24 @@
 /**
- * Purpose: embed the MeTTa engine in Node or a browser over swipl-wasm, run a
- *   job through the engine's host hold service, and pump the events it produces,
- *   answering the ones only a JavaScript function can answer.
+ * Purpose: embed the MeTTa engine in Node or a browser over a WebAssembly
+ *   SWI-Prolog, run a job through the engine's host hold service, and pump the
+ *   events it produces, answering the ones only a JavaScript function can
+ *   answer.
  * Assumes:
- *   - swipl-wasm 8.0.6 is installed beside this package; it is the SWI-Prolog
- *     organisation's own WebAssembly build of SWI 10.1.13
- *     [source: https://github.com/SWI-Prolog/npm-swipl-wasm]
+ *   - the host is the one this package carries in _host/: swipl-devel V10.1.14
+ *     with every host-workaround patch the engine requires, built by
+ *     npm-swipl-wasm's own recipe, with the declaration engine/host_check.pl
+ *     reads packed into its home
+ *     [source: tools/wasm-host/build.sh in MesTTo/MeTTa]
  *   - the engine's boot transcript is SILENT; any ERROR: line in it is an
  *     unnamed refusal and throws rather than being absorbed
  *   - `bridge.pl` sits beside this file's package root and speaks the job
  *     protocol documented there
  * Guarantees:
+ *   - boot() runs the engine's host check before it loads the engine, and a
+ *     host that does not declare every patch the engine requires is refused
+ *     with EngineError carrying the engine's own sentence, as the Python seat
+ *     refuses it [tested: "refuses a host whose declaration lacks a patch the
+ *     engine requires", "refuses the stock npm swipl-wasm"; commit=WORKTREE]
  *   - synchronous reading can call registered host token constructors
  *     [tested: test/reader-boundary.test.ts; commit=9d6b109740b1744b734b53b563a3be8642d24c0e].
  *   - asynchronous query completion waits for provider finalizers
@@ -55,13 +63,13 @@
 
 import {
   forgetRuntime,
+  loadSWIPL,
   mountInto,
   packageRoot,
   prepareRuntime,
   repoRoot,
   type RuntimeFS,
 } from "./platform.ts";
-import { loadSWIPL } from "./wasm.ts";
 
 import { Atom, Expression, G, Grounded, lift } from "./atom.ts";
 import { config } from "./config.ts";
@@ -1126,6 +1134,24 @@ export async function boot(
   swipl.prolog.query(
     `current_prolog_flag(argv, Identity), append(Identity, ${flags}, Flags), set_prolog_flag(argv, Flags).`,
   ).once();
+  // The host is checked before anything of the engine loads, the order
+  // engine/qlf_boot.pl keeps for every native host. A refusal is the engine's
+  // own sentence, rendered by its prolog:message//1 and raised as the error
+  // every other no-engine refusal here is. It is caught inside and crosses as
+  // data, because the loader writes an escaping exception to the console.
+  const hosted = swipl.prolog.query(
+    `use_module('${VIRTUAL_ROOT}/engine/host_check.pl', []), ` +
+    `catch((metta_host_check:metta_require_patched_host, Verdict = passed, Refusal = ''), ` +
+    `Error, (Verdict = refused, message_to_string(Error, Refusal))).`,
+  ).once();
+  if (hosted === undefined || hosted.error === true || typeof hosted["Verdict"] !== "string") {
+    throw new EngineError(
+      `the engine's host check did not run: ${String(hosted?.message ?? "it answered nothing")}`,
+    );
+  }
+  if (hosted["Verdict"] !== "passed") {
+    throw new EngineError(String(hosted["Refusal"]));
+  }
   const consulted = swipl.prolog.query(
     `consult('${VIRTUAL_ROOT}/engine/identity.pl'), ` +
     `metta_identity:metta_boot_identity, consult('${VIRTUAL_ROOT}/engine/metta.pl').`,

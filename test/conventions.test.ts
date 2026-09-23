@@ -269,9 +269,9 @@ describe("the TypeScript style guide, where it reaches this surface", () => {
 
   it("keeps the engine-free subpaths engine-free", () => {
     // A consumer that only BUILDS atoms imports these, and the whole point is
-    // that neither reaches the module which loads swipl-wasm. Walking the
-    // SOURCE rather than a bundle is what makes an import that would break it
-    // fail here, before anything is emitted.
+    // that neither reaches the module which loads the WebAssembly host.
+    // Walking the SOURCE rather than a bundle is what makes an import that
+    // would break it fail here, before anything is emitted.
     for (const entry of ["atom", "errors"]) {
       const seen = new Set<string>();
       const work = [join(SOURCE, `${entry}.ts`)];

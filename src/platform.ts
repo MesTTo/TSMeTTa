@@ -1,8 +1,13 @@
 /**
- * Purpose: locate and mount this package's runtime on a Node host.
+ * Purpose: locate and mount this package's runtime on a Node host, and start
+ *   the WebAssembly SWI-Prolog it carries.
  * Assumes: bridge.pl identifies the package root; engine/metta.pl identifies
  *   the runtime root [source: extensions/node/src/platform.ts:findPackageRoot, prepareRuntime;
  *   commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8].
+ *   _host/ beside them holds swipl-web.cjs, swipl-web.wasm and
+ *   swipl-web.data from one link of the patched host MesTTo/MeTTa's
+ *   tools/wasm-host/build.sh produces [source: tools/wasm-host/build.sh
+ *   vendor in MesTTo/MeTTa].
  * Guarantees: an enclosing checkout is read in preference to the `_runtime/`
  *   copy packed beside this package, so the engine a developer edits is the
  *   engine this seat runs even after `npm install` has written that copy
@@ -14,9 +19,11 @@
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { Swipl } from "./engine.ts";
 import { EngineError, SourceNotFoundError } from "./errors.ts";
 
 /** The filesystem operations required to install a runtime. */
@@ -66,6 +73,53 @@ const enclosing = resolve(packageRoot, "..", "..");
 export const repoRoot: string = existsSync(join(enclosing, "engine", "metta.pl"))
   ? enclosing
   : bundled;
+
+/**
+ * The patched WebAssembly SWI-Prolog this package carries.
+ *
+ * SWI-Prolog's own npm build, swipl-wasm, carries fourteen of the defects the
+ * engine's host-workaround patches fix, so the engine's boot check refuses it.
+ * This one is compiled from the engine's pinned swipl-devel with every patch
+ * applied, by npm-swipl-wasm's own recipe, and packs the declaration that
+ * check reads into its home, /swipl.
+ */
+const hostDirectory: string = join(packageRoot, "_host");
+
+type SwiplFactory = (options: Record<string, unknown>) => Promise<unknown>;
+
+/**
+ * The loader's factory, required once and kept.
+ *
+ * Running the factory reassigns the loader module's own exports to the LZ4
+ * codec emscripten embeds in it (`if(typeof module!="undefined")
+ * {module.exports=MiniLZ4}`, inside LZ4.init), so a second require of the same
+ * file answers the codec rather than the factory [measured 2026-09-23: the
+ * second boot in one process raised `factory is not a function`].
+ * npm-swipl-wasm's own dist/swipl-node.js requires it once, at load, for the
+ * same reason.
+ */
+let factory: SwiplFactory | undefined;
+
+function requireFactory(): SwiplFactory {
+  try {
+    return createRequire(import.meta.url)(join(hostDirectory, "swipl-web.cjs")) as SwiplFactory;
+  } catch (error) {
+    throw new EngineError(
+      `this package's WebAssembly SWI-Prolog is not in ${hostDirectory}; the binding ` +
+        `boots the engine on that host and has no other`,
+      { cause: error },
+    );
+  }
+}
+
+/** Start the host this package carries, with the caller's module options. */
+export async function loadSWIPL(options: Record<string, unknown>): Promise<Swipl> {
+  const start = (factory ??= requireFactory());
+  return await start({
+    locateFile: (name: string): string => join(hostDirectory, name),
+    ...options,
+  }) as Swipl;
+}
 
 /**
  * Forget a prepared root, or every one of them.

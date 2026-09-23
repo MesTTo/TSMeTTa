@@ -17,7 +17,10 @@ Guarantees:
     2026-08-28: four rounds each through metta.testing.measure_instructions,
     minimum of each]
   - swipl_wasm and v8 name the two compiled artifacts the numbers are made of,
-    the engine's own bytes and the machine that runs this side of the wire
+    the engine's own bytes and the machine that runs this side of the wire.
+    swipl_wasm is a digest of the three files in _host/ rather than a version,
+    because the host is built here from a patched tree and has no release
+    number, and the digest moves exactly when one of its bytes does
   - runtime says which of the seat's two execution routes ran: the compiled
     build, which is what check.sh drives, or Node's own type stripping, which
     compiles the TypeScript at run time and is different code doing the job
@@ -38,7 +41,7 @@ Open Obligations:
 
 from __future__ import annotations
 
-import json
+import hashlib
 import shutil
 import subprocess
 from pathlib import Path
@@ -85,13 +88,19 @@ ROOT = SEAT.parents[1]
 V8_FLAGS = ("--predictable", "--predictable-gc-schedule", "--liftoff-only", "--expose-gc")
 
 
-def _swipl_wasm_version() -> str | None:
-    """The engine bytes this seat runs on, or None when nothing is installed."""
-    manifest = SEAT / "node_modules" / "swipl-wasm" / "package.json"
-    if not manifest.is_file():
+#: The host's artefacts, in the order they are digested.
+HOST_FILES = ("swipl-web.cjs", "swipl-web.wasm", "swipl-web.data")
+
+
+def _swipl_host() -> str | None:
+    """The engine bytes this seat runs on, or None when _host/ is incomplete."""
+    host = SEAT / "_host"
+    if not all((host / name).is_file() for name in HOST_FILES):
         return None
-    version = json.loads(manifest.read_text(encoding="utf-8")).get("version")
-    return version if isinstance(version, str) else None
+    digest = hashlib.sha256()
+    for name in HOST_FILES:
+        digest.update((host / name).read_bytes())
+    return f"sha256:{digest.hexdigest()[:16]}"
 
 
 def _v8_version() -> str:
@@ -128,7 +137,7 @@ def counter_configuration() -> dict[str, str]:
     check that the upgrade changed nothing on the engine's side of the wire.
     """
     return {
-        "swipl_wasm": _swipl_wasm_version() or "absent",
+        "swipl_wasm": _swipl_host() or "absent",
         "v8": _v8_version(),
         "v8_flags": " ".join(V8_FLAGS),
         # Which of the seat's two execution routes the workload took. The

@@ -11,6 +11,11 @@
  *   - exits 0 having evaluated one program through the built library, reached
  *     from a directory that is NOT a checkout, and exits nonzero naming what
  *     failed otherwise [tested: extensions/node/check.sh node-dist]
+ *   - the packed tree carries the WebAssembly SWI-Prolog it boots on, in
+ *     `_host/`, and boots with no other SWI installed: only `acorn` is linked
+ *     into the consumer's `node_modules`, so a package still reaching for
+ *     npm's `swipl-wasm` fails here rather than on a consumer's machine
+ *     [tested: extensions/node/check.sh node-dist]
  *   - the packed tree carries the engine and the browser build. A `file:`
  *     install of the DIRECTORY carried neither, because npm's directory
  *     fetcher runs `prepare` and no other script and both were made by
@@ -49,8 +54,8 @@ const packageRoot = fileURLToPath(new URL("../", import.meta.url));
  * encloses it.
  *
  * `npm pack` rather than `npm install file:` because a gate does not reach the
- * network and installing would resolve this package's two dependencies from
- * the registry. It is the same list either way: npm's directory fetcher packs
+ * network and installing would resolve this package's dependency from the
+ * registry. It is the same list either way: npm's directory fetcher packs
  * a `file:` dependency through the very `npm-packlist` that `npm pack` calls
  * [source: pacote lib/dir.js, `packlist(this.tree, ...)`]. Packing also runs
  * `prepare`, which is the hook that makes `_runtime/` and `browser/` and the
@@ -79,7 +84,7 @@ function unpack(scratch) {
     process.exit(1);
   }
   execFileSync("tar", ["-xzf", join(scratch, tarball), "-C", installed, "--strip-components=1"]);
-  for (const dependency of ["acorn", "swipl-wasm"]) {
+  for (const dependency of ["acorn"]) {
     symlinkSync(
       join(packageRoot, "node_modules", dependency),
       join(scratch, "node_modules", dependency),
@@ -143,7 +148,12 @@ try {
   // products listed in `files`, and both were absent from a directory install
   // for as long as `prepack` was the only thing that made them.
   const missing = [
+    "_host/swipl-web.cjs",
+    "_host/swipl-web.wasm",
+    "_host/swipl-web.data",
+    "_host/LICENSE",
     "_runtime/engine/metta.pl",
+    "_runtime/engine/host_check.pl",
     "_runtime/runtime.json",
     "_runtime/wasm/swipl-web.wasm",
     "browser/index.js",
@@ -165,7 +175,7 @@ try {
     }),
   );
   const outside = seen.asked.filter(
-    (specifier) => specifier.includes("swipl-wasm") || specifier.startsWith("node:"),
+    (specifier) => specifier.includes("swipl-web") || specifier.startsWith("node:"),
   );
   if (seen.answer !== "5") {
     console.error(`the packed package answered ${seen.answer}, wanted 5`);
@@ -186,7 +196,7 @@ try {
     console.log(
       "node-dist: the packed package carries its engine, boots outside any " +
         "checkout, evaluates, reads deep, and resolves the engine-free " +
-        "subpaths without loading swipl-wasm",
+        "subpaths without loading the WebAssembly host",
     );
   }
 } finally {

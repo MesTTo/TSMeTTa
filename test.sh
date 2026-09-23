@@ -4,10 +4,12 @@
 #   node-binding lane runs, so the two cannot drift apart.
 # Assumes: npm and a node satisfying package.json's engines field.
 # Guarantees:
-#   - it does not FETCH. swipl-wasm is an npm dependency, and a gate that
-#     reaches the network is a gate that fails for a reason that is not the
-#     tree, so an absent one is announced with the command that installs it
-#     and this exits 0. Everything that is a real failure exits nonzero
+#   - it does not FETCH. The compiler and the test tooling are npm
+#     devDependencies, and a gate that reaches the network is a gate that
+#     fails for a reason that is not the tree, so an absent install is
+#     announced with the command that makes it and this exits 125. The
+#     WebAssembly SWI-Prolog the suite boots is not among them: it is
+#     committed in _host/. Everything that is a real failure exits nonzero
 #     [tested: sh check.sh node-binding].
 #   - it COMPILES the TypeScript and runs the build rather than running the
 #     sources. Node's own type stripping would be shorter, but a distro build
@@ -38,9 +40,9 @@ unmeasured() {
 if ! command -v node >/dev/null 2>&1; then
     unmeasured "node not found, the Node binding suite will not run"
 fi
-if [ ! -d "$HERE/node_modules/swipl-wasm" ]; then
+if [ ! -d "$HERE/node_modules/typescript" ]; then
     unmeasured "run 'npm ci --prefix extensions/node', the Node binding suite \
-will not run without swipl-wasm"
+will not run without the TypeScript compiler it builds with"
 fi
 
 # One spelling of the bound, implemented in bounded.sh, which every runner in

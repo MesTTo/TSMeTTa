@@ -25,10 +25,11 @@
 #
 # The lane runs extensions/node/test.sh, which is the same command a developer
 # runs by hand, so the gate and the developer cannot drift apart. That script
-# owns the skip protocol: swipl-wasm is an npm dependency and nothing here
-# fetches it, because a gate that reaches the network is a gate that fails for
-# a reason that is not the tree. It names the missing step instead, the same
-# shape the C extension example takes when swipl-ld is absent.
+# owns the skip protocol: the compiler and test tooling are npm devDependencies
+# and nothing here fetches them, because a gate that reaches the network is a
+# gate that fails for a reason that is not the tree. It names the missing step
+# instead, the same shape the C extension example takes when swipl-ld is
+# absent. The WebAssembly SWI-Prolog the suite boots is committed in _host/.
 check_node_binding() {
     [ -d "$HERE/extensions/node" ] || return 0
     bounded sh "$HERE/extensions/node/test.sh"
@@ -90,8 +91,8 @@ check_node_bench() {
 check_node_dist() {
     [ -d "$HERE/extensions/node" ] || return 0
     # The DIRECTORY is not the question, the build's own dependency is. A
-    # `npm install --omit=dev` leaves node_modules present with swipl-wasm and
-    # acorn in it and esbuild absent, which passed a bare -d test and then died
+    # `npm install --omit=dev` leaves node_modules present with acorn in it
+    # and esbuild absent, which passed a bare -d test and then died
     # inside the pack step on `Cannot find package 'esbuild'` -- a lane that
     # skips for a missing install reporting a build failure instead. Both this
     # checkout and the repository root are in exactly that state.
@@ -104,7 +105,7 @@ check_node_dist() {
     [ -d "$HERE/extensions/node/node_modules/esbuild" ] || {
         echo "note: extensions/node/node_modules has no esbuild, so the \
 built-package check will not run; \`npm ci\` in extensions/node fetches it \
-along with swipl-wasm, and a gate does not reach the network" >&2
+with the rest of the build tooling, and a gate does not reach the network" >&2
         return 125
     }
     ( cd "$HERE/extensions/node" && bounded node tools/dist-consumer.mjs )

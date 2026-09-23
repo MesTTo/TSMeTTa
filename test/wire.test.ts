@@ -8,6 +8,12 @@
  *     table cannot resurrect that handle [tested: "reuses one host id for each
  *     primitive value"; "clears primitive ids without recycling a released
  *     handle"; commit=e4367498bed06c34f25aff75335e7b25f28b3b73]
+ *   - an `h` payload names one atom per id and names in its engine's table,
+ *     is written back as it came, and is refused on the portable transport,
+ *     by another engine's table and once released [tested: "names one engine
+ *     value by one atom per id and names, and writes it back as it came",
+ *     "refuses a handle on the portable transport, from another engine, or once
+ *     released"; commit=WORKTREE]
  *   - round-trip space provenance follows structural positions and is disabled
  *     after equal-length shapes diverge while scalar leaf changes preserve
  *     later sibling paths [tested: "does not align provenance across a shape change",
@@ -29,6 +35,8 @@ import {
   G,
   Grounded,
   HostValues,
+  NativeHandle,
+  NativeHandles,
   Rational,
   RationalAtom,
   SpaceHandle,
@@ -42,6 +50,7 @@ import {
   float,
   fromRoundTrip,
   fromTransport,
+  hostValue,
   numberFromText,
   numberToText,
   space,
@@ -170,14 +179,16 @@ describe("the strict wire", () => {
     assert.throws(() => fromTransport(["p", 5]), /expected text from the engine/);
   });
 
-  it("refuses the o tag, which only this host's own session can name", () => {
+  it("refuses the o and h tags, which only this host's own session can name", () => {
     assert.throws(() => fromTransport(["o", "1"]), /live host value by reference/);
     assert.throws(() => toTransport(["o", {}]), /live host value by reference/);
+    assert.throws(() => fromTransport(["h", "1|0|x"]), /native engine value by reference/);
+    assert.throws(() => toTransport(["h", "1"]), /native engine value by reference/);
   });
 
   it("refuses a tag outside the grammar", () => {
     assert.throws(() => fromTransport(["z", "what"]), /unknown wire tag/);
-    assert.throws(() => toTransport(["h", "1"]), /unknown wire tag/);
+    assert.throws(() => toTransport(["z", "what"]), /unknown wire tag/);
   });
 
   it("refuses a wire atom that is not a pair", () => {
@@ -333,6 +344,9 @@ describe("the engine transport, which is flat", () => {
     }
     const reference = toTransport(["o", held], { hostValues: values });
     assert.equal(decodeEngine(reference, { hostValues: values }), G(held));
+    const handles = new NativeHandles();
+    const native = decodeEngine(["h", "3|0|<regex>(0x1,'a')"], { handles });
+    assert.equal(decodeEngine(toTransport(["h", native], { handles }), { handles }), native);
   });
 
   it("refuses a token list that stops inside a term, or runs past it", () => {
@@ -394,5 +408,49 @@ describe("a term deeper than the JavaScript stack", () => {
     assert.ok(wide instanceof Expression);
     assert.equal(decodeEngine(encodeEngine(wide), {}), wide);
     assert.equal(atomFromWire(wireFromAtom(wide)), wide);
+  });
+});
+
+describe("native handles", () => {
+  it("names one engine value by one atom per id and names, and writes it back as it came", () => {
+    const handles = new NativeHandles();
+    const blob = decodeEngine(["h", "3|0|<regex>(0x1,'a')"], { handles });
+    assert.ok(blob instanceof NativeHandle && blob instanceof Grounded);
+    assert.equal(blob.ident, 3);
+    assert.deepEqual(blob.names, []);
+    assert.equal(String(blob), "<regex>(0x1,'a')");
+    assert.equal(hostValue(blob), blob, "a handle is its own host value");
+    assert.equal(decodeEngine(["h", "3|0|<regex>(0x1,'a')"], { handles }), blob);
+    assert.deepEqual(encodeEngine(blob, { handles }), ["h", "3|0|<regex>(0x1,'a')"]);
+    // A term with variables crosses under this crossing's names, and its text
+    // may hold the separator.
+    const carried = decodeEngine(["h", "4|2|_7|_8|f(_7,[a|_8],_7)"], { handles });
+    assert.ok(carried instanceof NativeHandle);
+    assert.deepEqual(carried.names, ["_7", "_8"]);
+    assert.equal(String(carried), "f(_7,[a|_8],_7)");
+    assert.deepEqual(encodeEngine(carried, { handles }), ["h", "4|2|_7|_8|f(_7,[a|_8],_7)"]);
+    // The same id under other names is another atom naming the same value.
+    const renamed = decodeEngine(["h", "4|2|_9|_10|f(_9,[a|_10],_9)"], { handles });
+    assert.notEqual(renamed, carried);
+    assert.equal(handles.size, 2);
+  });
+
+  it("refuses a handle on the portable transport, from another engine, or once released", () => {
+    const handles = new NativeHandles();
+    const blob = decodeEngine(["h", "5|0|<blob>"], { handles });
+    assert.ok(blob instanceof NativeHandle);
+    assert.throws(() => fromTransport(["h", "5|0|<blob>"]), /only this host's own engine transport/);
+    assert.throws(() => toTransport(["h", blob]), /only this host's own engine transport/);
+    assert.throws(
+      () => encodeEngine(blob, { handles: new NativeHandles() }),
+      /belongs to another engine/,
+    );
+    assert.throws(() => decodeEngine(["h", "x|0|<blob>"], { handles }), /carries Id\|N\|Names\|Text/);
+    assert.throws(() => decodeEngine(["h", "6|2|_1"], { handles }), /carries Id\|N\|Names\|Text/);
+    blob.release();
+    assert.throws(() => encodeEngine(blob, { handles }), /was released/);
+    // The release waits for the engine's next crossing, and is handed over once.
+    assert.deepEqual(handles.drain(), [5]);
+    assert.deepEqual(handles.drain(), []);
   });
 });

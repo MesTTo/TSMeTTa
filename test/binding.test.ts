@@ -20,6 +20,12 @@
  *   - text holding U+0000 crosses from the engine into JavaScript and back
  *     whole [tested: "carries U+0000 in text from the engine into JavaScript
  *     and back"; commit=39e6ae2bd697d4029fd476d7d848ae9dc9602554]
+ *   - a native engine value crosses by reference and back as the very same
+ *     value, one atom however often it crosses; a released handle is refused
+ *     on this side and dropped by the engine with the next crossing, and so is
+ *     one whose last atom is collected [tested: "holds a native engine value by
+ *     reference and hands back the very same value", "lets the engine drop a
+ *     value once the last atom naming it is collected"; commit=WORKTREE]
  *   - the swipl-wasm census names crypto and redis absent, SHA-256 still
  *     hashes through library(sha), and crypto-only operations or a Redis
  *     import refuse by capability rather than reaching an unknown predicate
@@ -47,6 +53,7 @@
  */
 
 import { strict as assert } from "node:assert";
+import { execFileSync } from "node:child_process";
 import { after, before, describe, it } from "node:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -58,6 +65,7 @@ import {
   Grounded,
   type MeTTa,
   MettaError,
+  NativeHandle,
   S,
   SpaceHandle,
   Superpose,
@@ -727,6 +735,54 @@ describe("the codec, through the engine", () => {
     assert.equal(hostValue(text), "a\u0000\u{1F98A}");
     assert.deepEqual(await strings.fn.stringCodes(text), [exprOf([G(97), G(0), G(129418)])]);
     assert.deepEqual(await strings.fn.stringCodes("a\u0000b"), [exprOf([G(97), G(0), G(98)])]);
+  });
+
+  it("holds a native engine value by reference and hands back the very same value", async () => {
+    // A compiled pattern is a C blob the engine keeps; this side holds its id.
+    const regex = m.space().import(lib.regex);
+    const pattern = await regex.fn.reCompile("\\d+").one();
+    assert.ok(pattern instanceof NativeHandle && pattern instanceof Grounded);
+    assert.equal(hostValue(pattern), pattern);
+    assert.match(String(pattern), /<regex>/);
+    assert.deepEqual(await regex.fn.reFind(pattern, "n7 n8"), [G("7"), G("8")]);
+    // The engine keeps one entry per value, so the value crossing again is the
+    // same atom.
+    assert.equal(await m.eval(S.id(pattern)).one(), pattern);
+    // A released handle is refused here, and the engine drops the value with
+    // the next crossing: its id then names nothing.
+    pattern.release();
+    await assert.rejects(async () => regex.fn.reFind(pattern, "1").orThrow(), /was released/);
+    assert.throws(
+      () => m.engine.once(`metta_node_handle_term(${String(pattern.ident)}, _)`),
+      /released or never issued/,
+    );
+  });
+
+  it("lets the engine drop a value once the last atom naming it is collected", () => {
+    // A collection is observable only where it can be forced, so the program
+    // runs in a child with --expose-gc; the crossing after the finaliser carries
+    // the release, and the count it reads is the engine's registry.
+    const index = new URL(`../src/index.${import.meta.url.endsWith(".ts") ? "ts" : "js"}`, import.meta.url);
+    const program = `
+      const { metta, lib } = await import(${JSON.stringify(index.href)});
+      const m = await metta();
+      const regex = m.space().import(lib.regex);
+      const held = () => Number(m.engine.once("aggregate_all(count, metta_node_handle(_, _), C)")["C"]);
+      let pattern = await regex.fn.reCompile("a").one();
+      const before = held();
+      pattern = undefined;
+      for (let round = 0; round < 3; round += 1) {
+        globalThis.gc();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      console.log(JSON.stringify({ before, after: held() }));
+      m.dispose();
+    `;
+    const printed = execFileSync(process.execPath, ["--expose-gc", "--input-type=module", "-e", program], {
+      encoding: "utf8",
+      timeout: 120_000,
+    });
+    assert.deepEqual(JSON.parse(printed.trim().split("\n").pop() ?? "{}"), { before: 1, after: 0 });
   });
 
   it("carries Number and BigInt across the signed-i64 boundary", () => {

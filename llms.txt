@@ -86,6 +86,17 @@ name. A function that is no class raises `NameError`; it used to cross as an
 opaque host value, so `arrow(Number, Number)` built
 `(-> (js Function) (js Function))`.
 
+A value only the engine can hold, a C blob such as `re-compile`'s pattern or
+`database-open!`'s store, crosses as a `NativeHandle`, a Grounded atom that is
+its own host value: the engine keeps it in a registry and this side holds the
+id (`handle.ident`), so handing it back reaches the very same value and the
+same value crossing again is the same atom. `handle.release()` or leaving a
+`using` block lets the engine drop it, and so does collecting the last atom
+naming it, either with the engine's next crossing; a released handle, or one
+from another engine, is refused wherever it is sent, and the portable
+transport refuses every handle as it refuses a live host value. It used to
+raise `metta_node_untaggable` at the boundary.
+
 ## A lowered body
 
 `m.define(function f(...) {...})` reads a plain function's own source and

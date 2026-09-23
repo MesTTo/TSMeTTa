@@ -22,6 +22,7 @@ export {
   G,
   Grounded,
   type Kind,
+  NativeHandle,
   Rational,
   RationalAtom,
   SpaceHandle,
@@ -470,6 +471,7 @@ export {
 // The codec.
 export {
   HostValues,
+  NativeHandles,
   type Tag,
   type WireTokens,
   type Transport,

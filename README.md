@@ -550,6 +550,26 @@ they do not manufacture native admission events. Unsupported writes are
 refused by capability. `handles`, `writes` and `emits` publish the provider's
 promises as catalog rows.
 
+## Native engine values
+
+A value only the engine can hold, a compiled regex or a store's engine,
+crosses as a `NativeHandle`: the engine keeps it in a registry and this side
+holds the id, so handing the handle back reaches the very same value, and the
+same value crossing again is the same atom. `release()`, or leaving a `using`
+block, lets the engine drop it, and so does collecting the last atom that
+names it; either travels with the engine's next crossing, and a released
+handle is refused wherever it is sent. The portable transport refuses a handle
+as it refuses a live host value, since only this engine can name it.
+
+```ts
+import { NativeHandle, lib } from "tsmetta";
+
+const regex = m.space().import(lib.regex);
+using pattern = await regex.fn.reCompile("\\d+").one();
+pattern instanceof NativeHandle;                          // true
+(await regex.fn.reFind(pattern, "n7 n8").toArray()).map(String); // ['"7"', '"8"']
+```
+
 ## Mutable cells
 
 ```ts

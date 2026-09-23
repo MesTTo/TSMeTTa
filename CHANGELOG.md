@@ -4,6 +4,18 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- A value only the engine can hold crosses into TypeScript as a
+  `NativeHandle` and back as the very same value: `re-compile`'s pattern, a
+  store from `database-open!`, any C blob the engine answers. It used to raise
+  `metta_node_untaggable` at the boundary. The bridge keeps each value in one
+  registry under a fresh id, interned by its key, so the same value crossing
+  again is the same atom, and it holds any engine term, so a provider door can
+  later carry a term the wire grammar would hand back changed under the same
+  tag. `release()` or a `using` block lets the engine drop the value, and so
+  does collecting the last atom naming it; either travels with the engine's
+  next crossing, and a released or never-issued id is
+  `existence_error(metta_native_handle, Id)` in the engine and refused here
+  before it is sent. The portable transport refuses `h` as it refuses `o`.
 - A type position reads this host's types. `arrow(Number, BigInt, Boolean)`
   is `(-> Number Number Bool)`, `typed(S.rex, Dog)` is `(: rex Dog)` for a
   class `Dog`, and `{ type: String }` on `define` or `state` declares

@@ -19,11 +19,18 @@
  *     reader takes; the portable transport refuses one, because CODEC.md gives
  *     a rational no tag [tested: "carries a rational exactly across the engine
  *     transport, and refuses it on the portable one"; commit=658c2b5e82d165d281b5e72b3013d2dcebab4e35]
- *   - `fromTransport` is STRICT: it refuses the `o` tag [tested: "refuses the o tag,
- *     which only this host's own session can name"], because an `o`
- *     payload written down by somebody else is not a reference this host can
- *     honour, while the private engine transport carries `["o", id]` for an id
- *     this host handed out
+ *   - `fromTransport` is STRICT: it refuses the `o` and `h` tags [tested:
+ *     "refuses the o and h tags, which only this host's own session can name";
+ *     commit=WORKTREE], because a payload of either written down by somebody
+ *     else is not a reference this host can honour, while the private engine
+ *     transport carries `["o", id]` for an id this host handed out and
+ *     `["h", "Id|N|Names|Text"]` for one the engine did
+ *   - an `h` payload names one {@link NativeHandle} per id and names in its
+ *     engine's {@link NativeHandles}, is written back as it came, and is
+ *     refused by another engine's table and once released [tested: "names one
+ *     engine value by one atom per id and names, and writes it back as it
+ *     came", "refuses a handle on the portable transport, from another engine,
+ *     or once released"; commit=WORKTREE]
  *   - a `p` name decodes to an interned {@link SpaceHandle}, so one name is one
  *     handle [tested: "decodes a portable space reference into an interned
  *     handle"]
@@ -50,7 +57,10 @@
  *     commit=2da346c3fa02a9baedb6168e6b3f6e0756bd6c91]
  * Owns: the live-host-value table. A value that crossed into the engine is
  *   retained until the engine is disposed, because nothing on this side can
- *   observe that the engine has dropped the id.
+ *   observe that the engine has dropped the id. And the native-handle table,
+ *   the other direction: an id the engine keeps a value under is held while an
+ *   atom names it, and its release waits for the engine's next crossing once
+ *   the last such atom is collected or released; both die with the engine.
  * Decides: cursors and host values are addressed by integer, because the
  *   WebAssembly value conversion renders every Prolog blob as the same opaque
  *   `{"$t":"b"}` and a host that kept the blob could not hand it back.
@@ -66,6 +76,8 @@ import {
   FloatAtom,
   G,
   Grounded,
+  type HandleOwner,
+  NativeHandle,
   Rational,
   SpaceHandle,
   Sym,
@@ -73,6 +85,7 @@ import {
   exprOf,
   float,
   floatText,
+  nativeHandle,
   rationalText,
   space,
   sym,
@@ -80,8 +93,8 @@ import {
 } from "./atom.ts";
 import { MettaError, WireError } from "./errors.ts";
 
-/** The tags this binding speaks. `h` is the engine's own blob and is refused here. */
-export type Tag = "s" | "v" | "n" | "g" | "b" | "e" | "p" | "o";
+/** The tags this binding speaks. */
+export type Tag = "s" | "v" | "n" | "g" | "b" | "e" | "p" | "o" | "h";
 
 /** A wire atom as this host holds it: the tag, and a payload in host types. */
 export type Wire =
@@ -92,6 +105,7 @@ export type Wire =
   | readonly ["b", boolean]
   | readonly ["p", SpaceHandle]
   | readonly ["o", unknown]
+  | readonly ["h", NativeHandle]
   | readonly ["e", readonly Wire[]];
 
 /**
@@ -103,8 +117,9 @@ export type Wire =
  * what crosses into this engine.
  *
  * Every payload is the same as {@link Wire}'s but for `p`, which carries the
- * portable NAME rather than the interned handle, and `o`, which carries the
- * id this host handed out rather than the value. A number is the VALUE:
+ * portable NAME rather than the interned handle, `o`, which carries the id
+ * this host handed out rather than the value, and `h`, which carries the
+ * engine's `Id|N|Names|Text` rather than the handle. A number is the VALUE:
  * CODEC.md's `n` row reads "exact integer or float", and `tests/codec/corpus.json`
  * holds `["n", 1.0]` and `["n", 0]` as JSON numbers. JavaScript's two numeric
  * types carry that distinction, `bigint` for an integer at any width and
@@ -490,6 +505,129 @@ export class HostValues {
 }
 
 // ---------------------------------------------------------------------------
+// Native handles.
+
+let nextSession = 1;
+
+/**
+ * The values one engine keeps that this host names: the other direction of
+ * {@link HostValues}.
+ *
+ * The engine holds each in its handle registry and this side holds atoms
+ * naming an id. An atom lives as long as JavaScript holds it, and when the
+ * last atom naming an id is collected, or `release()` is called on one, the id
+ * waits here until the engine's next crossing carries its release, so a
+ * finaliser never calls into the engine [source: ai-tmp/ai-provider-carry.md,
+ * the Node design; extensions/python/metta/_binding/runtime.py, the deferred
+ * release]. An id the same value crosses back under before that crossing
+ * stays: the engine answered it, so it is live again. The table dies with
+ * its engine.
+ */
+export class NativeHandles implements HandleOwner {
+  readonly session: number = nextSession++;
+  /** Per id, how many distinct atoms name it; atoms differ only in names. */
+  #live = new Map<number, number>();
+  #counted = new WeakSet<NativeHandle>();
+  #pending = new Set<number>();
+  #released = new Set<number>();
+  #collected = new FinalizationRegistry<number>((ident) => {
+    this.#dropped(ident);
+  });
+
+  /** The atom one crossing of `ident` names, counted the first time it is made. */
+  atom(ident: number, names: readonly string[], written: string): NativeHandle {
+    const made = nativeHandle(this, ident, names, written);
+    if (!this.#counted.has(made)) {
+      this.#counted.add(made);
+      this.#live.set(ident, (this.#live.get(ident) ?? 0) + 1);
+      this.#collected.register(made, ident);
+      this.#pending.delete(ident);
+    }
+    return made;
+  }
+
+  /** The `h` payload for a handle this table issued, or the refusal it earns. */
+  payload(handle: NativeHandle): string {
+    if (handle.owner !== this) {
+      throw wireError(
+        `native handle ${String(handle.ident)} belongs to another engine; a handle names a value ` +
+          `in the engine that issued it`,
+      );
+    }
+    if (this.#released.has(handle.ident)) {
+      throw wireError(
+        `native handle ${String(handle.ident)} was released; a released handle is an error ` +
+          `rather than a fresh value`,
+      );
+    }
+    return [handle.ident, handle.names.length, ...handle.names, handle.text].join("|");
+  }
+
+  release(ident: number): void {
+    this.#released.add(ident);
+    this.#pending.add(ident);
+  }
+
+  #dropped(ident: number): void {
+    const left = (this.#live.get(ident) ?? 1) - 1;
+    if (left > 0) {
+      this.#live.set(ident, left);
+      return;
+    }
+    this.#live.delete(ident);
+    // One already released explicitly was queued then, and is not asked twice.
+    if (!this.#released.delete(ident)) this.#pending.add(ident);
+  }
+
+  /** Whether any id waits for the next crossing to carry its release. */
+  get waiting(): boolean {
+    return this.#pending.size > 0;
+  }
+
+  /** The ids to release with the next crossing, handed over once. */
+  drain(): number[] {
+    const ids = [...this.#pending];
+    this.#pending.clear();
+    return ids;
+  }
+
+  /** How many ids atoms still name. Diagnostics. */
+  get size(): number {
+    return this.#live.size;
+  }
+
+  /** Forget every id. Called when the engine that held them goes. */
+  clear(): void {
+    this.#live.clear();
+    this.#pending.clear();
+    this.#released.clear();
+  }
+}
+
+/**
+ * The handle an `h` payload names, or the refusal that payload earns: the
+ * engine's `Id|N|Name_1|...|Name_N|Text`, the names being the crossing's own
+ * and the text the rest, so a `|` inside it is text.
+ */
+function handleOfPayload(payload: unknown, context: DecodeContext): NativeHandle {
+  if (context.handles === undefined) {
+    throw wireError(
+      `the h tag carries a native engine value by reference, which only this ` +
+        `host's own engine transport can name`,
+    );
+  }
+  const parts = hostText(payload).split("|");
+  const ident = Number(parts[0]);
+  const count = Number(parts[1]);
+  if (!Number.isSafeInteger(ident) || !Number.isSafeInteger(count) || count < 0 || parts.length < count + 3) {
+    throw wireError(`the h tag carries Id|N|Names|Text, not ${JSON.stringify(payload)}`);
+  }
+  const names = parts.slice(2, 2 + count);
+  const written = parts.slice(2 + count).join("|");
+  return context.handles.atom(ident, names, written);
+}
+
+// ---------------------------------------------------------------------------
 // The walks.
 //
 // Every walk below shares one shape, said once here: a work stack holding
@@ -564,12 +702,16 @@ export interface DecodeContext {
   readonly knownSpaces?: ReadonlySet<string>;
   /** The table an `o` id is looked up in. Absent means `o` is refused. */
   readonly hostValues?: HostValues;
+  /** The table an `h` id is named in. Absent means `h` is refused. */
+  readonly handles?: NativeHandles;
 }
 
 /** What an encode needs beyond the wire atom itself. */
 export interface EncodeContext {
   /** The table an `o` payload is minted in. Absent means `o` is refused. */
   readonly hostValues?: HostValues;
+  /** The table an `h` handle was issued by. Absent means `h` is refused. */
+  readonly handles?: NativeHandles;
 }
 
 /**
@@ -636,6 +778,8 @@ function decodeLeaf(tag: unknown, payload: unknown, context: DecodeContext): Wir
       return ["p", space(hostText(payload))];
     case "o":
       return ["o", hostReference(payload, context)];
+    case "h":
+      return ["h", handleOfPayload(payload, context)];
     default:
       throw wireError(`unknown wire tag ${JSON.stringify(tag)}`);
   }
@@ -684,6 +828,8 @@ function atomOfToken(tag: unknown, payload: unknown, context: DecodeContext): At
       return space(hostText(payload));
     case "o":
       return G(hostReference(payload, context));
+    case "h":
+      return handleOfPayload(payload, context);
     default:
       throw wireError(`unknown wire tag ${JSON.stringify(tag)}`);
   }
@@ -750,6 +896,15 @@ function encodeLeaf(tag: unknown, payload: unknown, context: EncodeContext): Tra
         );
       }
       return ["o", String(context.hostValues.idFor(payload))];
+    }
+    case "h": {
+      if (context.handles === undefined || !(payload instanceof NativeHandle)) {
+        throw wireError(
+          `the h tag carries a native engine value by reference, which only this ` +
+            `host's own engine transport can name`,
+        );
+      }
+      return ["h", context.handles.payload(payload)];
     }
     default:
       throw wireError(`unknown wire tag ${JSON.stringify(tag)}`);
@@ -944,8 +1099,8 @@ export function encodeEngine(atom: Atom, context: EncodeContext = {}): unknown[]
  * happens to start with `&` and a portable space reference, because both are
  * one Prolog atom. Where the input said which it was, the output says the same.
  */
-export function fromRoundTrip(input: WireTokens, output: unknown): Atom {
-  return decodeEngine(output, {}, input);
+export function fromRoundTrip(input: WireTokens, output: unknown, context: DecodeContext = {}): Atom {
+  return decodeEngine(output, context, input);
 }
 
 // ---------------------------------------------------------------------------
@@ -990,6 +1145,8 @@ function atomOfLeaf(wire: Wire): Atom {
       return wire[1];
     case "o":
       return G(wire[1]);
+    case "h":
+      return wire[1];
     default:
       throw wireError(`unknown wire tag ${JSON.stringify(wire[0])}`);
   }
@@ -1049,8 +1206,12 @@ function wireOfLeaf(atom: Atom): Wire {
       case "boolean":
         return ["b", value];
       default:
-        // A rational atom's value, the only object a number atom holds.
-        return value instanceof Rational ? ["n", value] : ["o", value];
+        // A rational atom's value is the only object a number atom holds, and
+        // a native handle's value is the handle itself; both are asked here,
+        // off the common path, which is the only branch an object reaches.
+        if (value instanceof Rational) return ["n", value];
+        if (atom instanceof NativeHandle) return ["h", atom];
+        return ["o", value];
     }
   }
   throw wireError(`no wire tag for ${String(atom)}`);

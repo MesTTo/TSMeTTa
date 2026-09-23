@@ -43,6 +43,12 @@
 %     PeTTa@ae66fa8e41dcd5539d614706bd4e5cfb34f9608d src/metta.pl,
 %     eval_20/6 clauses for '==' and '!='].
 % Guarantees:
+%   - a native engine value crosses as an `h` handle into one registry that
+%     holds any engine term under a fresh id, interned by its key, and a
+%     released or never-issued id is existence_error(metta_native_handle, Id)
+%     [tested: extensions/node/test/binding.test.ts, "holds a native engine
+%     value by reference and hands back the very same value", "lets the engine
+%     drop a value once the last atom naming it is collected"; commit=WORKTREE]
 %   - the read command pumps host token constructors inside a job
 %     [tested: extensions/node/test/reader-boundary.test.ts; commit=9d6b109740b1744b734b53b563a3be8642d24c0e].
 %   - error transport runs outside transaction/snapshot scopes so exceptions
@@ -306,14 +312,15 @@ user:message_hook(_, _, Lines) :-
 %
 % The same tags extensions/python/metta/_binding/shim.pl's metta_py_encode/2 writes and
 % extensions/node/src/wire.ts reads: s symbol, v variable, n number, g string,
-% b boolean, e expression, p portable space handle, o live host value.
+% b boolean, e expression, p portable space handle, o live host value, h
+% native engine value.
 %
 % `o` carries a JavaScript value BY REFERENCE. The engine has no JavaScript
 % values, so the honest representation is a handle: the host keeps the object
 % in its own table and the engine holds the integer, which is what makes
-% handing the reference back reach the very same object. `h`, a native engine
-% blob, is refused rather than faked, because its whole point is an identity a
-% registry hands back and this binding has no registry for one.
+% handing the reference back reach the very same object. `h` is the same
+% thing the other way round: the engine keeps a native value, a C blob, in its
+% handle registry below and the host holds the id.
 %
 % The number payload is TEXT and that is this transport's own decision, not
 % the grammar's. Every other payload survives the WebAssembly value
@@ -394,10 +401,104 @@ metta_node_encode(T, N0, N, [e, Count, s, FS|R0], R) :-
     atom(F), !,
     atom_string(F, FS),
     metta_node_encode_items(Args, N0, N, 1, Count, R0, R).
+% A native engine value, a C blob such as a compiled regex or a store's engine,
+% crosses as a handle. The clause sits at the tail, so only a term every other
+% clause refused pays the blob/2 probe; a blob is atomic and atom/1 is false
+% for a non-text one, so nothing above claims it
+% [source: extensions/python/metta/_binding/wire.pl, metta_py_encode/4's h
+% clause; commit=cd62330ceacc8f1254eed9791c3f6203b48a1c9e].
+metta_node_encode(T, N0, N, Tokens, R) :- blob(T, Type), Type \== text, T \== [], !,
+    metta_node_encode_handle(T, N0, N, Tokens, R).
 metta_node_encode(T, _, _, _, _) :-
     throw(error(metta_node_untaggable(T),
                 context(metta_node_encode/2,
                         'the Node binding has no wire tag for this term'))).
+
+% A term the host names by reference, as ONE payload: its registry id, how
+% many variables it has, the names this crossing gives them in first-occurrence
+% order, and its written form under those names, `Id|N|Name_1|...|Name_N|Text`.
+% One payload keeps every leaf two tokens, which the host's reader and its
+% provenance alignment rest on. The names come from the crossing's own map, so
+% `|` cannot occur in them, and the text is the rest, so nothing is escaped.
+metta_node_encode_handle(T, N0, N, [h, Payload|R], R) :-
+    metta_node_handle_keep(T, Id),
+    term_variables(T, Vars),
+    metta_node_handle_names(Vars, N0, N, Names, Pairs),
+    format(string(Text), '~W', [T, [quoted(true), variable_names(Pairs)]]),
+    length(Names, Count),
+    atomic_list_concat([Id, Count|Names], '|', Head),
+    format(string(Payload), '~w|~s', [Head, Text]).
+
+metta_node_handle_names([], N, N, [], []).
+metta_node_handle_names([V|Vs], N0, N, [Name|Names], [A=V|Pairs]) :-
+    metta_node_wire_name(V, N0, N1, Name),
+    atom_string(A, Name),
+    metta_node_handle_names(Vs, N1, N, Names, Pairs).
+
+%%%%%%%%%% Handles %%%%%%%%%%
+%
+% The registry that keeps an engine term alive while the host names it: a
+% native value, a C blob, and, where a provider door carries one, a term the
+% wire grammar would hand back changed. The term is stored as a clause, which
+% is its record: SWI's atom garbage collector respects clause references, so a
+% blob lives exactly as long as its entry, and retrieving the clause gives a
+% fresh copy of a term with variables.
+%
+% A term is interned by its key, so the same value crossing again is the same
+% id and the table is bounded by the distinct values the host still holds. A
+% blob's key is the blob, its identity; any other term's is its variant text,
+% each variable written by the position of its first occurrence, `_0`, `_1`,
+% under quoted(true) and numbervars(false), so two keys agree exactly when the
+% terms are variants and a literal '$VAR'(N) cannot pass for a variable
+% [source: extensions/python/metta/_binding/handles.pl, the registry;
+% extensions/cmetta 0f7fd79, compound handles keyed injectively;
+% ai-tmp/ai-provider-carry.md, the Node design]. An id is minted by flag/3 and
+% never issued twice, so a released id stays an error rather than naming
+% another value.
+:- dynamic metta_node_handle/2, metta_node_handle_key/2.
+
+metta_node_handle_keep(Term, Id) :-
+    metta_node_handle_key_of(Term, Key),
+    (   metta_node_handle_key(Key, Held)
+    ->  Id = Held
+    ;   flag(metta_node_handle_counter, Id, Id + 1),
+        assertz(metta_node_handle(Id, Term)),
+        assertz(metta_node_handle_key(Key, Id))
+    ).
+
+metta_node_handle_key_of(Term, Term) :- blob(Term, Type), Type \== text, !.
+metta_node_handle_key_of(Term, Key) :-
+    copy_term_nat(Term, Copy),
+    term_variables(Copy, Vars),
+    metta_node_handle_positions(Vars, 0, Positions),
+    format(string(Key), '~W',
+           [Copy, [quoted(true), numbervars(false), variable_names(Positions)]]).
+
+metta_node_handle_positions([], _, []).
+metta_node_handle_positions([V|Vs], At, [Name=V|Names]) :-
+    format(atom(Name), '_~d', [At]),
+    Next is At + 1,
+    metta_node_handle_positions(Vs, Next, Names).
+
+% The term an id names, a fresh copy when it has variables. A released or
+% never-issued id is an existence error naming it, never a fresh or empty
+% value: release is explicit on the host side, so silence here would turn a
+% released handle into a wrong answer.
+metta_node_handle_term(Id, Term) :-
+    (   metta_node_handle(Id, Held)
+    ->  Term = Held
+    ;   throw(error(existence_error(metta_native_handle, Id),
+                    context(metta_node_handle_term/2,
+                            'the handle was released or never issued')))
+    ).
+
+% What the host no longer names. An id already gone is nothing to do.
+metta_node_handle_release(Ids) :-
+    forall(member(Id, Ids),
+           (   retract(metta_node_handle(Id, _))
+           ->  retractall(metta_node_handle_key(_, Id))
+           ;   true
+           )).
 
 % The count rides an accumulator rather than a length/2 call, and it can,
 % because the count's own cell is a HOLE in the difference list until the walk
@@ -548,6 +649,34 @@ metta_node_decode_([Tag, Count|R0], R, Names0, Names, T) :- metta_node_tag(Tag, 
     ),
     N >= 0,
     metta_node_decode_items(N, R0, R, Names0, Names, T).
+% A handle resolves to the registered term: a blob to itself, and a term with
+% variables to a fresh copy whose variables are this decode's variables of the
+% names the payload gives, first occurrence first, as a v tag's are. The text
+% after the names is for printing and is not read.
+% It is the last tag clause, so the tags every term is made of pay nothing
+% for it: before `v`, each variable and expression token paid two
+% inferences probing it, which moved define-call by two a call
+% [measured 2026-09-24: extensions/node/bench.sh, 87285 against 86285].
+metta_node_decode_([Tag, Payload|R], R, Names0, Names, T) :- metta_node_tag(Tag, h), !,
+    metta_node_text(Payload, Text),
+    split_string(Text, "|", "", [IdText, CountText|Rest]),
+    number_string(Id, IdText), integer(Id),
+    number_string(Count, CountText), integer(Count), Count >= 0,
+    length(Given, Count),
+    append(Given, _, Rest),
+    metta_node_handle_term(Id, T),
+    term_variables(T, Vars),
+    length(Vars, Count),
+    metta_node_handle_link(Given, Vars, Names0, Names).
+
+metta_node_handle_link([], [], Names, Names).
+metta_node_handle_link([Given|Givens], [Var|Vars], Names0, Names) :-
+    atom_string(Name, Given),
+    (   memberchk(Name-Known, Names0)
+    ->  Var = Known, Names1 = Names0
+    ;   Names1 = [Name-Var|Names0]
+    ),
+    metta_node_handle_link(Givens, Vars, Names1, Names).
 
 metta_node_decode_items(0, R, R, Names, Names, []) :- !.
 metta_node_decode_items(N, R0, R, Names0, Names, [T|Ts]) :-

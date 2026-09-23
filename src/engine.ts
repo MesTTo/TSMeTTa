@@ -89,7 +89,10 @@ import {
   engineError,
 } from "./errors.ts";
 import {
+  type DecodeContext,
+  type EncodeContext,
   HostValues,
+  NativeHandles,
   type WireTokens,
   decodeEngine,
   encodeEngine,
@@ -714,6 +717,8 @@ export class Engine {
 
   /** The values this host has handed the engine a reference to. */
   readonly hostValues: HostValues = new HostValues();
+  /** The values the engine keeps that this host names, the other direction. */
+  readonly handles: NativeHandles = new NativeHandles();
   /** Names the engine introduced under `p`, so a bare `s` can be restored. */
   readonly knownSpaces: Set<string> = new Set(["&self", "&metta"]);
   /** The counters a stats scope reads. */
@@ -781,6 +786,16 @@ export class Engine {
         `this engine was disposed; boot another with metta() rather than using a released one`,
       );
     }
+    // What this host let go of since the last crossing goes first, so the
+    // engine never keeps a value past the crossing after its last atom went
+    // and a finaliser never has to call in itself. Every crossing passes here,
+    // so the common case is one boolean read: splitting this method in two and
+    // draining an empty queue each time cost the answer-pulling rows up to 1.1
+    // percent of their instructions [measured 2026-09-24, min of 3 on one box:
+    // bench.sh answers-lazy and query-rows read 1037.1M and 1613.7M that way,
+    // 1029.1M and 1598.4M this way, and 1027.8M and 1595.8M before the handle
+    // table].
+    if (this.handles.waiting) this.once("metta_node_handle_release(Ids)", { Ids: this.handles.drain() });
     this.counters.crossings += 1;
     const result = this.#swipl.prolog
       .query(`metta_node_do((${goal}), Outcome).`, input)
@@ -867,7 +882,7 @@ export class Engine {
 
   /** @internal One engine answer as the atom it names, in one pass. */
   decodeAtom(tokens: unknown): Atom {
-    return decodeEngine(tokens, { knownSpaces: this.knownSpaces, hostValues: this.hostValues });
+    return decodeEngine(tokens, this.#decoding);
   }
 
   /**
@@ -883,7 +898,7 @@ export class Engine {
 
   /** @internal One atom as the flat token list the bridge reads, in one pass. */
   encodeAtom(atom: Atom): unknown[] {
-    return encodeEngine(atom, { hostValues: this.hostValues });
+    return encodeEngine(atom, this.#encoding);
   }
 
   /** @internal Build the public event a raw one names. */
@@ -1025,7 +1040,7 @@ export class Engine {
       "metta_node_decode(W, [], _Names, _T), metta_node_encode_named(_T, _Names, Out)",
       { W: transport },
     );
-    return fromRoundTrip(transport, answer["Out"]);
+    return fromRoundTrip(transport, answer["Out"], this.#decoding);
   }
 
   /**
@@ -1075,6 +1090,7 @@ export class Engine {
   dispose(): void {
     this.#closed = true;
     this.hostValues.clear();
+    this.handles.clear();
   }
 
   /** Whether this engine has been released. */
@@ -1083,6 +1099,18 @@ export class Engine {
   }
 
   #closed = false;
+
+  /**
+   * What every engine decode may see and every encode needs: the space names
+   * and both reference tables, which are this engine's for its whole life, so
+   * each context is built once rather than per atom.
+   */
+  readonly #decoding: DecodeContext = {
+    knownSpaces: this.knownSpaces,
+    hostValues: this.hostValues,
+    handles: this.handles,
+  };
+  readonly #encoding: EncodeContext = { hostValues: this.hostValues, handles: this.handles };
 }
 
 /** The strict wire decoder, re-exported so a conformance kit reaches it. */

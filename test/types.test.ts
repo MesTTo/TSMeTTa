@@ -118,7 +118,7 @@ describe("the type-level reader", () => {
   });
 
   it("names the tags this binding speaks", () => {
-    expectType<Exact<Tag, "s" | "v" | "n" | "g" | "b" | "e" | "p" | "o">>();
+    expectType<Exact<Tag, "s" | "v" | "n" | "g" | "b" | "e" | "p" | "o" | "h">>();
   });
 });
 

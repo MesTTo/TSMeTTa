@@ -380,6 +380,85 @@ export class RationalAtom extends Grounded<Rational> {
   }
 }
 
+/**
+ * What a native handle answers to: the one engine table that issued it.
+ *
+ * Declared here rather than imported, so the atom algebra keeps its one
+ * import and the table, which is the transport's, lives in wire.ts.
+ */
+export interface HandleOwner {
+  /** Which engine's table this is; a handle interns under it. */
+  readonly session: number;
+  /** Let the engine drop the value `ident` names, with the table's next crossing. */
+  release(ident: number): void;
+}
+
+/**
+ * A value the engine keeps and this host names by reference.
+ *
+ * The engine holds it in its handle registry under `ident`: a native value, a
+ * C blob such as a compiled regex or a store's engine, or a term the wire
+ * grammar would hand back changed. What crosses is the id, the names this
+ * crossing gave the term's variables, first occurrence first (none for a
+ * blob), and the engine's written form, which is how the atom prints. It is
+ * interned by its table, id and names, so the same engine value crossing
+ * again is the same atom, and it is a Grounded species, as PyMeTTa's Handle
+ * is, since that is its MeTTa metatype. It is its own host value: this side
+ * holds nothing of it but the reference, so `hostValue(handle)` answers the
+ * handle, as it answers a space handle. `release()`, or leaving a `using`
+ * block, lets the engine drop the value, and so does collecting the last atom
+ * that names it; either travels with the next crossing. A released handle is
+ * refused wherever it is sent.
+ */
+export class NativeHandle extends Grounded<NativeHandle> implements Disposable {
+  /** The registry id the engine keeps the value under. */
+  readonly ident: number;
+  /** The names this crossing gave the term's variables, first occurrence first. */
+  readonly names: readonly string[];
+  /** The engine table that issued it. */
+  readonly owner: HandleOwner;
+  readonly #written: string;
+
+  /** @internal A handle only ever comes from an engine's decode. */
+  constructor(owner: HandleOwner, ident: number, names: readonly string[], written: string) {
+    super(undefined as unknown as NativeHandle);
+    // The value slot is the handle itself, set once before the freeze below:
+    // there is no value on this side but the reference.
+    Object.defineProperty(this, "value", { value: this, enumerable: true });
+    this.owner = owner;
+    this.ident = ident;
+    this.names = Object.freeze([...names]);
+    this.#written = written;
+    Object.freeze(this);
+  }
+
+  override get text(): string {
+    return this.#written;
+  }
+
+  /** Let the engine drop the value, with the owner's next crossing. */
+  release(): void {
+    this.owner.release(this.ident);
+  }
+
+  [Symbol.dispose](): void {
+    this.release();
+  }
+}
+
+/** @internal The atom one handle crossing names, interned by its table, id and names. */
+export function nativeHandle(
+  owner: HandleOwner,
+  ident: number,
+  names: readonly string[],
+  written: string,
+): NativeHandle {
+  return interned(
+    `h ${String(owner.session)} ${String(ident)} ${names.join(" ")}`,
+    () => new NativeHandle(owner, ident, names, written),
+  );
+}
+
 /** A MeTTa expression, `(f a b)`. Children are atoms, already interned. */
 export class Expression extends Atom {
   readonly kind: Kind = "expression";

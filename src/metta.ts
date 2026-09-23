@@ -24,10 +24,12 @@
  *   - settling a world removes its released draft from the surface cache and
  *     decoder-name set [tested: "evicts committed and restored world drafts
  *     from both host caches"; commit=62369c406ca1afee026539a825fa2469c768d957]
- *   - the WebAssembly refusal census names concurrency, crypto, deadlines,
- *     redis and subprocess, including each missing library and its cost
- *     [tested: "reads what this build does without from the engine's own census";
- *     commit=59792b524568755a2fbfe1c5f7cdb571bd78a3bf]
+ *   - `refusals` is the engine census's absent rows, a row being present
+ *     exactly when every library it rests on loads, and each refusal names
+ *     those libraries and what their absence costs [tested: "reads what this
+ *     build does without from the engine's own census, and SWI agrees",
+ *     "names the libraries each absence needs, and what it costs";
+ *     commit=39e6ae2bd697d4029fd476d7d848ae9dc9602554]
  *   - nothing this surface does writes to the host's console
  * Owns: one engine, its spaces, its registered operations, and its scopes.
  * Open Obligations:

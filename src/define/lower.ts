@@ -57,7 +57,7 @@ import type {
   VariableDeclaration,
 } from "acorn";
 
-import { type Atom, type Term, byCodePoint, expr, exprOf, float, sym, toAtom, variable } from "../atom.ts";
+import { type Atom, SpaceHandle, type Term, byCodePoint, expr, exprOf, float, fresh, sym, toAtom, variable } from "../atom.ts";
 import { CompileError, MettaError, nearest } from "../errors.ts";
 import { mettaName } from "../naming.ts";
 import { OPERATOR_HEADS, WORD_CONSTANTS, WORD_HEADS } from "../words.ts";
@@ -68,6 +68,11 @@ export interface LowerScope {
   readonly selfName: string;
   /** The identifier the function calls itself by, when it has one. */
   readonly selfIdentifier?: string;
+  /**
+   * The space the definition installs into, which `this` names inside the
+   * body: the receiver a definition runs on is the space it lives in.
+   */
+  readonly space?: Atom;
   /** Whether a head is already known to the engine. */
   readonly knows: (name: string) => boolean;
   /** Values a caller supplied by name, for a closure the source cannot reach. */
@@ -216,6 +221,51 @@ function grounded(name: string, argument: AcornExpression | undefined, scope: Lo
   );
 }
 
+/**
+ * The engine operation a `Space` method performs, by method name and arity.
+ *
+ * A lowered body says to a space what host code says to it, and the lowering
+ * reads the method back as the operation the host door performs: `add` stores
+ * one atom, `delete` subtracts one occurrence and answers whether one was
+ * there, `match` with a template queries, and `atoms` lists the store. A
+ * method outside this table has no one-operation meaning in a body.
+ */
+const SPACE_METHODS: Readonly<Record<string, { readonly head: string; readonly arity: number }>> = {
+  add: { head: "add-atom", arity: 1 },
+  delete: { head: "subtract-atom", arity: 1 },
+  match: { head: "match", arity: 2 },
+  atoms: { head: "get-atoms", arity: 0 },
+};
+
+/** A space method called on a space: its engine head and the space's atom. */
+function spaceMethod(
+  callee: AcornExpression,
+  arity: number,
+  bindings: Bindings,
+  scope: LowerScope,
+): { readonly head: string; readonly space: Atom } | undefined {
+  if (callee.type !== "MemberExpression") return undefined;
+  const member = callee as { object: AcornExpression; property: { name?: string }; computed: boolean };
+  if (member.computed || member.property.name === undefined) return undefined;
+  const receiver = member.object;
+  const isSpace =
+    receiver.type === "ThisExpression" ||
+    (receiver.type === "Identifier" &&
+      !bindings.has((receiver as { name: string }).name) &&
+      scope.scope !== undefined &&
+      Object.hasOwn(scope.scope, (receiver as { name: string }).name) &&
+      toAtom(scope.scope[(receiver as { name: string }).name] as Term) instanceof SpaceHandle);
+  if (!isSpace) return undefined;
+  const method = SPACE_METHODS[member.property.name];
+  if (method === undefined || method.arity !== arity) {
+    refuse(
+      `${scope.selfName} calls ${member.property.name} on a space with ${String(arity)} arguments`,
+      `a lowered body reads ${Object.entries(SPACE_METHODS).map(([name, { arity: n }]) => `${name}/${String(n)}`).join(", ")} on a space; reach any other operation through fn`,
+    );
+  }
+  return { head: method.head, space: lowerExpression(receiver, bindings, scope) };
+}
+
 /** The bindings in force at one point of the walk: parameters, then `const`s. */
 type Bindings = ReadonlyMap<string, Atom>;
 
@@ -321,51 +371,36 @@ function lowerStatements(
   bindings: Bindings,
   scope: LowerScope,
 ): Atom {
-  if (at >= statements.length) {
-    refuse(
-      `a branch of ${scope.selfName} runs off the end of the body`,
-      "every branch of a MeTTa equation answers a term, so give it a return",
-    );
-  }
+  // Running off the end answers the unit, `()`, which is what a TypeScript
+  // function without a return answers and what MeTTa's own writes answer.
+  // TypeScript's checker already refuses a missing return where the declared
+  // return type is not void, so this never hides a forgotten branch there.
+  if (at >= statements.length) return expr();
   const statement = statements[at] as Statement;
   switch (statement.type) {
     case "ReturnStatement": {
+      // A bare `return;` answers the unit, as running off the end does.
       const argument = (statement as { argument: AcornExpression | null | undefined }).argument;
-      if (argument === null || argument === undefined) {
-        refuse(
-          `${scope.selfName} returns nothing on one branch`,
-          "an equation answers a term; return the atom the branch means, or `Empty()` for no answer",
-        );
-      }
-      return lowerExpression(argument, bindings, scope);
+      return argument === null || argument === undefined ? expr() : lowerExpression(argument, bindings, scope);
     }
     case "VariableDeclaration": {
-      const declaration = statement as VariableDeclaration;
-      if (declaration.kind === "var") {
-        refuse(
-          `${scope.selfName} declares a var`,
-          "use const, which is what a MeTTa let is: one name, one value, one scope",
-        );
-      }
-      if (declaration.declarations.length !== 1) {
-        refuse(
-          `${scope.selfName} declares more than one name in one statement`,
-          "write one const per statement, so each one lowers to its own let",
-        );
-      }
-      const declarator = declaration.declarations[0]!;
-      if (declarator.init === null || declarator.init === undefined) {
-        refuse(
-          `${scope.selfName} declares a name with no value`,
-          "a MeTTa let needs the value the name stands for",
-        );
-      }
       // A plain name is `(let $x value ...)`; an array pattern is MeTTa's own
       // pattern let, `const [a, [b, c]] = v` being `(let ($a ($b $c)) v ...)`.
-      const value = lowerExpression(declarator.init, bindings, scope);
+      // A RUN of declarations is `let*`, which is MeTTa's name for bindings
+      // made in sequence, each seeing the ones before it.
       const inner = new Map(bindings);
-      const pattern = patternOf(declarator.id, inner, scope);
-      return expr(sym("let"), pattern, value, lowerStatements(statements, at + 1, inner, scope));
+      const pairs: (readonly [Atom, Atom])[] = [];
+      let next = at;
+      for (; next < statements.length; next += 1) {
+        const binding = declared(statements[next] as Statement, scope);
+        if (binding === undefined) break;
+        const value = lowerExpression(binding.init, inner, scope);
+        pairs.push([patternOf(binding.id, inner, scope), value]);
+      }
+      const rest = lowerStatements(statements, next, inner, scope);
+      const [only] = pairs;
+      if (pairs.length === 1 && only !== undefined) return expr(sym("let"), only[0], only[1], rest);
+      return expr(sym("let*"), exprOf(pairs.map(([pattern, value]) => expr(pattern, value))), rest);
     }
     case "SwitchStatement":
       return lowerSwitch(statement, statements.slice(at + 1), bindings, scope);
@@ -390,12 +425,12 @@ function lowerStatements(
         bindings,
         scope,
       );
-    case "ExpressionStatement":
-      refuse(
-        `${scope.selfName} has a statement whose value is thrown away`,
-        "an equation is one expression: every statement in it has to contribute, so bind it with const or return it",
-      );
-      break;
+    case "ExpressionStatement": {
+      // A statement run for its effect is MeTTa's `chain`: evaluate it, bind
+      // its answer to a name nothing reads, and continue with the rest.
+      const effect = lowerExpression((statement as { expression: AcornExpression }).expression, bindings, scope);
+      return expr(sym("chain"), effect, fresh("statement"), lowerStatements(statements, at + 1, bindings, scope));
+    }
     case "ThrowStatement":
       refuse(
         `${scope.selfName} throws`,
@@ -409,6 +444,39 @@ function lowerStatements(
     `${scope.selfName} uses a ${statement.type}, which has no MeTTa meaning`,
     "write the body as a generator, where a goal is a yield*, or register it with op so it runs as host code",
   );
+}
+
+/**
+ * The one binding a `const` statement makes, or undefined when `statement` is
+ * not a declaration. A `var`, several names in one statement and a name with
+ * no value each refuse, naming the MeTTa reason.
+ */
+function declared(
+  statement: Statement,
+  scope: LowerScope,
+): { readonly id: Pattern; readonly init: AcornExpression } | undefined {
+  if (statement.type !== "VariableDeclaration") return undefined;
+  const declaration = statement as VariableDeclaration;
+  if (declaration.kind === "var") {
+    refuse(
+      `${scope.selfName} declares a var`,
+      "use const, which is what a MeTTa let is: one name, one value, one scope",
+    );
+  }
+  if (declaration.declarations.length !== 1) {
+    refuse(
+      `${scope.selfName} declares more than one name in one statement`,
+      "write one const per statement, so each one lowers to its own binding",
+    );
+  }
+  const declarator = declaration.declarations[0]!;
+  if (declarator.init === null || declarator.init === undefined) {
+    refuse(
+      `${scope.selfName} declares a name with no value`,
+      "a MeTTa let needs the value the name stands for",
+    );
+  }
+  return { id: declarator.id, init: declarator.init };
 }
 
 /**
@@ -454,7 +522,7 @@ function patternOf(node: Pattern, bound: Map<string, Atom>, scope: LowerScope): 
  * catch-all arm, placed last because `case` tries its arms in order where
  * `switch` consults `default` only after every label. With no `default`, what
  * follows the switch is the catch-all, which is where TypeScript goes when no
- * label matched.
+ * label matched, and the unit when nothing does.
  */
 function lowerSwitch(
   statement: Statement,
@@ -490,14 +558,7 @@ function lowerSwitch(
       "give the final clause the term it answers",
     );
   }
-  const fallback = otherwise ?? (after.length > 0 ? lowerStatements(after, 0, bindings, scope) : undefined);
-  if (fallback === undefined) {
-    refuse(
-      `a switch in ${scope.selfName} has no default and nothing follows it`,
-      "every branch of a MeTTa equation answers a term; add `default: return Empty()` for no answer",
-    );
-  }
-  arms.push(expr(variable("_"), fallback));
+  arms.push(expr(variable("_"), otherwise ?? lowerStatements(after, 0, bindings, scope)));
   return expr(sym("case"), subject, exprOf(arms));
 }
 
@@ -610,6 +671,9 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
       // A mention APPLIED: S.pair(a, b), fn.carAtom(x), S["x"](...), S("x")(...).
       const applied = mentioned(call.callee, bindings);
       if (applied !== undefined) return expr(applied, ...args());
+      // A space's own method, on a space: this.add(atom), kb.match(p, t).
+      const method = spaceMethod(call.callee, call.arguments.length, bindings, scope);
+      if (method !== undefined) return expr(sym(method.head), method.space, ...args());
       if (call.callee.type !== "Identifier") {
         refuse(
           `${scope.selfName} calls something that is not a plain name`,
@@ -647,6 +711,15 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
     }
     case "ParenthesizedExpression":
       return lowerExpression((node as { expression: AcornExpression }).expression, bindings, scope);
+    case "ThisExpression": {
+      if (scope.space === undefined) {
+        refuse(
+          `${scope.selfName} reads this, and nothing says which space it runs in`,
+          "define it through a space's own define, where this is that space",
+        );
+      }
+      return scope.space;
+    }
     case "MemberExpression": {
       const named = mentioned(node, bindings);
       if (named !== undefined) return named;

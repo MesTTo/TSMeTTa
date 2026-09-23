@@ -653,12 +653,32 @@ const signs = m.define(function signs(x: number): Term {
 (await signs(4).toArray()).map(String); // ["4", "-4"]
 ```
 
-Array destructuring is MeTTa's pattern `let`, and a `switch` is its `case`:
-labels without statements share the next arm, a clause ending in `break`
-continues after the switch, and `default` is tried last whatever its position,
-as TypeScript tries it. Because the source is all the lowering reads, the
-factories and words are recognised by NAME: a local binding of the same name
-shadows them, and a renamed import (`import { S as Sym }`) is not one of them.
+Array destructuring is MeTTa's pattern `let`, a run of `const`s is its
+`let*`, and a `switch` is its `case`: labels without statements share the next
+arm, a clause ending in `break` continues after the switch, and `default` is
+tried last whatever its position, as TypeScript tries it. Because the source is
+all the lowering reads, the factories and words are recognised by NAME: a local
+binding of the same name shadows them, and a renamed import
+(`import { S as Sym }`) is not one of them.
+
+`this` is the space the definition lives in, so a body says to its space what
+host code says to one: `this.add(atom)` stores, `this.delete(atom)` subtracts
+one occurrence, `this.match(pattern, template)` queries and `this.atoms()`
+lists. A space the body reaches by closure is named in `{ scope }`, since the
+source is all the lowering reads. A statement run for its effect is MeTTa's
+`chain`, and running off the end answers the unit, `()`, as a TypeScript
+function without a return answers `undefined`:
+
+```ts
+import { type Space, type Term } from "tsmetta";
+
+const notes = m.space(S.notes);
+const note = m.define(function note(this: Space, text: string): Term {
+  this.add(S.noted(text)); // (chain (add-atom &notes (noted $text)) $_ ...)
+  return this.match(S.noted(V.said), V.said);
+}, { space: notes });
+(await note("hello").toArray()).map(String); // ['"hello"']
+```
 
 ## The engine's functions, and its libraries
 

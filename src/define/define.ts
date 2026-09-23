@@ -204,6 +204,7 @@ export function define(
   } else {
     const lowered = lower(target, {
       selfName: head,
+      space: toAtom(space),
       ...(target.name === "" ? {} : { selfIdentifier: target.name }),
       knows: (name) => install.knows(name),
       declared: () => install.declared(),

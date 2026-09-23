@@ -26,6 +26,8 @@ import { after, before, describe, it } from "node:test";
 import {
   Collapse,
   Empty,
+  FALSE,
+  type Space,
   alphaEqual,
   Expression,
   G,
@@ -143,6 +145,19 @@ describe("a lowered body", () => {
     assert.deepEqual(areaOf.equations.map(String), [
       "(= (area-of $w $h) (let $half (* $w $h) (+ $half $half)))",
     ]);
+  });
+
+  it("lowers a run of consts into a let*, each seeing the ones before it", async () => {
+    const hypotenuse = m.define(function hypotenuse(a: number, b: number): number {
+      const aa = a * a;
+      const bb = b * b;
+      const cc = aa + bb;
+      return cc;
+    });
+    assert.deepEqual(hypotenuse.equations.map(String), [
+      "(= (hypotenuse $a $b) (let* (($aa (* $a $a)) ($bb (* $b $b)) ($cc (+ $aa $bb))) $cc))",
+    ]);
+    assert.equal(String(await hypotenuse(3, 4).one()), "25");
   });
 
   it("lowers a conditional expression and the logical operators", () => {
@@ -299,15 +314,47 @@ describe("a lowered body mentions", () => {
       await Promise.all([0, 1, 2, 3, 9].map(async (n) => (await sized(n).one()).text)),
       ["none", "few", "few", "three", "many"],
     );
+    // With no default and nothing after the switch, an unmatched subject runs
+    // off the end, which answers the unit as a TypeScript function does.
+    const open = m.define(function open(n: number): Term {
+      switch (n) {
+        case 0:
+          return S.zero;
+      }
+      return;
+    });
+    assert.deepEqual(await open(7), [UNIT]);
+  });
+
+  it("this as the space the definition lives in, and that space's own methods", async () => {
+    const kb = m.space(S.lowerKb);
+    kb.add(S.item(1), S.item(2));
+    const stamp = m.define(function stamp(this: Space, n: number): Term {
+      this.add(S.stamped(n));
+      return this.match(S.item(V.found), S.seen(V.found));
+    }, { space: kb });
+    assert.equal(stamp.equations.length, 1);
+    assert.ok(alphaEqual(
+      stamp.equations[0]!,
+      rewrite(S.stamp(V.n), S.chain(S.addAtom(kb, S.stamped(V.n)), V.effect, S.match(kb, S.item(V.found), S.seen(V.found)))),
+    ));
+    assert.deepEqual(await stamp(7), [S.seen(1), S.seen(2)]);
+    assert.ok(kb.has(S.stamped(7)), "the statement's write landed");
+
+    const other = m.space(S.lowerOther);
+    other.add(S.token(1));
+    const take = m.define(function take(): Term {
+      return other.delete(S.token(1));
+    }, { scope: { other } });
+    assert.deepEqual(await take(), [TRUE]);
+    assert.deepEqual(await take(), [FALSE]);
+    const listed = m.define(function listed(): Term {
+      return other.atoms();
+    }, { scope: { other } });
+    assert.deepEqual(await listed(), []);
     assert.throws(
-      () =>
-        m.define(function open(n: number): Term {
-          switch (n) {
-            case 0:
-              return S.zero;
-          }
-        }),
-      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /no default/.test(error.message),
+      () => m.define(function wrong(): Term { return other.match(S.token(V.n)); }, { scope: { other } }),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /match\/2/.test(error.message),
     );
   });
 });

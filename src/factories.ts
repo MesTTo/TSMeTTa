@@ -8,6 +8,8 @@
  *     `car-atom`. A name written as TEXT is exact and untouched, which is what
  *     the bracket door and the call door both are.
  * Guarantees:
+ *   - inherited host names have vocabulary types as well as vocabulary values
+ *     [tested: test/factory-boundary.test.ts; commit=WORKTREE]
  *   - the attribute door and the call door mint the SAME atom for a name the
  *     map leaves alone, so `S.parent === S("parent")`
  *   - `S.then` is undefined and nothing else is, because a namespace that
@@ -83,6 +85,8 @@ function makeName<N extends string>(spelling: N): Name<N> {
   }) as unknown as Name<N>;
 }
 
+type HostNames<T> = { readonly [K in Extract<keyof Function | keyof Object, string>]: T };
+
 /**
  * A namespace that is also callable.
  *
@@ -91,7 +95,7 @@ function makeName<N extends string>(spelling: N): Name<N> {
  * `S("parent")` is `Name<"parent">` while `S.parent` is `Name<string>`. Both
  * mint one interned atom.
  */
-export interface SymFactory {
+export interface SymFactory extends HostNames<Name> {
   <const N extends string>(spelling: N): Name<N>;
   readonly [key: string]: Name;
 }
@@ -123,7 +127,7 @@ export type Head = Camel<CatalogName> | keyof typeof OPERATOR_HEADS;
 export type FnFactory = SymFactory & { readonly [K in Head]: Name };
 
 /** The variable factory, the same shape: `V.x` is `$x`, `V("x")` keeps the literal. */
-export interface VarFactory {
+export interface VarFactory extends HostNames<Var> {
   <const N extends string>(spelling: N): Var<N>;
   readonly [key: string]: Var;
 }

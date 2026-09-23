@@ -6,6 +6,8 @@
  *   - the engine is the meaning and TypeScript is the notation, so every door
  *     here either builds a term or asks the engine one
  * Guarantees:
+ *   - literal query columns and schema arities survive TypeScript inference
+ *     [tested: test/source-row-boundary.test.ts and test/schema-boundary.test.ts; commit=WORKTREE].
  *   - prepared queries and disposable spaces share the native Space doors
  *     [tested: "refuses a prepared execution after its space was released"; commit=94e5fc7eb685b895dde2878e7054332a0cb61c7d].
  *   - browser evaluation uses the same surface as Node; host file paths refuse
@@ -71,6 +73,7 @@ import { showsAs } from "./present.ts";
 import { type Library, useLibrary } from "./library.ts";
 import { mettaName } from "./naming.ts";
 import { Schema, type SchemaDeclarations } from "./schema.ts";
+import type { SourceRow } from "./types/sexpr.ts";
 import { Limit } from "./vocabularies.ts";
 import { ScopeHandle, Stats, World, nextWorldName } from "./scopes.ts";
 import type { Limits } from "./scopes.ts";
@@ -575,9 +578,9 @@ export class MeTTa implements Disposable {
    * The pattern's `$`-variables are read at the TYPE level, so destructuring a
    * name the pattern does not bind is a compile error rather than an undefined.
    */
-  q(source: string, options: AskOptions = {}): Answers<Row> {
+  q<const Source extends string>(source: Source, options: AskOptions = {}): Answers<SourceRow<Source>> {
     const pattern = this.parse(source);
-    return this.self.match(pattern, options);
+    return this.self.match(pattern, options) as Answers<SourceRow<Source>>;
   }
 
   // --- the doors ------------------------------------------------------------
@@ -953,7 +956,7 @@ export class MeTTa implements Disposable {
   }
 
   /** Declare vocabulary, and answer the factories typed from it. */
-  schema<D extends SchemaDeclarations>(declarations: D): Schema<D> {
+  schema<const D extends SchemaDeclarations>(declarations: D): Schema<D> {
     return new Schema(this, declarations);
   }
 

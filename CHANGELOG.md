@@ -1,6 +1,21 @@
+<!-- Purpose: record shipped surface changes and caller migration requirements.
+Open Obligations: None. -->
 # Changelog
 
 ## Unreleased
+
+- Repair corpus-discovered boundary defects: reject invalid tensor dimensions
+  and fractional coordinates; preserve polymorphic schema variables and declared
+  arities; type callable vocabulary names inherited from Function and Object.
+- Infer query columns from variable tokens, excluding quoted text and comments.
+- Await asynchronous provider finalizers when a query is truncated. Match table
+  columns together so repeated variables agree, including nested terms, and
+  preserve literal dollar constraints.
+- Join generator effects with nondeterministic delivery. Preserve repeated
+  pattern variables and valid shrinks in `fromPattern`.
+- Copy linked runtime roots into packed artifacts. Isolate the packed consumer
+  check from enclosing package self-reference; correct executable carrier and
+  browser-export documentation.
 
 - Add prepared queries with native joins, guards and limits. The query exposes
   its term and columns, reuses its encoding, and reads fresh answers on each solve.
@@ -24,6 +39,11 @@
   removal. GraphQL frameworks and SQL drivers remain extension-package concerns.
 
 ### Migration
+
+Tensor dimensions and coordinates now reject invalid numeric indices. Schema
+callables check their declared arity at compile time. A generator declared pure
+reports `nondeterministicReadOnly`; awaiting a truncated query waits for its
+provider's finalizer. Repeated table columns must hold equal terms.
 
 Existing unguarded matches keep their behavior. A template that is an ordinary
 host object must be wrapped in `G`; atom-bearing handles are templates directly.

@@ -2,6 +2,8 @@
  * Purpose: exercise the emitted browser package in Chromium over HTTP, and the
  *   documentation site's runnable fences on top of it.
  * Guarantees:
+ *   - an unreadable website worker receives a completed HTTP refusal
+ *     [tested: node tools/browser.test.mjs; commit=WORKTREE].
  *   - boot, wire answers, host callbacks, matching and evaluation status run in
  *     a page, with worker boot checked separately
  *     [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
@@ -204,8 +206,14 @@ before(async () => {
       return;
     }
     if (path === `${BASE}metta/worker.js`) {
-      response.writeHead(200, { 'content-type': 'text/javascript' });
-      response.end(await readFile(join(SITE, 'public/metta/worker.js')));
+      try {
+        const source = await readFile(join(SITE, 'public/metta/worker.js'));
+        response.writeHead(200, { 'content-type': 'text/javascript' });
+        response.end(source);
+      } catch (error) {
+        response.writeHead(404, { 'content-type': 'text/plain' });
+        response.end(String(error));
+      }
       return;
     }
     if (path.startsWith(`${BASE}assets/`)) {

@@ -9,6 +9,8 @@
  *     defined, `(match &kb (uses $f $n) ($f $n))` answers 6 rather than the row
  *     [measured 2026-08-27; quote operand return rechecked 2026-08-30]
  * Guarantees:
+ *   - awaited iterator return completes provider cleanup
+ *     [tested: test/resource-table-boundary.test.ts; commit=WORKTREE].
  *   - disposable identities and committed live queries retain engine ownership
  *     [tested: "maintains joined rows and one progress boundary for an atomic batch"; commit=94e5fc7eb685b895dde2878e7054332a0cb61c7d].
  *   - `add`, `delete`, `has`, `size` and `clear` mean what `Set` means by them,
@@ -1179,17 +1181,17 @@ export function answerIterator(job: Job): AsyncIterator<Atom> {
         }
         return { done: false, value: event.atom };
       } catch (error) {
-        job.close();
+        await job.closed();
         throw error;
       }
     },
-    return(): Promise<IteratorResult<Atom>> {
-      job.close();
-      return Promise.resolve({ done: true, value: undefined as never });
+    async return(): Promise<IteratorResult<Atom>> {
+      await job.closed();
+      return { done: true, value: undefined as never };
     },
-    throw(error: unknown): Promise<IteratorResult<Atom>> {
-      job.close();
-      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+    async throw(error: unknown): Promise<IteratorResult<Atom>> {
+      await job.closed();
+      throw error instanceof Error ? error : new Error(String(error));
     },
   };
 }

@@ -11,6 +11,8 @@
  *     TypeScript widens a tagged template's text to `string` and the literal is
  *     gone before a type can read it
  * Guarantees:
+ *   - quoted and commented dollars do not become query columns
+ *     [tested: test/source-row-boundary.test.ts; commit=WORKTREE]
  *   - `SourceRow<"(likes Ada $drink)">` is `{ drink: Atom }`, so destructuring
  *     a name the pattern does not bind is a compile error rather than an
  *     `undefined` at run time
@@ -27,32 +29,28 @@
 
 import type { Atom } from "../atom.ts";
 
-/** Characters allowed in a MeTTa variable name after the `$`. */
-type IdentChar =
-  | "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m"
-  | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
-  | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M"
-  | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z"
-  | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "_" | "-";
+/** A complete variable token contributes its name. */
+type VariableName<Token extends string> = Token extends `$${infer N}` ? N extends "" ? never : N : never;
 
-/** The leading identifier of `S`: characters up to the first non-identifier one. */
-type IdentHead<S extends string, Acc extends string = ""> = S extends `${infer C}${infer R}`
-  ? C extends IdentChar
-    ? IdentHead<R, `${Acc}${C}`>
-    : Acc
-  : Acc;
+/** Scan tokens, keeping strings and line comments opaque to variable discovery. */
+type ScanVars<S extends string, Token extends string = "", Found extends string = never,
+  Mode extends "plain" | "string" | "comment" = "plain", Escaped extends boolean = false> =
+  S extends `${infer C}${infer Rest}`
+    ? Mode extends "comment"
+      ? ScanVars<Rest, "", Found, C extends "\n" ? "plain" : "comment">
+      : Mode extends "string"
+        ? Escaped extends true ? ScanVars<Rest, "", Found, "string">
+          : C extends "\\" ? ScanVars<Rest, "", Found, "string", true>
+          : ScanVars<Rest, "", Found, C extends '"' ? "plain" : "string">
+        : C extends '"' ? ScanVars<Rest, "", Found | VariableName<Token>, "string">
+          : C extends ";" ? ScanVars<Rest, "", Found | VariableName<Token>, "comment">
+          : C extends " " | "\n" | "\r" | "\t" | "(" | ")"
+            ? ScanVars<Rest, "", Found | VariableName<Token>>
+            : ScanVars<Rest, `${Token}${C}`, Found>
+    : Found | VariableName<Token>;
 
-/** `S` with its leading identifier removed. */
-type AfterIdent<S extends string> = S extends `${infer C}${infer R}`
-  ? C extends IdentChar
-    ? AfterIdent<R>
-    : S
-  : S;
-
-/** Every `$`-prefixed variable name in `S`. A bare `$` names nothing. */
-export type SourceVars<S extends string> = S extends `${string}$${infer Rest}`
-  ? (IdentHead<Rest> extends "" ? never : IdentHead<Rest>) | SourceVars<AfterIdent<Rest>>
-  : never;
+/** Every variable token in source; strings and comments contribute no bindings. */
+export type SourceVars<S extends string> = string extends S ? string : ScanVars<S>;
 
 /**
  * The row a source pattern answers.

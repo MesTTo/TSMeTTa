@@ -11,6 +11,8 @@
  *   - `bridge.pl` sits beside this file's package root and speaks the job
  *     protocol documented there
  * Guarantees:
+ *   - asynchronous query completion waits for provider finalizers
+ *     [tested: test/resource-table-boundary.test.ts; commit=WORKTREE].
  *   - resource control can run outside ambient transaction and snapshot
  *     policies [tested: "opens and closes observations independently of speculative writes"; commit=94e5fc7eb685b895dde2878e7054332a0cb61c7d].
  *   - Node and browser boot share the job and wire implementation
@@ -358,6 +360,7 @@ export class Job {
   // [tested: "answers a conjunction over a provider needing two live enumerations at once"]
   #pending = new Map<number, AsyncIterator<unknown> | Iterator<unknown>>();
   #nextStream = 1;
+  #cleanup: Promise<void>[] = [];
 
   /** @internal */
   constructor(engine: Engine, id: number) {
@@ -371,7 +374,10 @@ export class Job {
     let raw = this.#engine.rawStep(this.#id);
     for (;;) {
       const settled = this.#settle(raw);
-      if (settled.done) return settled.event;
+      if (settled.done) {
+        if (this.#id === null) await this.closed();
+        return settled.event;
+      }
       const reply = await settled.reply;
       if (this.#id === null) return null;
       raw = this.#engine.rawResume(this.#id, reply);
@@ -435,6 +441,12 @@ export class Job {
     for (const iterator of this.#pending.values()) this.#close(iterator);
     this.#pending.clear();
     this.#engine.rawStop(id);
+  }
+
+  /** Release the job and await every provider's asynchronous finalizer. */
+  async closed(): Promise<void> {
+    this.close();
+    await Promise.all(this.#cleanup);
   }
 
   /**
@@ -595,7 +607,14 @@ export class Job {
   /** Release one stream the engine abandoned, running the body's own cleanup. */
   #close(iterator: AsyncIterator<unknown> | Iterator<unknown>): void {
     try {
-      void iterator.return?.(undefined);
+      const returned = iterator.return?.(undefined);
+      if (isPromise(returned)) {
+        const cleanup = returned.then(() => undefined);
+        // Synchronous disposal has no awaiting caller; retain the refusal for
+        // the asynchronous door while preventing an unhandled rejection.
+        void cleanup.catch(() => undefined);
+        this.#cleanup.push(cleanup);
+      }
     } catch {
       // A body that throws on the way out has nothing left to tell anyone: the
       // job is closing, and there is no caller to raise it to.

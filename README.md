@@ -1,3 +1,5 @@
+<!-- Purpose: demonstrate the public TypeScript surface with executable examples.
+Open Obligations: None. -->
 # MeTTa in TypeScript
 
 ```ts
@@ -207,6 +209,7 @@ A schema publishes declarations that the engine can match.
 
 ```ts
 const vocabulary = m.schema({ ageOf: "(-> Symbol Number)" });
+String(vocabulary.S.ageOf(S.ada)); // "(age-of ada)"; the callable takes one argument
 String(vocabulary.typeOf("ageOf")); // "(-> Symbol Number)"
 String((await m.match(S[":"](S.ageOf, V.type)).one())["type"]);
 // "(-> Symbol Number)"
@@ -379,6 +382,11 @@ several calls is not one transaction. Build one term when the whole operation
 must be atomic. A callback body is refused with the transport's remedy:
 WebAssembly SWI cannot yield to JavaScript through a transaction or snapshot.
 
+Native table and exact-memo counters belong to the query that creates their
+tables. Read those counters inside the same evaluation, such as a `progn`
+containing the call and its statistics read. Closing the answers closes that
+native query; a later statistics query sees no retained table.
+
 ## Reified worlds and compensation
 
 A reified world is a language value with evaluation, successor, diff and
@@ -516,13 +524,14 @@ String(await m.eval(S.arrayMax(G(matrix.data))).one()); // "6"
 
 JavaScript's `TypedArray` family supplies numeric storage. A tensor adds shape
 and a MeTTa type; reshaping shares storage and incompatible sizes are refused.
+Dimensions and coordinates must be safe integers; dimensions may be zero.
 `EmbeddingStore` presents vector neighbours as a provider. Numeric libraries
 already producing typed arrays need no library-specific door in core.
 
 ## Algebras and semirings
 
 ```ts
-import { Algebra, matchUnder, taggedFact, taggedRule } from "tsmetta/algebra";
+import { Algebra, AlgebraDeclarationError, matchUnder, taggedFact, taggedRule } from "tsmetta/algebra";
 
 using weighted = m.space();
 weighted.add(taggedFact(0.5, S.a()), taggedFact(0.2, S.b()),
@@ -535,9 +544,14 @@ String((await matchUnder(weighted, S.c(), "counting").one()).tag); // "1" proof
 const overlapping = S.product(S.prob, S.counting);
 
 // The carrier names an ENGINE declaration. A host object is not one.
-matchUnder(weighted, S.c(), new Algebra({ /* ... */ }));
-// AlgebraDeclarationError: matchUnder needs an engine carrier name or term;
-//   declare the algebra in the catalog and pass its name
+const host = new Algebra("host", { combine: "+", extend: "*", zero: 0, one: 1 });
+try {
+  matchUnder(weighted, S.c(), host);
+  throw new Error("a host algebra was accepted as an engine declaration");
+} catch (error) {
+  if (!(error instanceof AlgebraDeclarationError)) throw error;
+  error.code; // "ERR_METTA_CAPABILITY"
+}
 ```
 
 `matchUnder(space, pattern, carrier)` is `(match-under space carrier pattern)`,
@@ -697,7 +711,7 @@ Every code-module entry point the package exports, which is what
 | `tsmetta/ambient` | One lazily booted engine behind free functions, so a first program needs no setup line: `add`, `define`, `evaluate`, `engine`, `catalog`, `loadFile` |
 | `tsmetta/arrays` | Typed arrays, `Tensor`, `EmbeddingStore`, and `installArrays` |
 | `tsmetta/atom` | The atom algebra: one interned immutable value per MeTTa atom, narrowing by `instanceof`, printing as MeTTa text. `Expression`, `Grounded`, `FloatAtom`, `Sym`, `SpaceHandle`, `ATOM_OF` |
-| `tsmetta/browser` | Fetch, validate and compile a browser runtime once per root: `prepareRuntime`, `mountInto`, `runtimeVersion`, `forgetRuntime` |
+| `tsmetta/browser` | The browser build of the root surface: `metta`, `MeTTa`, `S`, `V`, `fn`, and `forgetRuntime` |
 | `tsmetta/config` | The process-wide settings the engine and the presentation layer read, and the one place an operator sets them: `config`, `Setting`, `Settings` |
 | `tsmetta/convert` | `registerType`, `project`, `build`, and `autoImage` |
 | `tsmetta/derivation` | One proof of one answer, as data: the equations that fired, the stored atoms they rested on, and the goals the walk could not see inside. `derivationOf`, `ProofNode`, `Step`, `Fact`, `Truncated`, `readable` |

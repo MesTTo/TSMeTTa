@@ -6,6 +6,8 @@
  *   installed: packing runs this package's `prepare`, and that is what builds
  *   `dist/`, `browser/` and `_runtime/`.
  * Guarantees:
+ *   - nested worktrees resolve the unpacked consumer package
+ *     [tested: node tools/dist-consumer.mjs; commit=WORKTREE].
  *   - exits 0 having evaluated one program through the built library, reached
  *     from a directory that is NOT a checkout, and exits nonzero naming what
  *     failed otherwise [tested: extensions/node/check.sh node-dist]
@@ -36,7 +38,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -133,6 +135,8 @@ const scratchRoot = join(packageRoot, "..", "..", "ai-tmp");
 mkdirSync(scratchRoot, { recursive: true });
 const scratch = mkdtempSync(join(scratchRoot, "packed-"));
 try {
+  // A package scope also isolates nested battery worktrees from self-reference.
+  writeFileSync(join(scratch, "package.json"), JSON.stringify({name: "packed-consumer", private: true, type: "module"}));
   const installed = unpack(scratch);
 
   // The engine and the browser build, by name. Both are gitignored build

@@ -25,6 +25,8 @@
  * whatever machine publishes, Windows included.
  *
  * Guarantees:
+ *   - linked engine and library roots are copied as files before npm packs them
+ *     [tested: npm pack and standalone consumer boot; commit=WORKTREE]
  *   - build products are excluded by extension: a shipped `.qlf` shadows the
  *     source it was built from and ties the package to one SWI version, and a
  *     host `.so` is meaningless to a WebAssembly engine
@@ -61,7 +63,7 @@ for (const tree of TREES) {
     console.error(`bundle-runtime: ${from} is absent; this must run in a checkout`);
     process.exit(1);
   }
-  cpSync(from, join(BUNDLE, tree), { recursive: true, filter: wanted });
+  cpSync(from, join(BUNDLE, tree), { recursive: true, dereference: true, filter: wanted });
 }
 const controls = join(REPO, "extensions");
 for (const seat of readdirSync(controls)) {

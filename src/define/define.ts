@@ -8,6 +8,8 @@
  *   - a GENERATOR body is traced and a plain body is lowered from its own
  *     source, and the door is chosen by which one was written
  * Guarantees:
+ *   - generator effects include nondeterministic delivery
+ *     [tested: test/resource-table-boundary.test.ts; commit=WORKTREE].
  *   - what `define` returns IS the callable, and calling it ASKS, so there is
  *     one call door rather than three
  *   - a definition costs ZERO host crossings per call: the whole body is in the
@@ -32,6 +34,7 @@ import { type EffectClass, type OpKind } from "../engine.ts";
 import { MettaError, NameError } from "../errors.ts";
 import { mettaName } from "../naming.ts";
 import { type Space } from "../space.ts";
+import { joinEffects } from "../vocabularies.ts";
 import { type Body, type Clause, nest, trace } from "./trace.ts";
 import { lower } from "./lower.ts";
 
@@ -276,7 +279,8 @@ export function op(
   // An unstated effect is oracleIO, which is the fail-closed reading: a world
   // refuses to admit what it has not covered, rather than admitting something
   // it should not have.
-  const effect = options.effect ?? "oracleIO";
+  const declaredEffect = options.effect ?? "oracleIO";
+  const effect = many ? joinEffects(declaredEffect, "nondeterministicReadOnly") : declaredEffect;
   // The body is called with its own arguments, not with the array the pump
   // carries them in: an op is an ordinary TypeScript function and its
   // signature is the declaration.

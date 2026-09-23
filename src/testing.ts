@@ -6,6 +6,8 @@
  *     is driven by a seeded pseudo-random source and a failing run reports the
  *     seed that produced it
  * Guarantees:
+ *   - pattern instances and their shrinks preserve named-variable sharing
+ *     [tested: test/resource-table-boundary.test.ts; commit=WORKTREE].
  *   - the same seed produces the same atoms, on every platform and every run,
  *     because the source is an arithmetic generator here rather than
  *     `Math.random` [tested: "generates the same atoms from the same seed"]
@@ -29,6 +31,7 @@ import {
   Expression,
   G,
   Sym,
+  Var,
   type Term,
   expr,
   exprOf,
@@ -189,14 +192,25 @@ export function fromPattern(pattern: Term): Arbitrary<Atom> {
   const ground = groundAtoms();
   return {
     generate: (random, size): Atom => fill(built, random, size, ground),
-    shrink: shrinkAtom,
+    shrink: function* (value) {
+      for (const candidate of shrinkAtom(value)) {
+        if (matchTerms(built, candidate) !== undefined) yield candidate;
+      }
+    },
   };
 }
 
 function fill(atom: Atom, random: Random, size: number, ground: Arbitrary<Atom>): Atom {
-  return mapTerm(atom, (leaf: Atom): Atom =>
-    leaf.kind === "variable" ? ground.generate(random, size) : leaf,
-  );
+  const bindings = new Map<string, Atom>();
+  return mapTerm(atom, (leaf: Atom): Atom => {
+    if (!(leaf instanceof Var)) return leaf;
+    if (leaf.name === "_") return ground.generate(random, size);
+    const previous = bindings.get(leaf.name);
+    if (previous !== undefined) return previous;
+    const value = ground.generate(random, size);
+    bindings.set(leaf.name, value);
+    return value;
+  });
 }
 
 /** Simpler atoms to try in place of one that failed. */

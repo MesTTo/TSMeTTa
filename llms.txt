@@ -1,3 +1,5 @@
+<!-- Purpose: index the executable TypeScript surface and its boundary contracts.
+Open Obligations: None. -->
 # MeTTa in TypeScript
 
 > The engine runs inside your Node process, on a WebAssembly SWI-Prolog. No
@@ -286,8 +288,11 @@ subpath and its test checks that list against package.json.
 
 ## Arrays, tables and native algebras
 
+Native Prolog tabling and exact memoization keep tables for one evaluation.
+Read their counters in that evaluation before its answer stream closes.
+
 `tsmetta/arrays` uses `TypedArray` storage. `new Tensor(data, shape)` validates
-the element count, publishes `(Tensor dtype dimensions...)` as `.type`, and
+nonnegative safe-integer dimensions and the element count, publishes `(Tensor dtype dimensions...)` as `.type`, and
 reshapes by sharing storage. `installArrays(m)` registers the array operations;
 `EmbeddingStore` supplies a vector-neighbour provider. No numeric library is
 named by core.
@@ -297,6 +302,8 @@ named by core.
 declares the row mapping; `tableSpace(source, declarations)` makes the provider.
 `arrayTables({people: rows})` is the in-memory source. A database integration
 implements `rows(table, constraints)` using its own parameterized SQL driver.
+Repeated bridge variables must agree across columns. Literal dollar signs remain
+ordinary filter values. Awaiting a truncated query also awaits provider cleanup.
 There is no pandas adapter or SQL dialect translator in core.
 
 `matchUnder(space, pattern, carrier)` from `tsmetta/algebra` names the native

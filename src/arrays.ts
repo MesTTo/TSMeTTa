@@ -7,6 +7,8 @@
  *     the way DLPack is on the Python side: it is what every numeric library
  *     in this runtime already produces, and it needs no protocol negotiation
  * Guarantees:
+ *   - Tensor rejects nonintegral extents and coordinates before offset arithmetic
+ *     [tested: test/tensor-boundary.test.ts; commit=WORKTREE]
  *   - an array crosses and comes back as the VERY SAME object, so a reduction
  *     that passes one through has not copied a megabyte
  *     [tested: "crosses by reference, with identity"]
@@ -118,6 +120,11 @@ export class Tensor {
   readonly shape: readonly number[];
 
   constructor(data: NumericArray, shape: readonly number[] = [data.length]) {
+    for (const extent of shape) {
+      if (!Number.isSafeInteger(extent) || extent < 0) {
+        throw new MettaError(`tensor extents must be nonnegative safe integers, got ${String(extent)}`);
+      }
+    }
     const total = shape.reduce((product, each) => product * each, 1);
     if (total !== data.length) {
       throw new MettaError(
@@ -157,7 +164,7 @@ export class Tensor {
     for (let dimension = 0; dimension < index.length; dimension += 1) {
       const extent = this.shape[dimension] as number;
       const position = index[dimension] as number;
-      if (position < 0 || position >= extent) {
+      if (!Number.isSafeInteger(position) || position < 0 || position >= extent) {
         throw new MettaError(
           `index ${String(position)} is outside dimension ${String(dimension)} of ` +
             `extent ${String(extent)}`,

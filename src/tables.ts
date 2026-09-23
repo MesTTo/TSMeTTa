@@ -8,6 +8,8 @@
  *     query becomes a filter and an add becomes an insert; read right to left
  *     a row becomes the atom
  * Guarantees:
+ *   - repeated columns unify and literal dollars remain constraints
+ *     [tested: test/resource-table-boundary.test.ts; commit=WORKTREE].
  *   - a schema is a SET of declarations the way a function is a set of
  *     equations, so a query answers the union of every shape that admits it,
  *     exactly as overlapping equations answer together
@@ -114,7 +116,7 @@ function constraintsFor(declaration: Declaration, pattern: Atom): Row | undefine
   for (const [column, term] of declaration.columns) {
     const filled = substitute(term, bindings);
     // A position still carrying a variable is a HOLE, not a constraint.
-    if (filled.text.includes("$")) continue;
+    if (hasVariable(filled)) continue;
     where[column] = hostValue(filled);
   }
   return where;
@@ -122,15 +124,18 @@ function constraintsFor(declaration: Declaration, pattern: Atom): Row | undefine
 
 /** The atom one row reads as, under one declaration. */
 function atomOf(declaration: Declaration, row: Row): Atom | undefined {
-  const bindings: Record<string, Term> = {};
-  for (const [column, term] of declaration.columns) {
-    if (!(column in row)) return undefined;
-    // A column bound to a VARIABLE in the shape fills that variable; one bound
-    // to a literal has to agree with the row.
-    if (term instanceof Var) bindings[term.name] = row[column] as Term;
-    else if (hostValue(term) !== row[column]) return undefined;
-  }
-  return substitute(declaration.outer, bindings);
+  if (declaration.columns.some(([column]) => !(column in row))) return undefined;
+  // Match all columns together: a repeated variable must agree across fields.
+  const bindings = matchTerms(
+    expr(...declaration.columns.map(([, term]) => term)),
+    expr(...declaration.columns.map(([column]) => toAtom(row[column] as Term))),
+  );
+  return bindings === undefined ? undefined : substitute(declaration.outer, bindings);
+}
+
+/** Inspect structure so a literal dollar remains an equality constraint. */
+function hasVariable(atom: Atom): boolean {
+  return atom instanceof Var || atom instanceof Expression && atom.items.some(hasVariable);
 }
 
 /** The row one atom writes as, under one declaration. */

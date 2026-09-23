@@ -8,6 +8,8 @@
  *     time, so the string ban's tooling ground does not apply to it
  *     [source: ai-typescript-design.md move 4, the ArkType isomorphism law]
  * Guarantees:
+ *   - parseType preserves type variables and Schema.S checks declared arities
+ *     [tested: test/schema-boundary.test.ts; commit=WORKTREE]
  *   - one writing, three realms: the TypeScript type, the runtime term, and
  *     the engine-side declaration all derive from the same object literal
  *   - a declared name is typed exactly on the schema's own factory, and an
@@ -23,11 +25,17 @@
  *   Future Enhancements: None
  */
 
-import { type Atom, type Term, expr, exprOf, sym, toAtom } from "./atom.ts";
+import { type Atom, type Term, expr, exprOf, sym, variable } from "./atom.ts";
 import { MettaError, NameError } from "./errors.ts";
-import { type SymFactory, type VarFactory, S, V } from "./factories.ts";
+import { type Applied, type Name, type SymFactory, type VarFactory, S, V } from "./factories.ts";
 import { mettaName } from "./naming.ts";
-import type { ArrowResult, SchemaVars, SourceRow } from "./types/sexpr.ts";
+import type { ArrowArgs, ArrowResult, SchemaVars, SourceRow } from "./types/sexpr.ts";
+
+/** A declaration constrains arity while every argument remains a MeTTa term. */
+type DeclaredName<N extends string, T extends string> = string extends T ? Name<N>
+  : [ArrowArgs<T>] extends [never] ? Name<N>
+  : Omit<Name<N>, never> & ((...args: TermArguments<ArrowArgs<T>>) => Applied<N>);
+type TermArguments<A extends readonly unknown[]> = { [K in keyof A]: Term };
 
 /** A vocabulary: each name mapped to the MeTTa type text that declares it. */
 export type SchemaDeclarations = Readonly<Record<string, string>>;
@@ -88,7 +96,7 @@ export class Schema<D extends SchemaDeclarations> {
   readonly declarations: D;
 
   /** The symbol factory, with the declared names typed and any other spellable. */
-  readonly S: SymFactory & { readonly [K in keyof D & string]: SymFactory[string] };
+  readonly S: SymFactory & { readonly [K in keyof D & string]: DeclaredName<K, D[K]> };
 
   /** The variable factory. Declared names are typed the same way. */
   readonly V: VarFactory;
@@ -161,7 +169,7 @@ export function parseType(text: string, name: string): Atom {
     if (token === ")") {
       throw new NameError(`the declaration for ${name} has an extra )`);
     }
-    return toAtom(sym(token));
+    return token.startsWith("$") ? variable(token.slice(1)) : sym(token);
   };
   const built = read();
   if (at !== tokens.length) {

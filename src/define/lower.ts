@@ -24,7 +24,7 @@
  *     installed under, an exact one included, and a name two definitions
  *     share refuses rather than guessing which binding the source meant
  *     [tested: "reaches a definition installed under an exact head by its
- *     function's own name"]
+ *     function's own name"; commit=1b31519d1e4a9f26bc004dba6decc58aca96bd53]
  *   - an explicit scope contributes only its own properties
  *     [tested: "does not resolve inherited names from an explicit lowering scope";
  *     commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]

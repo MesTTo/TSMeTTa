@@ -15,11 +15,12 @@
  *     one call door rather than three
  *   - what `define` and `op` return is its head in term position, so
  *     `h(twice, 2)` passes the symbol `twice` and `G(twice)` stays the spelling
- *     for the live object [tested: "is its head wherever a term goes"]
+ *     for the live object [tested: "is its head wherever a term goes";
+ *     commit=1b31519d1e4a9f26bc004dba6decc58aca96bd53]
  *   - a later lowered body reaches a definition by the name its function was
  *     written with, whatever head it installed under, and refuses a name two
  *     definitions share [tested: "reaches a definition installed under an
- *     exact head by its function's own name"]
+ *     exact head by its function's own name"; commit=1b31519d1e4a9f26bc004dba6decc58aca96bd53]
  *   - a definition costs ZERO host crossings per call: the whole body is in the
  *     engine
  *   - `op` keeps host code as host code, and its yields are what it costs

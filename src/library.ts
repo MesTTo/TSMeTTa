@@ -20,7 +20,7 @@
  *   Future Enhancements: None
  */
 
-import { type Term, expr, sym, toAtom } from "./atom.ts";
+import { ATOM_OF, type Atom, type HasAtom, type Term, expr, sym, toAtom } from "./atom.ts";
 import { CapabilityError } from "./errors.ts";
 import type { SpaceCapability } from "./vocabularies.ts";
 
@@ -87,3 +87,67 @@ export function useLibrary(surface: LibraryHost, library: Library): void {
     ),
   );
 }
+
+/**
+ * A MeTTa library or module, named for `import!`: what `space.import` loads.
+ *
+ * It is also a term, the module form `import!` receives, so it drops into a
+ * term wherever that form belongs.
+ */
+export interface LibraryRef extends HasAtom { readonly [ATOM_OF]: Atom; }
+
+export class LibraryRef {
+  /** The module form: `(library lib_x)`, `(library alias file)`, or a path. */
+  readonly form: Atom;
+
+  /** @internal Use {@link lib}. */
+  constructor(form: Atom) {
+    this.form = form;
+    Object.defineProperty(this, ATOM_OF, { value: form });
+  }
+
+  toString(): string {
+    return this.form.text;
+  }
+}
+
+/** The shipped libraries by name, and the exact door for any other. */
+export interface LibraryNamespace {
+  /** `(library lib_<name>)`: `lib.spaces` is the shipped library `lib_spaces`. */
+  readonly [name: string]: LibraryRef;
+  /**
+   * `(library name)` for a library outside the `lib_` family, and
+   * `(library alias file)` for a file inside a registered library path.
+   */
+  (name: string, file?: string): LibraryRef;
+}
+
+/**
+ * The shipped libraries, named as the engine's own `lib/` directory names them
+ * less their family prefix: `lib.spaces` is `lib_spaces` and `lib.import` is
+ * `lib_import`, since a property may be spelled with a reserved word.
+ *
+ * A library's name is a FILE name, so no casing map applies: `lib.pln2` is
+ * `lib_pln2`. `lib("minimal_metta_lib")` names a library outside the family
+ * exactly, and `lib("metta_fixture_lib", "fixture")` a file inside a library
+ * path registered under that alias.
+ */
+export const lib: LibraryNamespace = new Proxy(
+  (name: string, file?: string): LibraryRef =>
+    new LibraryRef(
+      file === undefined
+        ? expr(sym("library"), sym(name))
+        : expr(sym("library"), sym(name), sym(file)),
+    ),
+  {
+    get(_target, key): unknown {
+      // `then` would make the namespace thenable, as it would for S.
+      return typeof key === "string" && key !== "then"
+        ? new LibraryRef(expr(sym("library"), sym(`lib_${key}`)))
+        : undefined;
+    },
+    has(_target, key): boolean {
+      return typeof key === "string" && key !== "then";
+    },
+  },
+) as unknown as LibraryNamespace;

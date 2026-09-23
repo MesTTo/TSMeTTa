@@ -14,6 +14,13 @@ Open Obligations: None. -->
   "reads a property" or "calls something that is not a plain name". The word
   door's heads live in one table, `WORD_HEADS`, that the builders and the
   lowering both read.
+- `space.fn` and `m.fn` ASK the engine's functions: `m.fn.carAtom(x)` is
+  `m.eval(fn.carAtom(x))`, spelled by the map `fn` uses, which is now one
+  exported function, `fnHead`.
+- `lib` names the shipped libraries, `lib.spaces` being `(library
+  lib_spaces)`, and `space.import(module)` / `m.import(module)` loads one, or
+  a MeTTa file by its host path with its directory mounted first, as
+  `(import! space module)`. Importing a library no longer needs source text.
 - `rewrite(head, body)` builds `(= head body)`, an equation as a value, for a
   program that stores, removes or matches equations as data.
 

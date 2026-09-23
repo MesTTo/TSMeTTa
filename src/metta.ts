@@ -70,7 +70,7 @@ import {
 } from "./errors.ts";
 import { race as raceAsks } from "./parallel.ts";
 import { showsAs } from "./present.ts";
-import { type Library, useLibrary } from "./library.ts";
+import { type Library, type LibraryRef, useLibrary } from "./library.ts";
 import { mettaName } from "./naming.ts";
 import { Schema, type SchemaDeclarations } from "./schema.ts";
 import type { SourceRow } from "./types/sexpr.ts";
@@ -79,6 +79,7 @@ import { ScopeHandle, Stats, World, nextWorldName } from "./scopes.ts";
 import type { Limits } from "./scopes.ts";
 import {
   type Admission,
+  type AskingFn,
   type DerivationOptions,
   type PreparedQuery,
   Space,
@@ -341,6 +342,17 @@ export class MeTTa implements Disposable {
   /** Admit atoms into the engine's own space. */
   add(...atoms: readonly Term[]): this {
     this.self.add(...atoms);
+    return this;
+  }
+
+  /** The engine's functions, asked in the engine's own space: `m.fn.carAtom(x)`. */
+  get fn(): AskingFn {
+    return this.self.fn;
+  }
+
+  /** Import a library or a MeTTa file into the engine's own space: `m.import(lib.spaces)`. */
+  import(module: LibraryRef | string): this {
+    this.self.import(module);
     return this;
   }
 

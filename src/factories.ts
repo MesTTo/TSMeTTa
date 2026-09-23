@@ -196,17 +196,22 @@ export const V: VarFactory = factory(
  * is `+`. Those are the same words the free functions export, which is fork 1
  * option C: one mechanism, two positions.
  */
-export const fn: FnFactory = factory(
-  makeName,
+export const fn: FnFactory = factory(makeName, fnHead, "fn") as unknown as FnFactory;
+
+/**
+ * The engine head a name on `fn` reaches: an operator word's punctuation, or
+ * the casing map. Exported so every door spelling a head the way `fn` does,
+ * `space.fn` among them, reads this one rule.
+ */
+export function fnHead(key: string): string {
   // The table has literal keys now, so an arbitrary string cannot index it
   // in the type system even though Object.hasOwn has just established the
   // key is there. Widening the TABLE at the read is the narrow cast; casting
   // the key would claim something about the key that is not known.
-  (key) => (Object.hasOwn(OPERATOR_HEADS, key)
+  return Object.hasOwn(OPERATOR_HEADS, key)
     ? (OPERATOR_HEADS as Readonly<Record<string, string>>)[key] as string
-    : mettaName(key)),
-  "fn",
-) as unknown as FnFactory;
+    : mettaName(key);
+}
 
 /**
  * The anonymous variable: fresh at every occurrence, so two of them constrain

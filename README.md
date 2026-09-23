@@ -660,6 +660,27 @@ as TypeScript tries it. Because the source is all the lowering reads, the
 factories and words are recognised by NAME: a local binding of the same name
 shadows them, and a renamed import (`import { S as Sym }`) is not one of them.
 
+## The engine's functions, and its libraries
+
+`fn` BUILDS a term and `m.fn` ASKS it: `m.fn.carAtom(x)` is
+`m.eval(fn.carAtom(x))`, lazily, spelled by the same map, and every space has
+its own, asking in that space. `lib` names the shipped libraries and `import`
+loads one, or a MeTTa file by its host path, whose own relative imports then
+resolve beside it:
+
+```ts
+import { lib } from "tsmetta";
+
+m.import(lib.spaces); // (import! &self (library lib_spaces))
+m.add(S.friend(S.ada, S.bob));
+(await m.fn.find(m.self, S.friend(V.a, V.b))).map(String); // ["true"]
+(await m.fn.carAtom([1, 2]).one()).text; // "1"
+```
+
+`lib.spaces` is `lib_spaces`, since a library's name is a file name and takes
+no casing map; `lib("name")` names a library outside the `lib_` family and
+`lib("alias", "file")` a file inside a registered library path.
+
 ## Theories
 
 Equations group as a class, which is the grouping form and is required

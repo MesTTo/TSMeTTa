@@ -98,6 +98,35 @@ import {
 import { showsAs } from "./present.ts";
 import { atomFromWire, wireFromAtom } from "./wire.ts";
 import { ScopeHandle } from "./scopes.ts";
+import { type Head, fnHead } from "./factories.ts";
+import { type LibraryRef } from "./library.ts";
+import { resolvePath } from "./platform.ts";
+
+/** One engine function, asked with its arguments: what `space.fn.name` is. */
+export type Ask = (...args: readonly Term[]) => Answers<Atom>;
+
+/**
+ * The engine's functions as ASKS in one space. `kb.fn.carAtom(x)` is
+ * `kb.eval(fn.carAtom(x))`, spelled by the map the unbound `fn` uses, so
+ * `fn.x(...)` BUILDS the term and `kb.fn.x(...)` asks it. The heads the engine
+ * publishes are properties, any other name reaches through the index, where
+ * `Ask | undefined` is honest, and calling the namespace with a name is the
+ * exact door: `kb.fn("assertEqual")`.
+ */
+export type AskingFn = { readonly [K in Head]: Ask } & { readonly [key: string]: Ask } & ((exact: string) => Ask);
+
+function asking(space: Space): AskingFn {
+  const ask = (head: string): Ask => (...args) => space.eval(expr(sym(head), ...args.map(toAtom)));
+  return new Proxy((exact: string) => ask(exact), {
+    get(_target, key): unknown {
+      // `then` would make the namespace thenable, as it would for `fn`.
+      return typeof key === "string" && key !== "then" ? ask(fnHead(key)) : undefined;
+    },
+    has(_target, key): boolean {
+      return typeof key === "string" && key !== "then";
+    },
+  }) as unknown as AskingFn;
+}
 import { LiveQuery } from "./live.ts";
 
 /** The engine's transitive effect analysis, without executing its subject. */
@@ -372,6 +401,37 @@ export class Space implements Disposable {
       "delete",
     );
     return isTrue(verdict);
+  }
+
+  #asking: AskingFn | undefined;
+
+  /** The engine's functions, asked in this space: `kb.fn.carAtom(x)`. */
+  get fn(): AskingFn {
+    return (this.#asking ??= asking(this));
+  }
+
+  /**
+   * Import a library or a MeTTa file into this space, `(import! space module)`,
+   * and answer the space, which is what `add` answers.
+   *
+   * `kb.import(lib.spaces)` loads the shipped library `lib_spaces`. A string is
+   * a HOST path, resolved against the working directory, whose directory is
+   * mounted first so the engine reads the file this process sees, the way
+   * `loadFile` reads one; a relative `import!` inside it then resolves beside
+   * it. A browser has no host path and refuses one.
+   */
+  import(module: LibraryRef | string): this {
+    let form: Atom;
+    if (typeof module === "string") {
+      const full = resolvePath(module);
+      const directory = full.slice(0, full.lastIndexOf("/")) || "/";
+      this.#engine.mount(directory, directory, (name) => name.endsWith(".metta") || name.endsWith(".pl"));
+      form = sym(full);
+    } else {
+      form = module.form;
+    }
+    this.runOne(expr(sym("import!"), this.handle, form));
+    return this;
   }
 
   /**

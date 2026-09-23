@@ -76,6 +76,14 @@ operator words) and constants (`TRUE`, `FALSE`, `UNIT`, `UNDEFINED`) are read
 by their exported names after the engine's own heads. A generator body is
 TRACED instead, which is the door for queries (`yield* m.match(...)`).
 
+## Asking the engine's functions, and importing
+
+`m.fn.carAtom(x)` ASKS `(car-atom x)` where `fn.carAtom(x)` only builds it;
+`kb.fn` asks in `kb`, and `m.fn("exact-head")` is the exact door.
+`m.import(lib.spaces)` is `(import! &self (library lib_spaces))`;
+`lib("name")`, `lib("alias", "file")` and a host path string are the other
+module forms, and `kb.import(...)` imports into `kb`.
+
 ## Asking, lazily
 
 An answer set is a thenable and nothing runs until you await it:

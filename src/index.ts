@@ -59,6 +59,7 @@ export {
   _,
   e,
   fn,
+  fnHead,
   list,
   nil,
   seg,
@@ -138,6 +139,8 @@ export {
 // Spaces.
 export {
   type Admission,
+  type Ask,
+  type AskingFn,
   type DerivationOptions,
   type EffectPlan,
   PreparedQuery,
@@ -207,7 +210,7 @@ export {
 } from "./theory.ts";
 
 // The extension tier.
-export { type Library, type LibraryHost, useLibrary } from "./library.ts";
+export { type Library, type LibraryHost, type LibraryNamespace, LibraryRef, lib, useLibrary } from "./library.ts";
 
 // Schemas and validation.
 export {

@@ -23,7 +23,7 @@
  *   - an array's own `map`, `filter` and `reduce` are the engine's
  *     `map-atom`, `filter-atom` and `foldl-atom`, an arrow callback being the
  *     template and any other argument the function applied [tested: "walks an
- *     expression with an array's own map, filter and reduce"]
+ *     expression with an array's own map, filter and reduce"; commit=34b545f1dc00bf08543aa218094de91f17f65853]
  *   - an arrow function is MeTTa's lambda, `(v) => v < 2` being
  *     `(|-> ($v) (< $v 2))`, and a binder that shadows a name of the body
  *     around it is a fresh variable, as JavaScript gives it a new binding

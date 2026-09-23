@@ -4,6 +4,20 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- A MeTTa rational crosses into TypeScript as the exact number it is: a
+  `RationalAtom` holding a `Rational`, a bigint numerator over a bigint
+  denominator in lowest terms, printed as the engine writes it (`1r3`) and
+  sent back in that spelling, which the engine's reader takes as the same
+  number. Every answer holding one used to raise a WireError naming a number
+  JavaScript had no type for, so `(stats-mean (1 2))` could not be asked from
+  TypeScript; PyMeTTa carries the same answer as a `Fraction`. `G(rational)`
+  interns by value, so two equal rationals are one atom, and `byStandardOrder`
+  orders a rational exactly among the integers and floats, the double nearest
+  a third below it and a float first where the values tie. The `Rational`
+  class is the one the algebra's `Amplitude` already used, moved beside the
+  other numbers and still exported from `tsmetta/algebra`. The portable
+  transport refuses a rational by name, since CODEC.md gives it no tag, as it
+  refuses a live host value.
 - `seg()` with no name is MeTTa's anonymous gap `...`, each occurrence its own
   variable as `_` is for one child, so `S.order(seg())` matches an `order` of
   any arity; `seg` took a name only, and the gap had no spelling but the

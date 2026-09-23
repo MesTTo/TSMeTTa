@@ -29,6 +29,8 @@ import {
   G,
   Grounded,
   HostValues,
+  Rational,
+  RationalAtom,
   SpaceHandle,
   WireError,
   type Wire,
@@ -79,8 +81,22 @@ describe("numbers", () => {
     assert.ok(Number.isNaN(numberFromText("1.5NaN") as number));
   });
 
-  it("refuses a value JavaScript has no type for, by name", () => {
-    assert.throws(() => numberFromText("1r3"), /no JavaScript type/);
+  it("carries a rational exactly across the engine transport, and refuses it on the portable one", () => {
+    const third = numberFromText("1r3");
+    assert.ok(third instanceof Rational);
+    assert.deepEqual([third.numerator, third.denominator], [1n, 3n]);
+    assert.equal(numberToText(new Rational(-2n, 6n)), "-1r3", "the engine's own spelling, in lowest terms");
+    assert.throws(() => numberFromText("1/3"), /not a spelling the engine's writer produces/);
+
+    const atom = G(new Rational(2n, 6n));
+    assert.ok(atom instanceof RationalAtom);
+    assert.equal(atom, G(new Rational(1n, 3n)), "interned by value, as every number is");
+    assert.equal(String(atom), "1r3");
+    assert.deepEqual(encodeEngine(atom, { hostValues: new HostValues() }), ["n", "1r3"]);
+    assert.equal(decodeEngine(["n", "1r3"], {}), atom);
+    assert.throws(() => toTransport(wireFromAtom(atom)), (error: unknown) =>
+      error instanceof WireError && /no spelling for the rational 1r3/.test(error.message),
+    );
   });
 
   it("writes a spelling the reader takes back", () => {

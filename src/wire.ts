@@ -14,8 +14,11 @@
  *   - every Prolog integer arrives as a `bigint` and every Prolog float as a
  *     `number`, which is the only pair of JavaScript types that tells 2 from
  *     2.0 apart [tested: "keeps the integer and the float apart across the wire"]
- *   - a value JavaScript has no type for (a rational) is refused by name
- *     [tested: "refuses a value JavaScript has no type for, by name"]
+ *   - an engine rational crosses this host's own engine transport exactly, as
+ *     the {@link Rational} it is, and back as the `1r3` spelling the engine's
+ *     reader takes; the portable transport refuses one, because CODEC.md gives
+ *     a rational no tag [tested: "carries a rational exactly across the engine
+ *     transport, and refuses it on the portable one"; commit=PENDING]
  *   - `fromTransport` is STRICT: it refuses the `o` tag [tested: "refuses the o tag,
  *     which only this host's own session can name"], because an `o`
  *     payload written down by somebody else is not a reference this host can
@@ -63,12 +66,15 @@ import {
   FloatAtom,
   G,
   Grounded,
+  Rational,
+  RationalAtom,
   SpaceHandle,
   Sym,
   Var,
   exprOf,
   float,
   floatText,
+  rationalText,
   space,
   sym,
   variable,
@@ -82,7 +88,7 @@ export type Tag = "s" | "v" | "n" | "g" | "b" | "e" | "p" | "o";
 export type Wire =
   | readonly ["s", string]
   | readonly ["v", string]
-  | readonly ["n", number | bigint]
+  | readonly ["n", number | bigint | Rational]
   | readonly ["g", string]
   | readonly ["b", boolean]
   | readonly ["p", SpaceHandle]
@@ -165,20 +171,22 @@ export function hostText(value: unknown): string {
 const INTEGER_TEXT = /^-?\d+$/;
 const FLOAT_TEXT = /^-?(?:\d+\.\d+(?:[eE][-+]?\d+)?|\d+[eE][-+]?\d+)$/;
 const INFINITY_TEXT = /^(?<sign>-?)1\.0Inf$/;
+const RATIONAL_TEXT = /^(?<numerator>-?\d+)r(?<denominator>\d+)$/;
 const NAN_TEXT = /^-?\d+\.\d+NaN$/;
 const NAN_SPELLING = "1.5NaN";
 
 /** A canonical Prolog number spelling as the host value it names. */
-export function numberFromText(text: string): number | bigint {
+export function numberFromText(text: string): number | bigint | Rational {
   if (INTEGER_TEXT.test(text)) return BigInt(text);
   if (FLOAT_TEXT.test(text)) return Number(text);
   const infinite = INFINITY_TEXT.exec(text);
   if (infinite !== null) return infinite.groups?.["sign"] === "-" ? -Infinity : Infinity;
   if (NAN_TEXT.test(text)) return NaN;
-  throw wireError(
-    `the number ${text} has no JavaScript type; a rational crosses as its ` +
-      `Prolog spelling and this host has nothing to hold it in`,
-  );
+  const rational = RATIONAL_TEXT.exec(text)?.groups;
+  if (rational !== undefined) {
+    return new Rational(BigInt(rational["numerator"] as string), BigInt(rational["denominator"] as string));
+  }
+  throw wireError(`the number ${text} is not a spelling the engine's writer produces`);
 }
 
 /**
@@ -194,7 +202,8 @@ export function numberFromText(text: string): number | bigint {
  * to the identical double through it [measured 2026-09-05 by spelling each
  * here and printing the result through engine/parser.pl's swrite/2].
  */
-export function numberToText(value: number | bigint): string {
+export function numberToText(value: number | bigint | Rational): string {
+  if (value instanceof Rational) return rationalText(value);
   if (typeof value === "bigint") return value.toString();
   if (Number.isNaN(value)) return NAN_SPELLING;
   if (value === Infinity) return "1.0Inf";
@@ -245,7 +254,7 @@ function payloadKind(payload: unknown): string {
 
 /** One encoded leaf's payload as the ENGINE transport spells it. */
 function engineNumber(tag: string, payload: unknown): unknown {
-  return tag === "n" ? numberToText(payload as number | bigint) : payload;
+  return tag === "n" ? numberToText(payload as number | bigint | Rational) : payload;
 }
 
 // ---------------------------------------------------------------------------
@@ -690,6 +699,18 @@ function encodeLeaf(tag: unknown, payload: unknown, context: EncodeContext): Tra
       }
       return [tag, payload];
     case "n":
+      if (payload instanceof Rational) {
+        // CODEC.md gives a rational no tag, so only this host's own engine
+        // transport, which spells numbers as the engine's reader takes them,
+        // can carry one; the portable one refuses it as it refuses `o`.
+        if (context.hostValues === undefined) {
+          throw wireError(
+            `the portable wire has no spelling for the rational ${rationalText(payload)}; ` +
+              `only this host's own engine transport carries one`,
+          );
+        }
+        return ["n", payload];
+      }
       if (typeof payload !== "number" && typeof payload !== "bigint") {
         throw wireError(`the n tag carries a number, not ${JSON.stringify(payload)}`);
       }
@@ -928,7 +949,8 @@ export function fromRoundTrip(input: WireTokens, output: unknown): Atom {
  * An integer past the exactly-representable range stays a `bigint`, because
  * there is nothing else that could hold it.
  */
-function numberAtom(value: number | bigint): Atom {
+function numberAtom(value: number | bigint | Rational): Atom {
+  if (value instanceof Rational) return G(value);
   if (typeof value === "number") return float(value);
   const exact = BigInt(Number.MAX_SAFE_INTEGER);
   return value >= -exact && value <= exact ? G(Number(value)) : G(value);
@@ -985,7 +1007,7 @@ function wireOfLeaf(atom: Atom): Wire {
   if (atom instanceof Sym) return ["s", atom.name];
   if (atom instanceof Var) return ["v", atom.name];
   if (atom instanceof SpaceHandle) return ["p", atom];
-  if (atom instanceof FloatAtom) return ["n", atom.value];
+  if (atom instanceof FloatAtom || atom instanceof RationalAtom) return ["n", atom.value];
   if (atom instanceof Grounded) {
     const value: unknown = atom.value;
     switch (typeof value) {

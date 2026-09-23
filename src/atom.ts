@@ -40,6 +40,10 @@
  *     the Python seat; `Array.prototype.sort` with no comparator is UTF-16 code
  *     UNIT order and parts from it on every astral character [tested: "orders
  *     text by code point where the default sort orders by UTF-16 unit"]
+ *   - a rational is a NUMBER: `G` interns one by value into a `RationalAtom`
+ *     that prints as the engine writes it, and the standard order compares it
+ *     exactly against the integers and floats, a float first on a tie
+ *     [tested: "orders exactly among the other numbers"; commit=PENDING]
  *   - a float's text is the ENGINE's spelling and not JavaScript's: the digits
  *     are `Number.prototype.toString`'s shortest round trip and the layout is
  *     the arbiter's, so one atom has one text in this seat, the Python seat and
@@ -264,6 +268,109 @@ export class FloatAtom extends Grounded<number> {
   }
 }
 
+function gcd(a: bigint, b: bigint): bigint {
+  let left = a < 0n ? -a : a;
+  let right = b < 0n ? -b : b;
+  while (right !== 0n) [left, right] = [right, left % right];
+  return left === 0n ? 1n : left;
+}
+
+/**
+ * An exact rational.
+ *
+ * JavaScript has no rational and its `number` is a binary float, so neither
+ * the engine's own rationals nor a carrier whose values must INTERFERE, where
+ * a sixteenth plus a sixteenth is exactly an eighth, can be built on one. This
+ * is the smallest thing that can be: a bigint numerator over a bigint
+ * denominator, normalised.
+ */
+export class Rational {
+  /** The numerator, sign included. */
+  readonly numerator: bigint;
+  /** The denominator, always positive. */
+  readonly denominator: bigint;
+
+  constructor(numerator: bigint | number, denominator: bigint | number = 1n) {
+    let top = BigInt(numerator);
+    let bottom = BigInt(denominator);
+    if (bottom === 0n) throw new MettaError("a rational cannot have a zero denominator");
+    if (bottom < 0n) {
+      top = -top;
+      bottom = -bottom;
+    }
+    const divisor = gcd(top, bottom);
+    this.numerator = top / divisor;
+    this.denominator = bottom / divisor;
+    Object.freeze(this);
+  }
+
+  /** The sum, exactly. */
+  plus(other: Rational): Rational {
+    return new Rational(
+      this.numerator * other.denominator + other.numerator * this.denominator,
+      this.denominator * other.denominator,
+    );
+  }
+
+  /** The product, exactly. */
+  times(other: Rational): Rational {
+    return new Rational(this.numerator * other.numerator, this.denominator * other.denominator);
+  }
+
+  /** The additive inverse. */
+  negated(): Rational {
+    return new Rational(-this.numerator, this.denominator);
+  }
+
+  /** Whether two rationals are the same number. */
+  equals(other: Rational): boolean {
+    return this.numerator === other.numerator && this.denominator === other.denominator;
+  }
+
+  /** The nearest `number`, for a caller that wants an inexact reading. */
+  valueOf(): number {
+    return Number(this.numerator) / Number(this.denominator);
+  }
+
+  toString(): string {
+    return this.denominator === 1n
+      ? String(this.numerator)
+      : `${String(this.numerator)}/${String(this.denominator)}`;
+  }
+}
+
+showsAs(Rational.prototype, (value: Rational) => value.toString());
+
+/** A rational as the engine writes it, `1r3`, and a whole one as its integer. */
+export function rationalText(value: Rational): string {
+  return value.denominator === 1n
+    ? String(value.numerator)
+    : `${String(value.numerator)}r${String(value.denominator)}`;
+}
+
+/**
+ * An exact MeTTa rational: the engine's number between its integers and its
+ * floats, `(/ 1 3)` among others.
+ *
+ * The value is a {@link Rational}, and the atom prints as the engine writes it,
+ * `1r3`, which is also the spelling that crosses back and the engine's reader
+ * takes as the same number. `G(new Rational(1n, 3n))` makes one, interned by
+ * value as a number is, so two equal rationals are one atom. A Rational whose
+ * denominator is one is still a Rational on this side, where the engine reads
+ * it as that integer and answers it back as one.
+ */
+export class RationalAtom extends Grounded<Rational> {
+  /** @internal Use {@link G}. */
+  constructor(value: Rational) {
+    super(value);
+    Object.freeze(this);
+  }
+
+  override get text(): string {
+    return rationalText(this.value);
+  }
+}
+
 /** A MeTTa expression, `(f a b)`. Children are atoms, already interned. */
 export class Expression extends Atom {
   readonly kind: Kind = "expression";
@@ -437,6 +544,11 @@ export function float(value: number): Grounded<number> {
 
 /** Lift a host value to an atom: `G(42)`, `G("text")`, `G(new Date())`. */
 export function G<T>(value: T): Grounded<T> {
+  // An exact rational is a NUMBER, interned by value as the others are, never
+  // a live host object the engine could only hold by reference.
+  if (value instanceof Rational) {
+    return interned(`g r ${rationalText(value)}`, () => new RationalAtom(value)) as unknown as Grounded<T>;
+  }
   const key = primitiveKey(value);
   if (key !== undefined) return interned(key, () => new Grounded(value)) as Grounded<T>;
   if (value === null || value === undefined) {
@@ -747,7 +859,7 @@ const EXPRESSION_RANK = 5;
 function rank(atom: Atom): number {
   if (atom instanceof Grounded) {
     const kind = typeof atom.value;
-    if (kind === "number" || kind === "bigint") return NUMBER_RANK;
+    if (kind === "number" || kind === "bigint" || atom instanceof RationalAtom) return NUMBER_RANK;
     if (kind === "string") return TEXT_RANK;
     return ATOM_RANK;
   }
@@ -788,8 +900,11 @@ function compareIdentity(left: Atom, right: Atom): number {
   return left === right ? 0 : left.id - right.id;
 }
 
+/** A number an atom holds: a float or an integer as the host holds it, or an exact rational. */
+type Numeric = number | bigint | Rational;
+
 /** Whether a numeric atom crosses as an SWI float rather than an integer. */
-function isFloatNumber(atom: Grounded<number | bigint>): boolean {
+function isFloatNumber(atom: Grounded<Numeric>): boolean {
   const value = atom.value;
   return (
     typeof value === "number" &&
@@ -797,11 +912,48 @@ function isFloatNumber(atom: Grounded<number | bigint>): boolean {
   );
 }
 
+/**
+ * A finite number's exact value, as a numerator over a positive denominator.
+ *
+ * Every finite double is a dyadic rational. Doubling one is exact until it
+ * overflows, and a double with a fractional part is below 2^52, so doubling
+ * until it is whole reaches that rational in at most 1074 steps.
+ */
+function exactValue(value: Numeric): readonly [bigint, bigint] {
+  if (value instanceof Rational) return [value.numerator, value.denominator];
+  if (typeof value === "bigint") return [value, 1n];
+  let scaled = value;
+  let denominator = 1n;
+  while (!Number.isInteger(scaled)) {
+    scaled *= 2;
+    denominator *= 2n;
+  }
+  return [BigInt(scaled), denominator];
+}
+
+/** How two numbers compare by their values alone; NaN never reaches here. */
+function compareValues(a: Numeric, b: Numeric): number {
+  if (!(a instanceof Rational) && !(b instanceof Rational)) {
+    // ECMAScript's mixed Number/BigInt relational comparison compares their
+    // mathematical values; converting either side would lose wide integers.
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+  // An infinity lies past every rational.
+  if (typeof a === "number" && !Number.isFinite(a)) return a < 0 ? -1 : 1;
+  if (typeof b === "number" && !Number.isFinite(b)) return b < 0 ? 1 : -1;
+  const [aTop, aBottom] = exactValue(a);
+  const [bTop, bBottom] = exactValue(b);
+  const difference = aTop * bBottom - bTop * aBottom;
+  return difference < 0n ? -1 : difference > 0n ? 1 : 0;
+}
+
+/** The host representations one engine number can have, in a fixed order. */
+function hostKind(value: Numeric): number {
+  return typeof value === "number" ? 0 : typeof value === "bigint" ? 1 : 2;
+}
+
 /** Exact SWI numeric order, with host representation breaking engine ties. */
-function compareNumbers(
-  left: Grounded<number | bigint>,
-  right: Grounded<number | bigint>,
-): number {
+function compareNumbers(left: Grounded<Numeric>, right: Grounded<Numeric>): number {
   const a = left.value;
   const b = right.value;
   const aNaN = typeof a === "number" && Number.isNaN(a);
@@ -810,18 +962,18 @@ function compareNumbers(
     if (aNaN !== bNaN) return aNaN ? -1 : 1;
     return compareIdentity(left, right);
   }
-  // ECMAScript's mixed Number/BigInt relational comparison compares their
-  // mathematical values; converting either side would lose wide integers.
-  if (a < b) return -1;
-  if (a > b) return 1;
+  const byValue = compareValues(a, b);
+  if (byValue !== 0) return byValue;
   if (typeof a === "number" && typeof b === "number" && Object.is(a, -0) !== Object.is(b, -0)) {
     return Object.is(a, -0) ? -1 : 1;
   }
   const byFloat = Number(isFloatNumber(right)) - Number(isFloatNumber(left));
   if (byFloat !== 0) return byFloat;
-  // A safe Number integer and a BigInt have one SWI image. Keep the host's two
-  // representations distinct so comparator equality still means atom identity.
-  if (typeof a !== typeof b) return typeof a === "number" ? -1 : 1;
+  // A safe Number integer, a BigInt and a whole Rational have one SWI image.
+  // Keep the host's representations distinct so comparator equality still
+  // means atom identity.
+  const byKind = hostKind(a) - hostKind(b);
+  if (byKind !== 0) return byKind;
   return compareIdentity(left, right);
 }
 
@@ -884,10 +1036,7 @@ export function byStandardOrder(left: Atom, right: Atom): number {
       leftAtom instanceof Grounded &&
       rightAtom instanceof Grounded
     ) {
-      order = compareNumbers(
-        leftAtom as Grounded<number | bigint>,
-        rightAtom as Grounded<number | bigint>,
-      );
+      order = compareNumbers(leftAtom as Grounded<Numeric>, rightAtom as Grounded<Numeric>);
     } else if (leftRank === TEXT_RANK) {
       order = byCodePoint(
         (leftAtom as Grounded<string>).value,

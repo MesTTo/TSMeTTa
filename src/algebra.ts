@@ -42,6 +42,7 @@ import {
   Expression,
   G,
   Grounded,
+  Rational,
   Sym,
   type Term,
   Var,
@@ -89,77 +90,11 @@ export class AlgebraEvaluationError extends MettaError {
 }
 
 // ---------------------------------------------------------------------------
-// Exact arithmetic, for the carriers that need it.
+// Exact arithmetic, for the carriers that need it. The rational is the
+// engine's own exact number, so it lives with the atoms and is re-exported
+// here for a program that reaches the algebra through this subpath.
 
-function gcd(a: bigint, b: bigint): bigint {
-  let left = a < 0n ? -a : a;
-  let right = b < 0n ? -b : b;
-  while (right !== 0n) [left, right] = [right, left % right];
-  return left === 0n ? 1n : left;
-}
-
-/**
- * An exact rational.
- *
- * JavaScript has no rational and its `number` is a binary float, so a carrier
- * whose point is that values INTERFERE — where a sixteenth plus a sixteenth
- * must be exactly an eighth — cannot be built on one. This is the smallest
- * thing that can be: a bigint numerator over a bigint denominator, normalised.
- */
-export class Rational {
-  /** The numerator, sign included. */
-  readonly numerator: bigint;
-  /** The denominator, always positive. */
-  readonly denominator: bigint;
-
-  constructor(numerator: bigint | number, denominator: bigint | number = 1n) {
-    let top = BigInt(numerator);
-    let bottom = BigInt(denominator);
-    if (bottom === 0n) throw new MettaError("a rational cannot have a zero denominator");
-    if (bottom < 0n) {
-      top = -top;
-      bottom = -bottom;
-    }
-    const divisor = gcd(top, bottom);
-    this.numerator = top / divisor;
-    this.denominator = bottom / divisor;
-    Object.freeze(this);
-  }
-
-  /** The sum, exactly. */
-  plus(other: Rational): Rational {
-    return new Rational(
-      this.numerator * other.denominator + other.numerator * this.denominator,
-      this.denominator * other.denominator,
-    );
-  }
-
-  /** The product, exactly. */
-  times(other: Rational): Rational {
-    return new Rational(this.numerator * other.numerator, this.denominator * other.denominator);
-  }
-
-  /** The additive inverse. */
-  negated(): Rational {
-    return new Rational(-this.numerator, this.denominator);
-  }
-
-  /** Whether two rationals are the same number. */
-  equals(other: Rational): boolean {
-    return this.numerator === other.numerator && this.denominator === other.denominator;
-  }
-
-  /** The nearest `number`, for a caller that wants an inexact reading. */
-  valueOf(): number {
-    return Number(this.numerator) / Number(this.denominator);
-  }
-
-  toString(): string {
-    return this.denominator === 1n
-      ? String(this.numerator)
-      : `${String(this.numerator)}/${String(this.denominator)}`;
-  }
-}
+export { Rational };
 
 /** An exact complex value, with rational real and imaginary components. */
 export class Amplitude {
@@ -199,7 +134,6 @@ export class Amplitude {
   }
 }
 
-showsAs(Rational.prototype, (value: Rational) => value.toString());
 showsAs(Amplitude.prototype, (value: Amplitude) => value.toString());
 
 // ---------------------------------------------------------------------------

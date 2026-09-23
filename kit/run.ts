@@ -22,10 +22,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  Rational,
   type Wire,
   atomFromWire,
   boot,
   fromTransport,
+  numberToText,
   packageRoot,
   toTransport,
   transportFromJson,
@@ -50,6 +52,7 @@ function comparable(wire: Wire): unknown {
     case "v":
       return ["v"];
     case "n":
+      if (payload instanceof Rational) return ["n", "r", numberToText(payload)];
       return typeof payload === "bigint"
         ? ["n", "i", payload.toString()]
         : ["n", "f", floatBits(payload)];

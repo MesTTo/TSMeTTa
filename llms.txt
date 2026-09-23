@@ -68,6 +68,12 @@ match answers the run it took as one expression, and `seg()` is the anonymous
 gap `...`, each occurrence its own, so `S.order(seg())` matches an `order` of
 any arity.
 
+A number crosses as its kind: a safe integer as a `number` and a wider one as
+a `bigint`, a float as a `number` in a `FloatAtom` (`float(2)` is 2.0), and a
+rational as the exact `Rational` in a `RationalAtom`, printing `1r3`, where it
+used to refuse. `G(new Rational(1n, 3n))` makes one. The portable transport
+refuses a rational, having no tag for one.
+
 ## A lowered body
 
 `m.define(function f(...) {...})` reads a plain function's own source and

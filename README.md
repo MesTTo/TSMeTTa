@@ -263,6 +263,25 @@ if (atom instanceof Expression) {
 // npm run typecheck checks the atom types and their compile-time tests.
 ```
 
+A number crosses as the kind the engine gives it. An integer is a `number`
+while it is safe and a `bigint` past that; a float is a `number` in a
+`FloatAtom`, so `float(2)` stays apart from the integer 2; and a rational is
+the exact `Rational` it is, a bigint numerator over a bigint denominator in a
+`RationalAtom`, printed as the engine writes it. The portable wire refuses a
+rational, since CODEC.md has no tag for one; the engine's own transport
+carries it both ways.
+
+```ts
+import { G, Rational, RationalAtom } from "tsmetta";
+
+m.import(lib.math);
+const third = await m.fn.mathRational(1, 3).one();
+third instanceof RationalAtom;                // true: third.value is 1n over 3n
+String(await m.eval(S["+"](third, 1)).one()); // "4r3"
+G(new Rational(2n, 6n)) === third;            // true: one number, one atom
+```
+
+
 ### Structure without an engine
 
 Unification, one-way matching and alpha-canonical keys are plain functions over
@@ -928,7 +947,7 @@ Every code-module entry point the package exports, which is what
 | `tsmetta/algebra` | Native `matchUnder`, `TaggedValue`, tagged facts and rules; host carrier and retained-derivation utilities |
 | `tsmetta/ambient` | One lazily booted engine behind free functions, so a first program needs no setup line: `add`, `define`, `evaluate`, `engine`, `catalog`, `loadFile` |
 | `tsmetta/arrays` | Typed arrays, `Tensor`, `EmbeddingStore`, and `installArrays` |
-| `tsmetta/atom` | The atom algebra: one interned immutable value per MeTTa atom, narrowing by `instanceof`, printing as MeTTa text. `Expression`, `Grounded`, `FloatAtom`, `Sym`, `SpaceHandle`, `ATOM_OF` |
+| `tsmetta/atom` | The atom algebra: one interned immutable value per MeTTa atom, narrowing by `instanceof`, printing as MeTTa text. `Expression`, `Grounded`, `FloatAtom`, `RationalAtom`, `Rational`, `Sym`, `SpaceHandle`, `ATOM_OF` |
 | `tsmetta/browser` | The browser build of the root surface: `metta`, `MeTTa`, `S`, `V`, `fn`, and `forgetRuntime` |
 | `tsmetta/config` | The process-wide settings the engine and the presentation layer read, and the one place an operator sets them: `config`, `Setting`, `Settings` |
 | `tsmetta/convert` | `registerType`, `project`, `build`, and `autoImage` |

@@ -432,7 +432,8 @@ metta_node_var_name([_|Pairs], Term, Name) :-
 % ~q is the spelling the reader takes back, so 2.0 stays 2.0, a rational stays
 % 1r3 and a non-finite float stays inf, -inf or nan. Each of those three is a
 % class the engine's own writer already reports as unwritable, and naming them
-% at the boundary is what lets the JavaScript side refuse rather than round.
+% at the boundary is what lets the JavaScript side carry each exactly, a
+% rational as the Rational it is, rather than round.
 metta_node_number_text(T, Text) :- format(atom(A), '~q', [T]), atom_string(A, Text).
 
 % The inverse. A tag arrives from the host as an atom, and so does every text

@@ -111,4 +111,4 @@ along with swipl-wasm, and a gate does not reach the network" >&2
 }
 run GATE node-dist check_node_dist
 
-run GATE node-bench check_node_bench
+run_solo GATE node-bench check_node_bench

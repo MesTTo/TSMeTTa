@@ -628,7 +628,11 @@ A plain function handed to `define` is read from its own source and becomes
 one equation, so its body is TypeScript whose meaning is MeTTa. Arithmetic,
 comparisons, `if`, `const`, ternaries and recursion are the engine's own, and
 so are `&`, `|`, `^`, `~`, `<<` and `>>`, which become the `bit-` family over
-MeTTa's unbounded integers, as a `bigint`'s are rather than a number's 32. An
+MeTTa's unbounded integers, as a `bigint`'s are rather than a number's 32.
+`&&` and `||` short-circuit, as they do in TypeScript, which is MeTTa's
+`and-then` and `or-else`; the relational `and` and `or`, which evaluate both
+sides and can solve for an unbound one, are the word door's `and(a, b)` and
+`or(a, b)`. An
 atom is mentioned the way it is built: `S.name` is a symbol, `S.pair(a, b)`
 an expression, `V.x` a variable, `fn.carAtom(x)` an engine call and
 `G("text")` a grounded literal. The word door's functions and constants

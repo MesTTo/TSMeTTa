@@ -145,9 +145,14 @@ const BINARY: Readonly<Record<string, string>> = {
   ">>": "bit-shift-right",
 };
 
+// TypeScript's `&&` and `||` SHORT-CIRCUIT: the right operand runs only when
+// the left does not decide, so `x !== 0 && 10 / x > 1` never divides by zero.
+// MeTTa's `and-then` and `or-else` are exactly that, special forms whose
+// second argument is not evaluated first; its `and` and `or` are relations
+// that evaluate both sides, which a body says with the word door's `and(a, b)`.
 const LOGICAL: Readonly<Record<string, string>> = {
-  "&&": "and",
-  "||": "or",
+  "&&": "and-then",
+  "||": "or-else",
 };
 
 /**
@@ -735,7 +740,7 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
       if (head === undefined) {
         refuse(
           `${scope.selfName} uses the operator ${logical.operator}`,
-          "MeTTa has and and or; `??` has no MeTTa meaning because MeTTa has no null",
+          "MeTTa has and-then and or-else for && and ||; `??` has no MeTTa meaning because MeTTa has no null",
         );
       }
       return expr(

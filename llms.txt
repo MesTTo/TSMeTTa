@@ -68,7 +68,9 @@ headed by the symbol `add`, which nothing defines, so it comes back unreduced.
 `m.define(function f(...) {...})` reads a plain function's own source and
 installs ONE equation. Inside it: arithmetic, comparisons, the bitwise
 operators (`&` `|` `^` `~` `<<` `>>` are `bit-and` and its family, over
-unbounded integers; `>>>` refuses), `if`, ternaries,
+unbounded integers; `>>>` refuses), `&&` and `||` (short-circuiting, so
+`and-then` and `or-else`; the relational `and`/`or` are the words `and(a, b)`
+and `or(a, b)`), `if`, ternaries,
 `const` (a `let`; a run of them is `let*`), `const [a, [b, c]] = v` (a
 pattern `let`), `switch` (a `case`, `default` tried last), a statement run for
 its effect (`chain`), a bare `return;` or running off the end (the unit `()`)

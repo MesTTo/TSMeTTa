@@ -34,6 +34,15 @@ Open Obligations: None. -->
   `effectOf` and `disassemble` read a name string by the same rule. A name
   nothing defines yet refuses naming the mention door, `S.g(...)`, beside the
   ways to supply it.
+- A lowered body's `&&` and `||` lower to `and-then` and `or-else`, where they
+  lowered to `and` and `or`. TypeScript's operators short-circuit, and so do
+  those two special forms, while `and` and `or` are relations that evaluate
+  both sides first: `x !== 0 && 10 / x > 1` used to divide by zero at `x = 0`.
+  A body that means the relation, to solve for an unbound operand, says it
+  with the word door's `and(a, b)` and `or(a, b)`. Stored equations using `&&`
+  or `||` change accordingly; answers over ground booleans do not.
+- `If(condition, then)` builds the two-argument `(if condition then)`, which
+  answers nothing where the condition is false; `If` took exactly three.
 - A lowered body's `&`, `|`, `^`, `~`, `<<` and `>>` become the engine's
   `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-shift-left` and
   `bit-shift-right`, which work over unbounded integers as a `bigint`'s

@@ -304,9 +304,14 @@ export function rewrite(head: Term, body: Term): Atom {
 // Control forms. Capitalised: `if` and `let` are reserved words in JavaScript,
 // and the rest of the family keeps the casing so it reads as one family.
 
-/** `(if condition then else)`. */
-export function If(condition: Term, then: Term, otherwise: Term): Atom {
-  return apply(WORD_HEADS.If, condition, then, otherwise);
+/**
+ * `(if condition then else)`, or `(if condition then)`, which answers nothing
+ * where the condition is false.
+ */
+export function If(condition: Term, then: Term, otherwise?: Term): Atom {
+  return otherwise === undefined
+    ? apply(WORD_HEADS.If, condition, then)
+    : apply(WORD_HEADS.If, condition, then, otherwise);
 }
 
 /** `(let pattern value body)`. */

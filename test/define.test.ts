@@ -30,6 +30,7 @@ import {
   type Space,
   _,
   add,
+  and,
   caseOf,
   alphaEqual,
   Expression,
@@ -52,6 +53,7 @@ import {
   metta,
   neg,
   nil,
+  or,
   rewrite,
   toAtom,
 } from "../src/index.ts";
@@ -227,8 +229,23 @@ describe("a lowered body", () => {
       return a > b && a > 0 ? a : b;
     });
     assert.deepEqual(pick.equations.map(String), [
-      "(= (pick $a $b) (if (and (> $a $b) (> $a 0)) $a $b))",
+      "(= (pick $a $b) (if (and-then (> $a $b) (> $a 0)) $a $b))",
     ]);
+  });
+
+  it("short-circuits && and || as TypeScript does, where the word door's and and or are relations", async () => {
+    const safe = m.define(function safe(x: number): boolean {
+      return x !== 0 && 10 / x > 1;
+    });
+    const either = m.define(function either(x: number): boolean {
+      return x === 0 || 10 / x > 1;
+    });
+    assert.equal(String(safe.equations[0]), "(= (safe $x) (and-then (!= $x 0) (> (/ 10 $x) 1)))");
+    assert.equal(String(await safe(0).one()), "false", "the division never runs");
+    assert.equal(String(await safe(5).one()), "true");
+    assert.equal(String(await either(0).one()), "true", "the division never runs");
+    const solved = await m.eval(If(and(or(V.x, TRUE), V.y), [V.x, V.y])).toArray();
+    assert.deepEqual(solved.map(String), ["(true true)", "(false true)"], "and and or solve for unbound operands");
   });
 
   it("refuses a construct with no MeTTa meaning, naming it and the remedy", () => {

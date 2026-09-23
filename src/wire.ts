@@ -184,7 +184,9 @@ export function numberFromText(text: string): number | bigint | Rational {
   if (NAN_TEXT.test(text)) return NaN;
   const rational = RATIONAL_TEXT.exec(text)?.groups;
   if (rational !== undefined) {
-    return new Rational(BigInt(rational["numerator"] as string), BigInt(rational["denominator"] as string));
+    const exact = new Rational(BigInt(rational["numerator"] as string), BigInt(rational["denominator"] as string));
+    // A whole rational is that integer, as the Python seat reads one too.
+    return exact.denominator === 1n ? exact.numerator : exact;
   }
   throw wireError(`the number ${text} is not a spelling the engine's writer produces`);
 }

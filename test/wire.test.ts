@@ -86,6 +86,7 @@ describe("numbers", () => {
     assert.ok(third instanceof Rational);
     assert.deepEqual([third.numerator, third.denominator], [1n, 3n]);
     assert.equal(numberToText(new Rational(-2n, 6n)), "-1r3", "the engine's own spelling, in lowest terms");
+    assert.equal(numberFromText("6r2"), 3n, "a whole rational is that integer, as the Python seat reads it");
     assert.throws(() => numberFromText("1/3"), /not a spelling the engine's writer produces/);
 
     const atom = G(new Rational(2n, 6n));

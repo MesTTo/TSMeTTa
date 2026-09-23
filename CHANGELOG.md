@@ -4,6 +4,8 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- The engine transport reads a whole rational, `6r2`, as the integer it is,
+  as the Python seat does.
 - A MeTTa rational crosses into TypeScript as the exact number it is: a
   `RationalAtom` holding a `Rational`, a bigint numerator over a bigint
   denominator in lowest terms, printed as the engine writes it (`1r3`) and

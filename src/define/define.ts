@@ -20,7 +20,7 @@
  *     commit=1b31519d1e4a9f26bc004dba6decc58aca96bd53]
  *   - `rules` stores every equation its generator yields exactly as written,
  *     over the generator's parameters as variables, or refuses before storing
- *     any [tested: "a rule set"]
+ *     any [tested: "a rule set"; commit=8a560e33362ac722d73249a05a21ca4b9650bdf4]
  *   - a later lowered body reaches a definition by the name its function was
  *     written with, whatever head it installed under, and refuses a name two
  *     definitions share [tested: "reaches a definition installed under an

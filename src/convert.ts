@@ -15,6 +15,9 @@
  *   - projection recurses: a registered type whose fields hold registered
  *     types projects all the way down, and arrays and plain objects project
  *     structurally without being registered at all
+ *   - a registered class, and any subclass of it, names its registration in
+ *     a type position until it is unregistered [tested: "names a registered
+ *     class by its registration, and a subclass by its base's"; commit=WORKTREE]
  * Decides: a class may carry its OWN projection rather than register one. A
  *   `[TO_ATOM]()` method and a static `[FROM_ATOM]()` are consulted first, so
  *   a type you own needs no registration and no import from this module.
@@ -31,6 +34,7 @@ import {
   Grounded,
   Sym,
   type Term,
+  answerRegisteredTypes,
   expr,
   exprOf,
   lift,
@@ -112,6 +116,12 @@ const byName = new Map<string, Registered>();
 // each in turn and the first that claims it wins. Kept separate so a program
 // with no symbol registration pays one empty-array check.
 const bySymbol: Registered[] = [];
+
+// A registered class names its registration in a type position, as PyMeTTa's
+// _class_type_name does [source: extensions/python/metta/_catalog/
+// annotations.py, _class_type_name], so typeAtom asks this registry rather
+// than keeping a copy of it.
+answerRegisteredTypes((constructor) => byConstructor.get(constructor)?.projection.name);
 
 /**
  * Teach the projection one type.

@@ -4,6 +4,19 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- A type position reads this host's types. `arrow(Number, BigInt, Boolean)`
+  is `(-> Number Number Bool)`, `typed(S.rex, Dog)` is `(: rex Dog)` for a
+  class `Dog`, and `{ type: String }` on `define` or `state` declares
+  `String`. All of them go through `typeAtom`: a term is itself, an array an
+  expression type, a JavaScript constructor the type the engine admits all
+  its values at, an atom class its metatype, `Space` `SpaceType`, and any
+  other class what `registerType` taught it or its base, else its own name,
+  the nominal type PyMeTTa gives a user class. `BigInt` names `Number`, as
+  Python's `int` does there, because the engine types a bigint inside signed
+  i64 `Number` and admits the engine's `BigInt` wherever `Number` is asked
+  for. A function that is no class raises `NameError`; a constructor used to
+  cross into the type as an opaque host value, so `arrow(Number, Number)`
+  built `(-> (js Function) (js Function))`.
 - Loading or importing a file copes with a directory that changes while it is
   read. The mount copied every entry of the file's directory after a `stat`,
   so an entry removed between the listing and the read, such as another

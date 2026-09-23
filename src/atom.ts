@@ -49,6 +49,15 @@
  *     the arbiter's, so one atom has one text in this seat, the Python seat and
  *     the engine alike [tested: "spells every float the way the engine spells
  *     it", "spells a swept two thousand doubles the way the engine spells them"]
+ *   - `typeAtom` gives a host constructor the type the engine admits all its
+ *     values at, an atom class its metatype, and any other class what the
+ *     nearest class on its static prototype chain declares or was registered
+ *     as, else its own name; a function that is no class refuses
+ *     [tested: "names, for a host type, the type the engine admits all its
+ *     values at", "names, for an atom class, the metatype the engine gives its
+ *     atoms", "reads a term as itself, an array as an expression type, and a
+ *     class by its name", "refuses a function that names no type, where it
+ *     once became a host value"; commit=WORKTREE]
  *   - `exprOf` interns through weak structural-hash buckets, verifies every
  *     collision by child identity and never materialises all child ids as text
  *     [tested: "interns a wide expression without joining every child id into
@@ -66,7 +75,7 @@
  *   Future Enhancements: None
  */
 
-import { MettaError, UnsupportedError, WireError } from "./errors.ts";
+import { MettaError, NameError, UnsupportedError, WireError } from "./errors.ts";
 import { showsAs } from "./present.ts";
 
 /** Which of the five shapes an atom is. Narrows a union in `switch`. */
@@ -651,9 +660,119 @@ export interface TermList extends ReadonlyArray<Term> {}
  */
 export const ATOM_OF: unique symbol = Symbol("metta.atom");
 
+/**
+ * @internal The key a class defined above this module carries to name its
+ * MeTTa type in a type position: `Space` names `SpaceType`. A static
+ * property, so a subclass inherits it, and a property rather than a table
+ * keyed by the class, which would identity-hash the class (see
+ * {@link typeAtom} for what that costs).
+ */
+export const CLASS_TYPE: unique symbol = Symbol("metta.classType");
+
 /** Anything carrying its own atom: a name, a defined callable, a space. */
 export interface HasAtom {
   readonly [ATOM_OF]: Atom;
+}
+
+/**
+ * The type name a class was registered under, which the conversion registry
+ * answers once it loads; nothing can be registered before it does.
+ */
+let registeredType: (constructor: Function) => string | undefined = () => undefined;
+
+/** @internal How the conversion registry answers {@link typeAtom} for a registered class. */
+export function answerRegisteredTypes(lookup: (constructor: Function) => string | undefined): void {
+  registeredType = lookup;
+}
+
+/**
+ * The MeTTa type a constructor JavaScript or this module defines names:
+ * PyMeTTa's table for its host types (bool, int, float, str, object, list) in
+ * this host's spelling, and its metatype row for the atom classes, where a
+ * float or a rational names the Number its value is.
+ *
+ * BigInt is this host's int and names Number as int does, not the engine's
+ * BigInt: the engine types `5n` Number and only an integer outside signed i64
+ * BigInt, and widens BigInt to Number, so Number is the one type admitting
+ * every bigint [source: engine/metta/types.pl metta_numeric_type/2;
+ * engine/type_rules.pl typing-bigint-widens-to-number;
+ * extensions/python/metta/_catalog/annotations.py, (int, "Number")].
+ *
+ * A switch compares identities. A Map keyed by these constructors hashes each
+ * one, and under V8's --predictable every identity hash drawn shifts the ones
+ * the codec's tables draw later: hashing any one of Number, String, BigInt or
+ * Boolean at load moved the wire round trip by 1.9M to 2.1M instructions
+ * [measured 2026-09-24: net loop instructions over 50,000 trips of
+ * benchmarks/cases.ts's wire-roundtrip term from a collected heap, min of 3,
+ * 2722.3M with none hashed].
+ */
+function builtinType(constructor: Function): string | undefined {
+  switch (constructor) {
+    case Boolean:
+      return "Bool";
+    case Number:
+    case BigInt:
+    case FloatAtom:
+    case RationalAtom:
+      return "Number";
+    case String:
+      return "String";
+    case Object:
+    case Atom:
+      return "Atom";
+    case Array:
+    case Expression:
+      return "Expression";
+    case Sym:
+      return "Symbol";
+    case Var:
+      return "Variable";
+    case Grounded:
+      return "Grounded";
+    case SpaceHandle:
+      return "SpaceType";
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Coerce anything in type position to the type atom it names.
+ *
+ * A term is its own atom, and an array is an expression type built from its
+ * parts, so `[S.List, Number]` is `(List Number)`. A constructor JavaScript
+ * ships names the type of its values, `Number` being `Number` and `Boolean`
+ * `Bool`, and an atom class names its metatype, `Sym` being `Symbol`. Any other
+ * class names what the nearest class on its static prototype chain declares or
+ * was registered as, so a subclass of `Space` names `SpaceType` and a class
+ * `registerType` taught under the name `Person` names `Person`, as PyMeTTa's
+ * registry lookup walks the MRO; failing both, the symbol of its own name, a
+ * nominal type, as PyMeTTa's annotations make a user class. A function that is
+ * no class names no type and is refused, where it used to become an opaque
+ * host value in the arrow.
+ *
+ * ```ts
+ * arrow(Number, Number, Boolean);  // (-> Number Number Bool)
+ * class Dog {}
+ * typed(S.rex, Dog);               // (: rex Dog)
+ * ```
+ */
+export function typeAtom(value: Term): Atom {
+  if (Array.isArray(value)) return exprOf((value as readonly Term[]).map(typeAtom));
+  if (typeof value !== "function" || ATOM_OF in value) return toAtom(value);
+  const builtin = builtinType(value);
+  if (builtin !== undefined) return sym(builtin);
+  for (let owner: unknown = value; typeof owner === "function"; owner = Object.getPrototypeOf(owner)) {
+    const declared: unknown = Object.getOwnPropertyDescriptor(owner, CLASS_TYPE)?.value;
+    const named = typeof declared === "string" ? declared : registeredType(owner);
+    if (named !== undefined) return sym(named);
+  }
+  if (value.prototype !== undefined && value.name !== "") return sym(value.name);
+  throw new NameError(
+    `${value.name === "" ? "an anonymous function" : value.name} in a type position names no ` +
+      "type: a type is a type atom such as S.Number, a constructor such as Number or " +
+      "String, or a class, which names its own type",
+  );
 }
 
 /** Coerce anything in term position to an atom. */

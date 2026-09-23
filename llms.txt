@@ -74,6 +74,18 @@ rational as the exact `Rational` in a `RationalAtom`, printing `1r3`, where it
 used to refuse. `G(new Rational(1n, 3n))` makes one. The portable transport
 refuses a rational, having no tag for one.
 
+A type position (`arrow`, `typed`, and `{ type }` on `define` and `state`)
+reads host types through `typeAtom`: a term is itself, an array is an
+expression type (`[S.List, Number]` is `(List Number)`), a JavaScript
+constructor names the type the engine admits its values at (`Number` and
+`BigInt` are `Number`, `String` is `String`, `Boolean` is `Bool`, `Object` is
+`Atom`, `Array` is `Expression`), an atom class names its metatype (`Sym` is
+`Symbol`, `Var` is `Variable`), `Space` and `SpaceHandle` are `SpaceType`, and
+any other class names what `registerType` taught it or its base, else its own
+name. A function that is no class raises `NameError`; it used to cross as an
+opaque host value, so `arrow(Number, Number)` built
+`(-> (js Function) (js Function))`.
+
 ## A lowered body
 
 `m.define(function f(...) {...})` reads a plain function's own source and

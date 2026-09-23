@@ -41,7 +41,7 @@
  *   Future Enhancements: None
  */
 
-import { ATOM_OF, type Atom, Expression, Sym, type Term, expr, exprOf, sym, toAtom, variable } from "../atom.ts";
+import { ATOM_OF, type Atom, Expression, Sym, type Term, expr, exprOf, sym, toAtom, typeAtom, variable } from "../atom.ts";
 import { type Answers, type AskOptions, isGoalRequest } from "../answers.ts";
 import { type EffectClass, type OpKind } from "../engine.ts";
 import { CompileError, MettaError, NameError } from "../errors.ts";
@@ -264,7 +264,7 @@ function finish(
 ): Defined {
   const equations = bodies.map((body) => equationOf(head, params, body));
   if (options.type !== undefined) {
-    space.add(expr(sym(":"), sym(head), toAtom(options.type)));
+    space.add(expr(sym(":"), sym(head), typeAtom(options.type)));
   }
   space.add(...equations);
   remember(install, target, head);
@@ -413,7 +413,7 @@ export function op(
     (target as (...spread: readonly unknown[]) => unknown)(...args);
   install.register(head, arity, kind, effect, run);
   if (options.type !== undefined) {
-    space.add(expr(sym(":"), sym(head), toAtom(options.type)));
+    space.add(expr(sym(":"), sym(head), typeAtom(options.type)));
   }
   remember(install, target, head);
   const defined = callable(install, head, arity, [], space);

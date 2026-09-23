@@ -235,6 +235,22 @@ String((await m.match(S[":"](S.ageOf, V.type)).one())["type"]);
 // "(-> Symbol Number)"
 ```
 
+A type position takes this host's own types. `arrow`, `typed` and the `type`
+option of `define` and `state` read each one through `typeAtom`: a term is
+itself and an array is an expression type; a JavaScript constructor names the
+type the engine admits all its values at, `Boolean` being `Bool` and `BigInt`
+being `Number`, since the engine types a bigint inside signed i64 `Number`;
+an atom class names its metatype, `Sym` being `Symbol`; and any other class
+names what `registerType` taught it, else its own name. A function that is no
+class, such as `Math.max`, raises `NameError`.
+
+```ts
+String(arrow(Number, BigInt, Boolean)); // "(-> Number Number Bool)"
+String(typeAtom([S.List, String]));     // "(List String)"
+class Dog {}
+String(typed(S.rex, Dog));              // "(: rex Dog)"
+```
+
 ### Scopes and extensions
 
 Bound a block's evaluation and install a library through the public extension door.
@@ -947,7 +963,7 @@ Every code-module entry point the package exports, which is what
 | `tsmetta/algebra` | Native `matchUnder`, `TaggedValue`, tagged facts and rules; host carrier and retained-derivation utilities |
 | `tsmetta/ambient` | One lazily booted engine behind free functions, so a first program needs no setup line: `add`, `define`, `evaluate`, `engine`, `catalog`, `loadFile` |
 | `tsmetta/arrays` | Typed arrays, `Tensor`, `EmbeddingStore`, and `installArrays` |
-| `tsmetta/atom` | The atom algebra: one interned immutable value per MeTTa atom, narrowing by `instanceof`, printing as MeTTa text. `Expression`, `Grounded`, `FloatAtom`, `RationalAtom`, `Rational`, `Sym`, `SpaceHandle`, `ATOM_OF` |
+| `tsmetta/atom` | The atom algebra: one interned immutable value per MeTTa atom, narrowing by `instanceof`, printing as MeTTa text. `Expression`, `Grounded`, `FloatAtom`, `RationalAtom`, `Rational`, `Sym`, `SpaceHandle`, `ATOM_OF`, `typeAtom` |
 | `tsmetta/browser` | The browser build of the root surface: `metta`, `MeTTa`, `S`, `V`, `fn`, and `forgetRuntime` |
 | `tsmetta/config` | The process-wide settings the engine and the presentation layer read, and the one place an operator sets them: `config`, `Setting`, `Settings` |
 | `tsmetta/convert` | `registerType`, `project`, `build`, and `autoImage` |

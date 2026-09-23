@@ -45,6 +45,7 @@ export {
   sym,
   termVars,
   toAtom,
+  typeAtom,
   variable,
 } from "./atom.ts";
 

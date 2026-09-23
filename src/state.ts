@@ -23,7 +23,7 @@
  *   Future Enhancements: None
  */
 
-import { ATOM_OF, type Atom, type Term, expr, sym, toAtom } from "./atom.ts";
+import { ATOM_OF, type Atom, type Term, expr, sym, toAtom, typeAtom } from "./atom.ts";
 import { type Space, hostValue } from "./space.ts";
 import { showsAs } from "./present.ts";
 
@@ -87,7 +87,7 @@ export class State<T extends Term = Term> {
     const made =
       options.type === undefined
         ? expr(sym("new-state"), toAtom(initial))
-        : expr(sym("new-state"), expr(sym(":"), toAtom(initial), toAtom(options.type)));
+        : expr(sym("new-state"), expr(sym(":"), toAtom(initial), typeAtom(options.type)));
     this.handle = host.runOne(made, this.#space);
     Object.defineProperty(this, ATOM_OF, { value: this.handle });
   }

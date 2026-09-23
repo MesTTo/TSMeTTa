@@ -56,6 +56,7 @@
 import {
   ATOM_OF,
   Atom,
+  CLASS_TYPE,
   G,
   Grounded,
   type Term,
@@ -1204,6 +1205,9 @@ export class Space implements Disposable {
     );
   }
 }
+
+// In a type position a space names SpaceType, as its handle does.
+Object.defineProperty(Space, CLASS_TYPE, { value: "SpaceType" });
 
 // A space prints as the name it is, not as a dump of the engine behind it.
 showsAs(Space.prototype, (space: Space) => `Space(${space.name})`);

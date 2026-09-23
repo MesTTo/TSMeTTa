@@ -14,19 +14,31 @@ import { strict as assert } from "node:assert";
 import { after, before, describe, it } from "node:test";
 
 import {
+  Atom,
   Collapse,
   Empty,
+  Expression,
+  FloatAtom,
   G,
+  Grounded,
   If,
   Let,
   LetStar,
   Match,
   type MeTTa,
+  NameError,
   Quote,
+  Rational,
+  RationalAtom,
   S,
+  Space,
+  SpaceHandle,
   Superpose,
+  Sym,
+  TRUE,
   type Term,
   V,
+  Var,
   abs,
   add,
   and,
@@ -38,11 +50,13 @@ import {
   consAtom,
   div,
   eq,
+  float,
   floor,
   fn,
   getType,
   gt,
   gte,
+  isError,
   lt,
   lte,
   maxAtom,
@@ -55,8 +69,10 @@ import {
   not,
   or,
   pow,
+  rewrite,
   sqrt,
   sub,
+  typeAtom,
   typed,
   unify,
   xor,
@@ -145,6 +161,90 @@ describe("structure words", () => {
     assert.equal(String(typed(S.f, S.Number)), "(: f Number)");
     assert.equal(String(arrow(S.Symbol, S.Number)), "(-> Symbol Number)");
     assert.throws(() => arrow(S.Number), /at least an argument and a result/);
+  });
+});
+
+describe("a type position", () => {
+  it("names, for a host type, the type the engine admits all its values at", async () => {
+    // The engine is the oracle twice: it types the first value exactly as the
+    // constructor names, and a head declared with the constructor admits every
+    // value and refuses a foreign one. BigInt names Number, PyMeTTa's row for
+    // Python's unbounded int, because the engine types an integer outside
+    // signed i64 BigInt and widens BigInt to Number [source:
+    // engine/metta/types.pl metta_numeric_type/2, engine/type_rules.pl
+    // typing-bigint-widens-to-number; extensions/python/metta/_catalog/
+    // annotations.py, (int, "Number")].
+    const kb = m.space();
+    for (const [host, values, foreign] of [
+      [Number, [7, 0.5], "text"],
+      [BigInt, [5n, 2n ** 70n], "text"],
+      [String, ["text"], 7],
+      [Boolean, [true, false], 7],
+      [FloatAtom, [float(1.5)], "text"],
+      [RationalAtom, [G(new Rational(1n, 3n))], "text"],
+      [SpaceHandle, [kb.handle], 7],
+      [Space, [kb], 7],
+    ] as const) {
+      const takes = S[`takes-${host.name}`];
+      m.add(typed(takes, arrow(host, S.Bool)), rewrite(takes(V.x), TRUE));
+      assert.deepEqual(await m.eval(getType(values[0])), [typeAtom(host)], host.name);
+      for (const value of values) {
+        assert.deepEqual(await m.eval(takes(value)), [TRUE], `${host.name} admits ${String(value)}`);
+      }
+      const [refused] = await m.eval(takes(foreign));
+      assert.ok(isError(refused), `${host.name} refuses ${String(foreign)}`);
+    }
+  });
+
+  it("names, for an atom class, the metatype the engine gives its atoms", async () => {
+    for (const [atomClass, atom] of [
+      [Sym, S.a],
+      [Var, V.x],
+      [Expression, S.f(1)],
+      [Grounded, G(1)],
+    ] as const) {
+      assert.deepEqual([typeAtom(atomClass)], await m.fn.getMetatype(atom), atomClass.name);
+    }
+    // Atom is every metatype at once, and object and a list are PyMeTTa's
+    // any-atom and sequence rows [source: extensions/python/metta/_catalog/
+    // annotations.py, _direct_type_atoms and _generic_type_atoms].
+    assert.equal(typeAtom(Atom), S.Atom.atom);
+    assert.equal(typeAtom(Object), S.Atom.atom);
+    assert.equal(typeAtom(Array), S.Expression.atom);
+  });
+
+  it("reads a term as itself, an array as an expression type, and a class by its name", () => {
+    assert.equal(typeAtom(S.Number), S.Number.atom);
+    assert.equal(String(typeAtom([S.List, Number])), "(List Number)");
+    assert.equal(String(arrow(Number, Number, Boolean)), "(-> Number Number Bool)");
+    class Dog {}
+    assert.equal(String(typed(S.rex, Dog)), "(: rex Dog)");
+    // A subclass names what its base declares, as PyMeTTa's handle rule
+    // answers SpaceType for a user subclass of its space handle.
+    class Tracked extends Space {}
+    assert.equal(typeAtom(Tracked), S.SpaceType.atom);
+    // A subclass of a built-in is a wrapper object, not the primitive the
+    // built-in names, so it names itself.
+    class Count extends Number {}
+    assert.equal(typeAtom(Count), S.Count.atom);
+  });
+
+  it("refuses a function that names no type, where it once became a host value", () => {
+    assert.throws(() => typeAtom(() => 1), NameError);
+    assert.throws(() => arrow(Number, Math.max), /Math.max|max in a type position names no type/);
+  });
+
+  it("types a definition from host constructors, which the engine then enforces", async () => {
+    const twiceTyped = m.define(
+      function twiceTyped(x: number): number {
+        return 2 * x;
+      },
+      { type: arrow(Number, Number) },
+    );
+    assert.deepEqual(await m.fn.getType(S.twiceTyped), [arrow(S.Number, S.Number)]);
+    assert.deepEqual(await twiceTyped(21), [G(42)]);
+    const [refused] = await m.eval(S.twiceTyped("a"));
+    assert.ok(refused instanceof Expression && refused.items[0] === S.Error.atom);
   });
 });
 

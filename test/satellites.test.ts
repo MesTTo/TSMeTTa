@@ -25,7 +25,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { Expression, G, type MeTTa, S, type Space, V, metta, repoRoot } from "../src/index.ts";
+import { Expression, G, type MeTTa, S, type Space, V, arrow, metta, repoRoot, typeAtom } from "../src/index.ts";
 import {
   TO_ATOM,
   build,
@@ -119,6 +119,22 @@ describe("projecting a host value", () => {
     class Other {}
     registerType(Other, { name: "Person", toAtom: () => [], fromAtom: () => new Other() });
     assert.ok(unregisterType(Other));
+  });
+
+  it("names a registered class by its registration, and a subclass by its base's", () => {
+    class PersonRecord {}
+    class Employee extends PersonRecord {}
+    assert.equal(typeAtom(PersonRecord), S.PersonRecord.atom, "unregistered, a class names itself");
+    registerType(PersonRecord, { name: "Person", toAtom: () => [], fromAtom: () => new PersonRecord() });
+    try {
+      assert.equal(typeAtom(PersonRecord), S.Person.atom);
+      assert.equal(typeAtom(Employee), S.Person.atom);
+      assert.equal(String(arrow(PersonRecord, Number)), "(-> Person Number)");
+    } finally {
+      assert.ok(unregisterType(PersonRecord));
+    }
+    assert.equal(typeAtom(PersonRecord), S.PersonRecord.atom);
+    assert.equal(typeAtom(Employee), S.Employee.atom);
   });
 
   it("lets a type project itself, with no registration at all", () => {

@@ -9,6 +9,10 @@
  *     the word door's words, so `import { lte }` and `word.lte` are one
  *     mechanism in two positions and the proxy still spells the long tail
  * Guarantees:
+ *   - every head is written once, in OPERATOR_HEADS or WORD_HEADS, and the
+ *     builders here and src/define/lower.ts both read those tables, so a
+ *     built word and a lowered word are one head [tested: "a lowered body
+ *     mentions"; commit=a9632282fd7f0cbd697a1d2ac353b6888dd9d849]
  *   - the roster is TypeScript's ecosystem's own: `eq ne gt gte lt lte`, not
  *     the Python operator module's `ge`/`le`, because `gte` is what Drizzle,
  *     Prisma, Mongo, Sequelize and lodash all say

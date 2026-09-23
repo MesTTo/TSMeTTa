@@ -30,6 +30,13 @@
  *     so data position does not depend on a later reduction [tested: "folds
  *     unary minus over number and bigint literals into literal atoms";
  *     commit=cb81a53d7e040cea283df784b097f95f2868a866]
+ *   - a body mentions atoms through the factories and words by the names the
+ *     package exports them under, S, V, fn, G, float, WORD_HEADS,
+ *     OPERATOR_HEADS and WORD_CONSTANTS, each lowering to the atom the same
+ *     spelling builds at run time, after the engine's own heads and under any
+ *     local binding of the same name; an array pattern is a pattern let and a
+ *     switch is a case whose default is tried last [tested: "a lowered body
+ *     mentions"; commit=a9632282fd7f0cbd697a1d2ac353b6888dd9d849]
  * Decides: the lowering is a TRANSLATION, not an interpretation. `===` becomes
  *   the engine's `==`, `%` becomes the engine's `%`, and a call becomes an
  *   expression, so what runs is MeTTa and the TypeScript was only notation.

@@ -4,6 +4,27 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- `Math`'s functions in a lowered body keep their JavaScript meaning on the
+  engine's own math heads, where every Math call refused as a call to
+  something that is not a plain name. `Math.abs(a - b) < 2` lowers to
+  `(< (abs-math (- $a $b)) 2)`, and so for `acos`, `asin`, `atan`, `ceil`,
+  `cos`, `exp`, `floor`, `pow`, `sin`, `sqrt`, `tan` and `trunc`. `Math.log`
+  is `log-math` with Euler's number as its base, and `Math.round` rounds a tie
+  up as JavaScript does, where `round-math` rounds it away from zero:
+  `Math.round(-2.5)` is -2 and `(round-math -2.5)` is -3. `Math.max` and
+  `Math.min` fold the binary `max` and `min` over any number of arguments.
+  `Math.PI`, `Infinity` and `NaN` lower to their numbers, and a sign over any
+  of them stays one literal, so `-Infinity` is `-inf`. A Math function passed
+  as a value is its head, or its lambda where the call is more than a head;
+  one handed to `map`, `filter` or `reduce` whose arity is not what the walk
+  passes refuses, since JavaScript would pass the index too, and `Math.max`
+  and `Math.min` refuse as values. A property test runs one body in
+  TypeScript and in the engine over 414 draws: exact for `abs`, `ceil`,
+  `floor`, `round`, `sqrt`, `trunc`, `max` and `min`, and within one ulp for
+  the functions ECMA-262 leaves implementation-approximated, where V8's libm
+  and the engine's differ in the last place. PyMeTTa's table of math mentions
+  is the same door for Python.
+
 - A lowered body mentions atoms the way a program builds them: `S.name`,
   `S.f(a, b)`, `S["x"]`, `S("exact")`, `V.x`, `fn.carAtom(x)`, `G(literal)` and
   `float(literal)` lower to the atoms those spellings build, and the word

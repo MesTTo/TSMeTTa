@@ -39,6 +39,7 @@ import {
   type MeTTa,
   MettaError,
   NameError,
+  Random,
   S,
   Superpose,
   TRUE,
@@ -86,6 +87,21 @@ function findDivisor(n: number, d: number): number {
 /** Installed under an exact head, `even?`, and called by this name. */
 function isEven(n: number): boolean {
   return n % 2 === 0;
+}
+
+/**
+ * How many doubles lie between two numbers: 0 for one number, 0 and -0 being
+ * one, and NaN being one with itself.
+ *
+ * Within one sign doubles order as their bit patterns do, so mapping each
+ * pattern onto one signed line makes the distance a subtraction.
+ */
+function ulpsApart(left: number, right: number): number {
+  if (left === right || (Number.isNaN(left) && Number.isNaN(right))) return 0;
+  const [a, b] = new BigInt64Array(new Float64Array([left, right]).buffer) as unknown as [bigint, bigint];
+  const line = (bits: bigint): bigint => (bits < 0n ? -(bits & 0x7fff_ffff_ffff_ffffn) : bits);
+  const distance = line(a) - line(b);
+  return Number(distance < 0n ? -distance : distance);
 }
 
 describe("a lowered body", () => {
@@ -274,6 +290,136 @@ describe("a lowered body", () => {
     assert.equal(String(await either(0).one()), "true", "the division never runs");
     const solved = await m.eval(If(and(or(V.x, TRUE), V.y), [V.x, V.y])).toArray();
     assert.deepEqual(solved.map(String), ["(true true)", "(false true)"], "and and or solve for unbound operands");
+  });
+
+  it("keeps Math's JavaScript meaning, over the engine's own math heads", async () => {
+    const near = m.define(function near(a: number, b: number): boolean {
+      return Math.abs(a - b) < 2;
+    });
+    assert.equal(String(near.equations[0]), "(= (near $a $b) (< (abs-math (- $a $b)) 2))");
+    assert.equal(String(await near(1, 2.5).one()), "true");
+
+    // A tie rounds UP in JavaScript and away from zero in the engine's
+    // round-math, so Math.round is the floor unless the fraction reaches a half.
+    const rounded = m.define(function rounded(x: number): number {
+      return Math.round(x);
+    });
+    assert.match(
+      String(rounded.equations[0]),
+      /^\(= \(rounded \$x\) \(let (\$floor__\d+) \(floor-math \$x\) \(if \(< \(- \$x \1\) 0\.5\) \1 \(ceil-math \$x\)\)\)\)$/,
+    );
+    const ties = [-2.5, -0.5, 0.5, 2.5, 0.49999999999999994];
+    assert.deepEqual(ties.map(Math.round), [-2, -0, 1, 3, 0]);
+    // MeTTa's integers have one zero, so JavaScript's -0 comes back as 0.
+    assert.deepEqual(await Promise.all(ties.map(async (x) => hostValue(await rounded(x).one()))), [-2, 0, 1, 3, 0]);
+
+    const constants = m.define(function constants(): Term {
+      return [Math.PI, -Math.E, -Infinity, Math.max(), Math.min(), Math.max(4), Math.min(3, 1, 2)];
+    });
+    assert.equal(
+      String(constants.equations[0]),
+      "(= (constants) (3.141592653589793 -2.718281828459045 -inf -inf inf 4 (min (min 3 1) 2)))",
+    );
+
+    const walked = m.define(function walked(xs: number[]): Term {
+      return [xs.map(Math.abs), xs.map(Math.round), xs.map((x) => Math.max(x, 0))];
+    });
+    assert.match(String(walked.equations[0]), /\(map-atom \$xs abs-math\) \(map-atom \$xs \(\|-> \(\$x__\d+\) \(let /);
+    assert.equal(String(await walked([-1.5, 2.5]).one()), "((1.5 2.5) (-1 3) (0 2.5))");
+  });
+
+  it("runs Math's functions in the engine as TypeScript runs them, over every draw", async () => {
+    function mathOf(x: number): number[] {
+      const unit = x / 1000000;
+      return [
+        Math.abs(x),
+        Math.acos(unit),
+        Math.asin(unit),
+        Math.atan(x),
+        Math.ceil(x),
+        Math.cos(x),
+        Math.exp(unit),
+        Math.floor(x),
+        Math.log(Math.abs(x)),
+        Math.pow(unit, 3),
+        Math.round(x),
+        Math.sin(x),
+        Math.sqrt(Math.abs(x)),
+        Math.tan(x),
+        Math.trunc(x),
+        Math.max(x, 0, -x),
+        Math.min(x, 1),
+      ];
+    }
+    const names = ["abs", "acos", "asin", "atan", "ceil", "cos", "exp", "floor", "log", "pow", "round", "sin", "sqrt", "tan", "trunc", "max", "min"];
+    // ECMA-262 leaves these implementation-approximated, and V8's libm and the
+    // engine's differ in the last place on some arguments; the rest are exact,
+    // sqrt because IEEE 754 rounds it correctly in both.
+    const approximated = new Set(["acos", "asin", "atan", "cos", "exp", "log", "pow", "sin", "tan"]);
+    const lowered = m.define(mathOf);
+    const random = new Random(20260924);
+    const draws = [
+      ...[-2.5, -0.5, 0, 0.5, 1.5, 2.5, 0.49999999999999994, -0.49999999999999994, 1, -1, 3, -3.7, 0.3, 1e-9],
+      ...Array.from({ length: 100 }, () => random.between(-1000, 1000) + 0.5),
+      ...Array.from({ length: 100 }, () => random.between(-1000000, 1000000)),
+      ...Array.from({ length: 200 }, () => (random.next() - 0.5) * 2000000),
+    ];
+    const disagreements: string[] = [];
+    for (const x of draws) {
+      const answer = await lowered(x).one();
+      assert.ok(answer instanceof Expression);
+      const engine = answer.items.map((item) => Number(hostValue(item)));
+      mathOf(x).forEach((expected, at) => {
+        const got = engine[at] as number;
+        const name = names[at] as string;
+        const apart = ulpsApart(got, expected);
+        if (apart > (approximated.has(name) ? 1 : 0)) {
+          disagreements.push(`Math.${name} at ${String(x)}: engine ${String(got)}, TypeScript ${String(expected)}, ${String(apart)} ulps`);
+        }
+      });
+    }
+    assert.deepEqual(disagreements, []);
+  });
+
+  it("refuses a Math function the engine has no head for, or one passed where its arity is not the caller's", () => {
+    assert.throws(
+      () =>
+        m.define(function signOf(x: number): number {
+          return Math.sign(x);
+        }),
+      (error: MettaError) =>
+        error.code === "ERR_METTA_LOWER" && /Math\.sign/.test(error.message) && /abs, acos, asin/.test(error.message),
+    );
+    assert.throws(
+      () =>
+        m.define(function powers(xs: number[]): Term {
+          return xs.map(Math.pow);
+        }),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /takes 2/.test(error.message) && /index/.test(error.message),
+    );
+    assert.throws(
+      () =>
+        m.define(function largest(xs: number[]): number {
+          // @ts-expect-error: TypeScript refuses it too, and a JavaScript caller has no checker
+          return xs.reduce(Math.max, -Infinity);
+        }),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /any number of arguments/.test(error.message),
+    );
+    assert.throws(
+      () =>
+        m.define(function twoAbs(x: number): number {
+          // @ts-expect-error: the arity refusal is the point of this case
+          return Math.abs(x, x);
+        }),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /takes 1/.test(error.message),
+    );
+    assert.throws(
+      () =>
+        m.define(function shadowsMath(Math: { abs(x: number): number }): number {
+          return Math.abs(1);
+        }),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /not a plain name/.test(error.message),
+    );
   });
 
   it("refuses a construct with no MeTTa meaning, naming it and the remedy", () => {

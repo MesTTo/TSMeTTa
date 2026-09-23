@@ -98,6 +98,13 @@ An arrow function in a body is a lambda, `(v) => v < k` being
 `(|-> ($v) (< $v $k))` (a binder shadowing a body name is renamed fresh), and
 `m.lambda(arrow)` lowers one from host code into the term, applied as
 `m.eval([lam, 21])`.
+`Math`'s functions keep their JavaScript meaning on the engine's math heads:
+`Math.abs(x)` is `(abs-math x)`, and so `acos` `asin` `atan` `ceil` `cos`
+`exp` `floor` `pow` `sin` `sqrt` `tan` `trunc`; `Math.log(x)` is
+`(log-math e x)`; `Math.round` rounds a tie up, where `round-math` rounds it
+away from zero; `Math.max` and `Math.min` fold `max` and `min`. `Math.PI`,
+`Infinity` and `NaN` are their numbers. Any other Math function refuses, and
+one handed to `map`, `filter` or `reduce` must take what the walk passes.
 Equations whose HEADS are patterns go through `m.rules(function* name(x, xs)
 { yield rewrite(S.f(S.leaf), 0); ... })`: the generator runs once with its
 parameters as variables and every yield, which must be an equation, is stored

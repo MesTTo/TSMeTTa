@@ -29,6 +29,15 @@
  *     around it is a fresh variable, as JavaScript gives it a new binding
  *     [tested: "is an arrow function, in a lowered body and from the host";
  *     commit=ba06ef5686de791a739eae88f770e72446ef8cea]
+ *   - `Math`'s functions keep their JavaScript meaning on the engine's own
+ *     math heads, thirteen as the head of the same name, `Math.log` as
+ *     `log-math` over Euler's number, `Math.round` rounding a tie up and
+ *     `Math.max` and `Math.min` folding the binary heads; a Math number,
+ *     `Infinity` and `NaN` are literals. The engine answers what TypeScript
+ *     answers, exactly where the result is determined and within one ulp
+ *     where ECMA-262 leaves the function implementation-approximated
+ *     [tested: "runs Math's functions in the engine as TypeScript runs them,
+ *     over every draw"; commit=PENDING]
  *   - a name a function was defined by reaches the head that definition
  *     installed under, an exact one included, and a name two definitions
  *     share refuses rather than guessing which binding the source meant
@@ -40,10 +49,13 @@
  *   - a null literal is MeTTa's empty expression, not a symbol whose text only
  *     resembles it [tested: "lowers null to the empty expression";
  *     commit=191f969429df26e26769391d44234f20af481fff]
- *   - unary minus over a number or bigint literal remains one literal atom,
- *     so data position does not depend on a later reduction [tested: "folds
- *     unary minus over number and bigint literals into literal atoms";
- *     commit=cb81a53d7e040cea283df784b097f95f2868a866]
+ *   - unary minus over a number the body already knows, a number or bigint
+ *     literal or a named one such as `Infinity` or `Math.E`, remains one
+ *     literal atom, so data position does not depend on a later reduction
+ *     [tested: "folds unary minus over number and bigint literals into
+ *     literal atoms"; commit=cb81a53d7e040cea283df784b097f95f2868a866; and
+ *     "keeps Math's JavaScript meaning, over the engine's own math heads";
+ *     commit=PENDING]
  *   - a body mentions atoms through the factories and words by the names the
  *     package exports them under, S, V, fn, G, float, WORD_HEADS,
  *     OPERATOR_HEADS and WORD_CONSTANTS, each lowering to the atom the same
@@ -73,7 +85,22 @@ import type {
   VariableDeclaration,
 } from "acorn";
 
-import { type Atom, SpaceHandle, type Term, byCodePoint, expr, exprOf, float, fresh, sym, toAtom, variable } from "../atom.ts";
+import {
+  type Atom,
+  Expression,
+  FloatAtom,
+  Grounded,
+  SpaceHandle,
+  type Term,
+  byCodePoint,
+  expr,
+  exprOf,
+  float,
+  fresh,
+  sym,
+  toAtom,
+  variable,
+} from "../atom.ts";
 import { CompileError, MettaError, nearest } from "../errors.ts";
 import { mettaName } from "../naming.ts";
 import { OPERATOR_HEADS, WORD_CONSTANTS, WORD_HEADS } from "../words.ts";
@@ -163,6 +190,11 @@ const LOGICAL: Readonly<Record<string, string>> = {
   "&&": "and-then",
   "||": "or-else",
 };
+
+// The global object's numeric value properties, which a body names as it
+// names any number [source: ECMA-262 2025, 19.1 Value Properties of the Global
+// Object, https://tc39.es/ecma262/2025/#sec-value-properties-of-the-global-object].
+const GLOBAL_NUMBERS: Readonly<Record<string, number>> = { Infinity, NaN };
 
 /**
  * The naming factories a lowered body MENTIONS atoms through, by the names this
@@ -726,6 +758,7 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
       // The factories' anonymous variable, fresh at every occurrence.
       if (name === "_") return variable("_");
       if (Object.hasOwn(WORD_CONSTANTS, name)) return WORD_CONSTANTS[name] as Atom;
+      if (Object.hasOwn(GLOBAL_NUMBERS, name)) return toAtom(GLOBAL_NUMBERS[name] as number);
       return resolve(name, scope, "a value");
     }
     case "BinaryExpression": {
@@ -766,20 +799,16 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
     }
     case "UnaryExpression": {
       const unary = node as { operator: string; argument: AcornExpression };
+      const inner = lowerExpression(unary.argument, bindings, scope);
       // Acorn and ESTree keep a leading sign above the literal. Fold at that
       // seam, as ESLint does when it needs the signed constant's value, rather
-      // than turning literal DATA into a runnable subtraction expression.
+      // than turning literal DATA into a runnable subtraction expression; the
+      // same holds for a number the body names, `-Infinity` or `-Math.PI`.
       // [source: Acorn@5bd50cd72dc9ddb1856ed13cfa8a1c4884be917a
       // acorn/src/expression.js:611-619 and
       // ESLint@2417cad57d7d1bc4cf3ecf0f0575cfb10ff2011c
       // lib/rules/radix.js:47-62; commit=cb81a53d7e040cea283df784b097f95f2868a866]
-      if (unary.operator === "-" && unary.argument.type === "Literal") {
-        const value = (unary.argument as { value: unknown }).value;
-        if (typeof value === "number") return toAtom(-value);
-        if (typeof value === "bigint") return toAtom(-value);
-      }
-      const inner = lowerExpression(unary.argument, bindings, scope);
-      if (unary.operator === "-") return expr(sym("-"), toAtom(0), inner);
+      if (unary.operator === "-") return negatedLiteral(inner) ?? expr(sym("-"), toAtom(0), inner);
       if (unary.operator === "+") return inner;
       if (unary.operator === "!") return expr(sym("not"), inner);
       if (unary.operator === "~") return expr(sym("bit-not"), inner);
@@ -820,6 +849,9 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
       // An array's own walk over a term: xs.map(f), xs.filter(f), xs.reduce(f, init).
       const walked = arrayMethod(call, bindings, scope);
       if (walked !== undefined) return walked;
+      // One of Math's functions, in JavaScript's meaning: Math.abs(x), Math.round(x).
+      const math = mathCall(call, bindings, scope);
+      if (math !== undefined) return math;
       if (call.callee.type !== "Identifier") {
         refuse(
           `${scope.selfName} calls something that is not a plain name`,
@@ -869,6 +901,8 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
     case "MemberExpression": {
       const named = mentioned(node, bindings);
       if (named !== undefined) return named;
+      const math = mathValue(node, bindings, scope);
+      if (math !== undefined) return math;
       refuse(
         `${scope.selfName} reads a property`,
         "a lowered body is MeTTa, and MeTTa has no property access; mention an atom as S.name or V.name, take a value apart with carAtom, or run the body as an op",
@@ -983,6 +1017,17 @@ function arrayMethod(
   const walked = lowerExpression(member.object, bindings, scope);
   const leading = init === undefined ? [walked] : [walked, lowerExpression(init, bindings, scope)];
   if (callback.type !== "ArrowFunctionExpression") {
+    // JavaScript hands a callback the index and the array too, which a Math
+    // function ignores only past its own arity: [2, 3].map(Math.pow) is
+    // [2 ** 0, 3 ** 1], where the engine's walk hands over the element alone.
+    const math = mathMember(callback, bindings);
+    const arity = math === undefined ? undefined : mathArity(math);
+    if (arity !== undefined && arity !== walk.binds) {
+      refuse(
+        `${scope.selfName} hands Math.${String(math)}, which takes ${String(arity)}, to ${name}`,
+        `${walk.head} passes ${String(walk.binds)} and JavaScript's ${name} passes the index too; write the arrow that says which, (x) => Math.${String(math)}(...)`,
+      );
+    }
     return expr(sym(walk.head), ...leading, lowerExpression(callback, bindings, scope));
   }
   const { binders, body } = lowerArrow(callback, bindings, scope);
@@ -993,6 +1038,169 @@ function arrayMethod(
     );
   }
   return expr(sym(walk.head), ...leading, ...binders, body);
+}
+
+/**
+ * What a call to one of `Math`'s functions means: the term its lowered
+ * arguments stand for, and how many it takes, `undefined` being any number.
+ */
+interface MathMeaning {
+  readonly arity: number | undefined;
+  readonly lower: (args: readonly Atom[]) => Atom;
+}
+
+// The Math functions whose engine head, the same name suffixed -math, has the
+// same meaning, each taking as many arguments as JavaScript declares for it.
+const MATH_HEADS = ["abs", "acos", "asin", "atan", "ceil", "cos", "exp", "floor", "pow", "sin", "sqrt", "tan", "trunc"] as const;
+
+/**
+ * The engine's math family read through `Math`'s names, each function in its
+ * JavaScript meaning.
+ *
+ * `Math.sqrt(x)` is `(sqrt-math x)`, and so for every name in MATH_HEADS.
+ * `Math.log` is the natural logarithm, `log-math` with Euler's number as its
+ * base. `Math.round` rounds a tie UP, so `Math.round(-2.5)` is -2 where
+ * `(round-math -2.5)` rounds away from zero to -3, and it lowers to the floor
+ * unless the fraction reaches a half. `Math.max` and `Math.min` fold the
+ * engine's binary `max` and `min` over any number of arguments, from
+ * JavaScript's identity for none. The rest of `Math` has no engine head and
+ * refuses. PyMeTTa's MATH_CALLABLE_MENTIONS is the same table over Python's
+ * math module [source: extensions/python/metta/_atoms/mentions.py:40-56 at
+ * wt-merge 49e2b250d].
+ */
+const MATH: Readonly<Record<string, MathMeaning>> = {
+  ...Object.fromEntries(
+    MATH_HEADS.map((name): [string, MathMeaning] => [
+      name,
+      { arity: Math[name].length, lower: (args) => expr(sym(`${name}-math`), ...args) },
+    ]),
+  ),
+  log: { arity: 1, lower: ([x]) => expr(sym("log-math"), toAtom(Math.E), x as Atom) },
+  round: { arity: 1, lower: ([x]) => roundHalfUp(x as Atom) },
+  max: { arity: undefined, lower: (args) => folded("max", args, -Infinity) },
+  min: { arity: undefined, lower: (args) => folded("min", args, Infinity) },
+};
+
+/**
+ * JavaScript's rounding: the floor, unless the fraction reaches a half.
+ *
+ * `x - floor(x)` is exact in binary64, so the tie test is exact too, where
+ * `floor(x + 0.5)` rounds 0.49999999999999994 up to 1 because the addition
+ * itself rounds [source: ECMA-262 2025, 21.3.2.28 Math.round,
+ * https://tc39.es/ecma262/2025/#sec-math.round].
+ */
+function roundHalfUp(value: Atom): Atom {
+  return evaluatedOnce(value, (x) => {
+    const low = fresh("floor");
+    return expr(
+      sym("let"),
+      low,
+      expr(sym("floor-math"), x),
+      expr(sym("if"), expr(sym("<"), expr(sym("-"), x, low), toAtom(0.5)), low, expr(sym("ceil-math"), x)),
+    );
+  });
+}
+
+/** A binary head folded left over any number of arguments, from `identity` for none. */
+function folded(head: string, args: readonly Atom[], identity: number): Atom {
+  const [first, ...rest] = args;
+  if (first === undefined) return toAtom(identity);
+  return rest.reduce((acc, arg) => expr(sym(head), acc, arg), first);
+}
+
+/**
+ * `body` over `value` evaluated once.
+ *
+ * A term the body needs twice is bound to a fresh variable first when it is an
+ * expression, since evaluating it twice would run it twice and would square a
+ * nondeterministic one's answers; a variable or a literal is used as it is.
+ */
+function evaluatedOnce(value: Atom, body: (atom: Atom) => Atom): Atom {
+  if (!(value instanceof Expression)) return body(value);
+  const bound = fresh("value");
+  return expr(sym("let"), bound, value, body(bound));
+}
+
+/** The name `Math.<name>` reads, when `node` is that and `Math` is the global one. */
+function mathMember(node: AcornExpression, bindings: Bindings): string | undefined {
+  if (node.type !== "MemberExpression" || bindings.has("Math")) return undefined;
+  const member = node as { object: AcornExpression; property: AcornExpression; computed: boolean };
+  if (member.object.type !== "Identifier" || (member.object as { name: string }).name !== "Math") return undefined;
+  return member.computed ? literalText(member.property) : (member.property as { name?: string }).name;
+}
+
+/** How many arguments a Math function the engine has takes, or undefined for none or any. */
+function mathArity(name: string): number | undefined {
+  return Object.hasOwn(MATH, name) ? (MATH[name] as MathMeaning).arity : undefined;
+}
+
+/** A call to one of Math's functions, or undefined when the callee is not one. */
+function mathCall(
+  call: { callee: AcornExpression; arguments: readonly AcornExpression[] },
+  bindings: Bindings,
+  scope: LowerScope,
+): Atom | undefined {
+  const name = mathMember(call.callee, bindings);
+  if (name === undefined) return undefined;
+  const meaning = mathMeaning(name, scope);
+  if (meaning.arity !== undefined && call.arguments.length !== meaning.arity) {
+    refuse(
+      `${scope.selfName} calls Math.${name} with ${String(call.arguments.length)} arguments`,
+      `Math.${name} takes ${String(meaning.arity)}`,
+    );
+  }
+  return meaning.lower(call.arguments.map((argument) => lowerExpression(argument, bindings, scope)));
+}
+
+/**
+ * `Math.<name>` read as a value, or undefined when `node` is not one.
+ *
+ * A number is its literal, `Math.PI` being the float. A function is the
+ * function: its head where the call is that head applied to the arguments in
+ * order, so `Math.abs` is `abs-math`, and otherwise the lambda over them, so
+ * `Math.round` carries its rounding with it. `Math.max` and `Math.min` refuse
+ * as values, since a caller hands them however many arguments it likes and
+ * no one arity is theirs.
+ */
+function mathValue(node: AcornExpression, bindings: Bindings, scope: LowerScope): Atom | undefined {
+  const name = mathMember(node, bindings);
+  if (name === undefined) return undefined;
+  const constant: unknown = (Math as unknown as Readonly<Record<string, unknown>>)[name];
+  if (typeof constant === "number") return toAtom(constant);
+  const meaning = mathMeaning(name, scope);
+  if (meaning.arity === undefined) {
+    refuse(
+      `${scope.selfName} passes Math.${name} as a value`,
+      `Math.${name} takes any number of arguments, so no one arity is its own; pass the arrow that says how many, (a, b) => Math.${name}(a, b)`,
+    );
+  }
+  const binders = Array.from({ length: meaning.arity }, () => fresh("x"));
+  const body = meaning.lower(binders);
+  const reduced =
+    body instanceof Expression &&
+    body.items.length === binders.length + 1 &&
+    binders.every((binder, at) => body.items[at + 1] === binder);
+  return reduced ? (body.items[0] as Atom) : expr(sym("|->"), exprOf(binders), body);
+}
+
+/** The meaning of `Math.<name>`, refusing a name the engine has no head for. */
+function mathMeaning(name: string, scope: LowerScope): MathMeaning {
+  if (!Object.hasOwn(MATH, name)) {
+    refuse(
+      `${scope.selfName} reaches Math.${name}, which the engine has no head for`,
+      `the Math functions a lowered body can use are ${Object.keys(MATH).sort(byCodePoint).join(", ")}, and its numbers; register anything else with op`,
+    );
+  }
+  return MATH[name] as MathMeaning;
+}
+
+/** `-value` as one literal, when `value` is a number already written as one. */
+function negatedLiteral(value: Atom): Atom | undefined {
+  if (!(value instanceof Grounded)) return undefined;
+  const number: unknown = value.value;
+  if (typeof number === "bigint") return toAtom(-number);
+  if (typeof number !== "number") return undefined;
+  return value instanceof FloatAtom ? float(-number) : toAtom(-number);
 }
 
 /**

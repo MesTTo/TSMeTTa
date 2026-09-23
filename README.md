@@ -697,6 +697,32 @@ String(await m.eval([twice, 21]).one()); // "42"
 String(await m.eval(fn.forall(fn.superpose([1, 3]), m.lambda((v: number) => v < 2))).one()); // "false"
 ```
 
+`Math`'s functions keep their JavaScript meaning on the engine's own math
+heads. `Math.abs(a - b) < 2` is `(< (abs-math (- $a $b)) 2)`, and so for the
+twelve others with a head of the same name, `acos` to `trunc`. `Math.log(x)`
+is the natural logarithm, `(log-math e x)`. `Math.round` rounds a tie up, as
+JavaScript does, where the engine's `round-math` rounds it away from zero, so
+it lowers to the floor unless the fraction reaches a half: `Math.round(-2.5)`
+is -2 in both. `Math.max` and `Math.min` fold `max` and `min` over their
+arguments, and `Math.PI`, `Infinity` and `NaN` are their numbers. A Math
+function passed as a value is its head, or its lambda where the call is more
+than a head. The answers are TypeScript's: exact where the result is
+determined, and within one ulp where the language leaves the function
+implementation-approximated, as it does `sin` and `log`. MeTTa's integers have
+one zero, so `Math.round(-0.5)` answers 0 where TypeScript answers -0.
+
+```ts
+const near = m.define(function near(a: number, b: number): boolean {
+  return Math.abs(a - b) < 2;
+});
+String(near.equations[0]); // "(= (near $a $b) (< (abs-math (- $a $b)) 2))"
+```
+
+A Math function the engine has no head for, such as `Math.sign`, refuses and
+names the ones that lower. So does one handed to `map`, `filter` or `reduce`
+whose arity is not what the walk passes, since JavaScript would hand it the
+index as well: `xs.map(Math.pow)` computes `x ** index`.
+
 A body reaches another definition by the name its function was written with.
 A head TypeScript cannot spell, such as `in`, a keyword there, is installed
 with `{ name }`, and a later body calling the function's own name lowers to

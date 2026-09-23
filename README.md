@@ -678,6 +678,12 @@ all the lowering reads, the factories and words are recognised by NAME: a local
 binding of the same name shadows them, and a renamed import
 (`import { S as Sym }`) is not one of them.
 
+An array's own walks are the engine's walks over an expression:
+`xs.map((x) => x + 1)` is `(map-atom $xs $x (+ $x 1))`, `xs.filter(isBig)` is
+`(filter-atom $xs is-big)`, and `xs.reduce((acc, x) => acc + x, 0)` is
+`(foldl-atom $xs 0 $acc $x (+ $acc $x))`, an arrow being the template and any
+other argument the function applied.
+
 An arrow function is MeTTa's lambda: `(v: number) => v < limit` in a body is
 `(|-> ($v) (< $v $limit))`, closing over the body's own names, and a binder
 that shadows one of them gets a fresh variable as JavaScript gives it a new

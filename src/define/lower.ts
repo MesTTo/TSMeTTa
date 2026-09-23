@@ -20,6 +20,10 @@
  *     names already registered with this engine, and an explicitly supplied
  *     scope; anything else refuses, which is what makes a minified build fail
  *     loudly instead of silently building the wrong term
+ *   - an array's own `map`, `filter` and `reduce` are the engine's
+ *     `map-atom`, `filter-atom` and `foldl-atom`, an arrow callback being the
+ *     template and any other argument the function applied [tested: "walks an
+ *     expression with an array's own map, filter and reduce"]
  *   - an arrow function is MeTTa's lambda, `(v) => v < 2` being
  *     `(|-> ($v) (< $v 2))`, and a binder that shadows a name of the body
  *     around it is a fresh variable, as JavaScript gives it a new binding
@@ -813,6 +817,9 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
       // A space's own method, on a space: this.add(atom), kb.match(p, t).
       const method = spaceMethod(call.callee, call.arguments.length, bindings, scope);
       if (method !== undefined) return expr(sym(method.head), method.space, ...args());
+      // An array's own walk over a term: xs.map(f), xs.filter(f), xs.reduce(f, init).
+      const walked = arrayMethod(call, bindings, scope);
+      if (walked !== undefined) return walked;
       if (call.callee.type !== "Identifier") {
         refuse(
           `${scope.selfName} calls something that is not a plain name`,
@@ -895,6 +902,16 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
  * `(= (f $x) (|-> ($x) ...))` would answer `(|-> (5) ...)` for `(f 5)`.
  */
 function lowerLambda(node: AcornExpression, bindings: Bindings, scope: LowerScope): Atom {
+  const { binders, body } = lowerArrow(node, bindings, scope);
+  return expr(sym("|->"), exprOf(binders), body);
+}
+
+/** An arrow's binders and body, each binder fresh where it shadows a name around it. */
+function lowerArrow(
+  node: AcornExpression,
+  bindings: Bindings,
+  scope: LowerScope,
+): { readonly binders: readonly Atom[]; readonly body: Atom } {
   const arrow = node as unknown as {
     async: boolean;
     params: readonly Pattern[];
@@ -910,8 +927,8 @@ function lowerLambda(node: AcornExpression, bindings: Bindings, scope: LowerScop
   const binders = arrow.params.map((param) => {
     if (param.type !== "Identifier") {
       refuse(
-        `a lambda in ${scope.selfName} takes a ${param.type}`,
-        "name each parameter: a MeTTa lambda binds variables",
+        `an arrow in ${scope.selfName} takes a ${param.type}`,
+        "name each parameter: a MeTTa lambda or template binds variables",
       );
     }
     const name = (param as { name: string }).name;
@@ -923,7 +940,59 @@ function lowerLambda(node: AcornExpression, bindings: Bindings, scope: LowerScop
     arrow.body.type === "BlockStatement"
       ? lowerBlock((arrow.body as BlockStatement).body, inner, scope)
       : lowerExpression(arrow.body as AcornExpression, inner, scope);
-  return expr(sym("|->"), exprOf(binders), body);
+  return { binders, body };
+}
+
+/**
+ * The array methods that are the engine's walks over an expression, with the
+ * number of values each one's callback binds.
+ *
+ * `xs.map((x) => x + 1)` is `(map-atom $xs $x (+ $x 1))`, the template form, and
+ * `xs.map(inc)` is `(map-atom $xs inc)`, the function form; `filter` is
+ * `filter-atom` the same two ways, and `reduce((acc, x) => ..., init)` is
+ * `(foldl-atom $xs init $acc $x ...)`, whose initial value leads as MeTTa writes
+ * it. A `reduce` without an initial value has no fold to be, since MeTTa's needs
+ * one.
+ */
+const ARRAY_METHODS: Readonly<Record<string, { readonly head: string; readonly binds: number }>> = {
+  map: { head: "map-atom", binds: 1 },
+  filter: { head: "filter-atom", binds: 1 },
+  reduce: { head: "foldl-atom", binds: 2 },
+};
+
+function arrayMethod(
+  call: { callee: AcornExpression; arguments: readonly AcornExpression[] },
+  bindings: Bindings,
+  scope: LowerScope,
+): Atom | undefined {
+  if (call.callee.type !== "MemberExpression") return undefined;
+  const member = call.callee as { object: AcornExpression; property: { name?: string }; computed: boolean };
+  const name = member.computed ? undefined : member.property.name;
+  if (name === undefined || !Object.hasOwn(ARRAY_METHODS, name)) return undefined;
+  const walk = ARRAY_METHODS[name] as { readonly head: string; readonly binds: number };
+  const expected = name === "reduce" ? 2 : 1;
+  if (call.arguments.length !== expected) {
+    refuse(
+      `${scope.selfName} calls ${name} with ${String(call.arguments.length)} arguments`,
+      name === "reduce"
+        ? "reduce lowers to foldl-atom, which needs its initial value: xs.reduce((acc, x) => ..., init)"
+        : `${name} lowers to ${walk.head} and takes one function: xs.${name}((x) => ...)`,
+    );
+  }
+  const [callback, init] = call.arguments as readonly [AcornExpression, AcornExpression?];
+  const walked = lowerExpression(member.object, bindings, scope);
+  const leading = init === undefined ? [walked] : [walked, lowerExpression(init, bindings, scope)];
+  if (callback.type !== "ArrowFunctionExpression") {
+    return expr(sym(walk.head), ...leading, lowerExpression(callback, bindings, scope));
+  }
+  const { binders, body } = lowerArrow(callback, bindings, scope);
+  if (binders.length !== walk.binds) {
+    refuse(
+      `${scope.selfName}'s ${name} callback binds ${String(binders.length)} values`,
+      `${walk.head}'s template binds ${String(walk.binds)}: the ${walk.binds === 2 ? "accumulator and the element" : "element"}`,
+    );
+  }
+  return expr(sym(walk.head), ...leading, ...binders, body);
 }
 
 /**

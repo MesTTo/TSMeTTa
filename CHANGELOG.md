@@ -34,6 +34,12 @@ Open Obligations: None. -->
   `effectOf` and `disassemble` read a name string by the same rule. A name
   nothing defines yet refuses naming the mention door, `S.g(...)`, beside the
   ways to supply it.
+- An array's own `map`, `filter` and `reduce` in a lowered body are the
+  engine's `map-atom`, `filter-atom` and `foldl-atom`: `[1, 2, 3].map((x) => x
+  + 1)` lowers to `(map-atom (1 2 3) $x (+ $x 1))`, an arrow callback being the
+  template and a named function the function form, `xs.reduce(sum, 0)` to
+  `(foldl-atom $xs 0 sum)`. They refused as property reads. A `reduce` with no
+  initial value refuses, since MeTTa's fold needs one.
 - An arrow function in a lowered body is MeTTa's lambda: `(v) => v < limit`
   lowers to `(|-> ($v) (< $v $limit))`, closing over the body's own names,
   where it used to refuse as an ArrowFunctionExpression. A binder that shadows

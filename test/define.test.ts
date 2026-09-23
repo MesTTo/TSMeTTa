@@ -205,6 +205,34 @@ describe("a lowered body", () => {
     assert.equal(String(await hypotenuse(3, 4).one()), "25");
   });
 
+  it("walks an expression with an array's own map, filter and reduce", async () => {
+    function walkSum(a: number, b: number): number {
+      return a + b;
+    }
+    m.define(walkSum);
+    const walks = m.define(function walks(): Term {
+      return [
+        [1, 2, 3, 4].reduce((acc, x) => acc + x, 0),
+        [1, 2, 3].map((x) => x + 1),
+        [1, 2, 3, 4, 5].filter((x) => x > 3),
+        [1, 2, 3, 4].reduce(walkSum, 0),
+      ];
+    });
+    assert.equal(
+      String(walks.equations[0]),
+      "(= (walks) ((foldl-atom (1 2 3 4) 0 $acc $x (+ $acc $x)) (map-atom (1 2 3) $x (+ $x 1)) " +
+        "(filter-atom (1 2 3 4 5) $x (> $x 3)) (foldl-atom (1 2 3 4) 0 walk-sum)))",
+    );
+    assert.equal(String(await walks().one()), "(10 (2 3 4) (4 5) 10)");
+    assert.throws(
+      () =>
+        m.define(function noInitialValue(): number {
+          return [1, 2].reduce((a, b) => a + b);
+        }),
+      (error: MettaError) => error.code === "ERR_METTA_LOWER" && /initial value/.test(error.message),
+    );
+  });
+
   it("lowers the bitwise operators onto the bit- family, over unbounded integers", async () => {
     const bits = m.define(function bits(a: bigint, b: bigint): Term {
       return [a & b, a | b, a ^ b, ~a, a << 62n, a >> 1n];

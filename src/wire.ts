@@ -67,7 +67,6 @@ import {
   G,
   Grounded,
   Rational,
-  RationalAtom,
   SpaceHandle,
   Sym,
   Var,
@@ -690,6 +689,34 @@ function atomOfToken(tag: unknown, payload: unknown, context: DecodeContext): At
   }
 }
 
+/**
+ * An `n` payload that is no JavaScript number: an exact rational, which only
+ * this host's own engine transport carries, because it spells numbers as the
+ * engine's reader takes them; CODEC.md gives a rational no tag, so the
+ * portable transport refuses one as it refuses `o`.
+ *
+ * A function of its own so {@link encodeLeaf} stays inside TurboFan's
+ * inlining limit: written inline, this branch grew encodeLeaf past it, so
+ * toTransport called encodeLeaf rather than inlining it, and the portable
+ * round trip cost 38.8M more instructions over 50,000 trips [measured
+ * 2026-09-24: net loop instructions of benchmarks/cases.ts's wire-roundtrip
+ * term from a collected heap, min of 3, 2773.8M inline against 2735.0M
+ * without it; `--trace-turbo-inlining` lists encodeLeaf at 399 bytes and
+ * inlined before, absent after, and at 378 bytes and inlined with this].
+ */
+function encodeRational(payload: unknown, context: EncodeContext): Transport {
+  if (!(payload instanceof Rational)) {
+    throw wireError(`the n tag carries a number, not ${JSON.stringify(payload)}`);
+  }
+  if (context.hostValues === undefined) {
+    throw wireError(
+      `the portable wire has no spelling for the rational ${rationalText(payload)}; ` +
+        `only this host's own engine transport carries one`,
+    );
+  }
+  return ["n", payload];
+}
+
 /** One non-expression wire atom as the transport pair the engine reads. */
 function encodeLeaf(tag: unknown, payload: unknown, context: EncodeContext): Transport {
   switch (tag) {
@@ -701,24 +728,10 @@ function encodeLeaf(tag: unknown, payload: unknown, context: EncodeContext): Tra
       }
       return [tag, payload];
     case "n":
-      if (payload instanceof Rational) {
-        // CODEC.md gives a rational no tag, so only this host's own engine
-        // transport, which spells numbers as the engine's reader takes them,
-        // can carry one; the portable one refuses it as it refuses `o`.
-        if (context.hostValues === undefined) {
-          throw wireError(
-            `the portable wire has no spelling for the rational ${rationalText(payload)}; ` +
-              `only this host's own engine transport carries one`,
-          );
-        }
-        return ["n", payload];
-      }
-      if (typeof payload !== "number" && typeof payload !== "bigint") {
-        throw wireError(`the n tag carries a number, not ${JSON.stringify(payload)}`);
-      }
       // The VALUE, not a spelling of it. The engine transport asks for text
       // and gets it from its own two call sites in encodeEngine.
-      return ["n", payload];
+      if (typeof payload === "number" || typeof payload === "bigint") return ["n", payload];
+      return encodeRational(payload, context);
     case "b":
       if (typeof payload !== "boolean") {
         throw wireError(`the b tag carries a boolean, not ${JSON.stringify(payload)}`);
@@ -952,10 +965,12 @@ export function fromRoundTrip(input: WireTokens, output: unknown): Atom {
  * there is nothing else that could hold it.
  */
 function numberAtom(value: number | bigint | Rational): Atom {
-  if (value instanceof Rational) return G(value);
   if (typeof value === "number") return float(value);
-  const exact = BigInt(Number.MAX_SAFE_INTEGER);
-  return value >= -exact && value <= exact ? G(Number(value)) : G(value);
+  if (typeof value === "bigint") {
+    const exact = BigInt(Number.MAX_SAFE_INTEGER);
+    return value >= -exact && value <= exact ? G(Number(value)) : G(value);
+  }
+  return G(value);
 }
 
 /** The surface atom a leaf wire atom names. */
@@ -1009,7 +1024,7 @@ function wireOfLeaf(atom: Atom): Wire {
   if (atom instanceof Sym) return ["s", atom.name];
   if (atom instanceof Var) return ["v", atom.name];
   if (atom instanceof SpaceHandle) return ["p", atom];
-  if (atom instanceof FloatAtom || atom instanceof RationalAtom) return ["n", atom.value];
+  if (atom instanceof FloatAtom) return ["n", atom.value];
   if (atom instanceof Grounded) {
     const value: unknown = atom.value;
     switch (typeof value) {
@@ -1034,7 +1049,8 @@ function wireOfLeaf(atom: Atom): Wire {
       case "boolean":
         return ["b", value];
       default:
-        return ["o", value];
+        // A rational atom's value, the only object a number atom holds.
+        return value instanceof Rational ? ["n", value] : ["o", value];
     }
   }
   throw wireError(`no wire tag for ${String(atom)}`);

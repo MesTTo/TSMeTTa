@@ -526,6 +526,11 @@ function primitiveKey(value: unknown): string | undefined {
   }
 }
 
+/** The one atom of an exact rational, by value. */
+function rationalAtom(value: Rational): RationalAtom {
+  return interned(`g r ${rationalText(value)}`, () => new RationalAtom(value));
+}
+
 // A live host value is interned by IDENTITY, which is what makes `G(x) === G(x)`
 // for one object and keeps the engine-side handle table one entry per object.
 const byReference = new WeakMap<WeakKey, Grounded>();
@@ -544,16 +549,15 @@ export function float(value: number): Grounded<number> {
 
 /** Lift a host value to an atom: `G(42)`, `G("text")`, `G(new Date())`. */
 export function G<T>(value: T): Grounded<T> {
-  // An exact rational is a NUMBER, interned by value as the others are, never
-  // a live host object the engine could only hold by reference.
-  if (value instanceof Rational) {
-    return interned(`g r ${rationalText(value)}`, () => new RationalAtom(value)) as unknown as Grounded<T>;
-  }
   const key = primitiveKey(value);
   if (key !== undefined) return interned(key, () => new Grounded(value)) as Grounded<T>;
   if (value === null || value === undefined) {
     return interned(`g z ${String(value)}`, () => new Grounded(value)) as Grounded<T>;
   }
+  // An exact rational is a NUMBER, interned by value as the others are, never
+  // a live host object the engine could only hold by reference. It is asked
+  // after the primitives, which no Rational is, so their path pays nothing.
+  if (value instanceof Rational) return rationalAtom(value) as unknown as Grounded<T>;
   const held = byReference.get(value as WeakKey);
   if (held !== undefined) return held as Grounded<T>;
   const made = new Grounded(value);

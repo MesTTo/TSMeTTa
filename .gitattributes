@@ -1,0 +1,4 @@
+# Purpose: tell git and GitHub which files here are not authored in this repository.
+# The WebAssembly host under _host/ is swipl-devel compiled by tools/wasm-host in
+# the superproject: third-party build output, vendored for the runtime.
+_host/** linguist-vendored

@@ -144,6 +144,11 @@ await m.eval(q).take(2).toArray();   // stop the generator after two
 - `column` `rows` `toTable`: read answers as a table
 - `stream` `timeout` `tap` `orThrow`: control and observe
 
+An answer set is a whole `Promise` of its answers, `catch` and `finally`
+included, that starts no work until something awaits it. So
+`await assert.rejects(m.eval(term), OperationError)` states a refusal, and
+`Promise.all([m.eval(a), m.eval(b)])` gathers two asks, with no wrapper.
+
 ## What is here
 
 ### Node and browsers

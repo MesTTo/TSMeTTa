@@ -29,7 +29,7 @@
  *   Future Enhancements: None
  */
 
-import { Answers } from "./answers.ts";
+import { Answers, PromiseFace } from "./answers.ts";
 import { MettaError } from "./errors.ts";
 import { showsAs } from "./present.ts";
 
@@ -319,17 +319,19 @@ showsAs(
  * const answers = await job;      // or job.cancel()
  * ```
  *
- * The handle is a promise, so it awaits like one, and it carries a `cancel`
- * the promise alone cannot: abandoning a promise leaves its work running,
- * where cancelling one stops the pull and closes the engine behind it.
+ * The handle is a promise, so it awaits, catches and finishes like one, and it
+ * carries a `cancel` the promise alone cannot: abandoning a promise leaves its
+ * work running, where cancelling one stops the pull and closes the engine
+ * behind it.
  */
-export class Task<T> implements PromiseLike<T[]>, Disposable {
+export class Task<T> extends PromiseFace<T[]> implements Disposable {
   readonly #controller = new AbortController();
   readonly #answers: Promise<T[]>;
   #settled = false;
 
   /** @internal Use {@link spawn}. */
   constructor(ask: Answers<T>) {
+    super();
     this.#answers = ask
       .until(this.#controller.signal)
       .toArray()
@@ -346,10 +348,10 @@ export class Task<T> implements PromiseLike<T[]>, Disposable {
     return this.#settled;
   }
 
-  then<R1 = T[], R2 = never>(
+  override then<R1 = T[], R2 = never>(
     onFulfilled?: ((value: T[]) => R1 | PromiseLike<R1>) | null,
     onRejected?: ((reason: unknown) => R2 | PromiseLike<R2>) | null,
-  ): PromiseLike<R1 | R2> {
+  ): Promise<R1 | R2> {
     return this.#answers.then(onFulfilled, onRejected);
   }
 
@@ -362,7 +364,7 @@ export class Task<T> implements PromiseLike<T[]>, Disposable {
     this.cancel();
   }
 
-  get [Symbol.toStringTag](): string {
+  override get [Symbol.toStringTag](): string {
     return "Task";
   }
 }

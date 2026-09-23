@@ -174,7 +174,8 @@ describe("coordination", () => {
 
     const cancelled = spawn(m.match(S.seed(V.n)));
     cancelled.cancel();
-    await assert.rejects(() => Promise.resolve(cancelled));
+    await assert.rejects(cancelled);
+    assert.equal(await cancelled.catch(() => "caught"), "caught", "a task catches like the promise it is");
   });
 });
 

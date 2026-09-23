@@ -106,7 +106,9 @@ module forms, and `kb.import(...)` imports into `kb`.
 
 ## Asking, lazily
 
-An answer set is a thenable and nothing runs until you await it:
+An answer set is a whole Promise of its answers (`then`, `catch`, `finally`)
+and nothing runs until you await it, so `assert.rejects(ans, ErrorClass)` and
+`Promise.all([...])` take it directly:
 
 ```ts
 const ans   = m.match(S.parent(V.x, S.bob));   // nothing has run yet

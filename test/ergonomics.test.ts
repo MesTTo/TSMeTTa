@@ -44,6 +44,30 @@ after(() => {
 });
 
 describe("the lazy answer helpers", () => {
+  it("is a promise of its answers, lazily, so catch, finally and assert.rejects take it", async () => {
+    let pulled = 0;
+    const lazy = answersOf("lazy", [1, 2]).tap(() => {
+      pulled += 1;
+    });
+    assert.equal(pulled, 0, "building the handle runs nothing");
+    let finished = false;
+    assert.deepEqual(
+      await lazy.finally(() => {
+        finished = true;
+      }),
+      [1, 2],
+    );
+    assert.ok(finished);
+    assert.equal(pulled, 2);
+
+    m.op(function refuses(): never {
+      throw new Error("refused");
+    });
+    await assert.rejects(m.eval(S.refuses()), /refused/);
+    assert.equal(await m.eval(S.refuses()).catch(() => "caught"), "caught");
+    assert.deepEqual(await Promise.all([answersOf("a", [1]), answersOf("b", [2, 3])]), [[1], [2, 3]]);
+  });
+
   it("reaches one answer by position without pulling the rest", async () => {
     let pulled = 0;
     const counted = answersOf("counted", [1, 2, 3, 4, 5]).tap(() => {

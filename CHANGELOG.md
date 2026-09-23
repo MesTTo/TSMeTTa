@@ -34,6 +34,12 @@ Open Obligations: None. -->
   `effectOf` and `disassemble` read a name string by the same rule. A name
   nothing defines yet refuses naming the mention door, `S.g(...)`, beside the
   ways to supply it.
+- An answer set and a spawned `Task` are whole Promises, `catch` and `finally`
+  included, through one abstract face, `PromiseFace`, whose `then` each
+  implements; they were `PromiseLike`, so `assert.rejects(m.eval(term), ...)`
+  threw ERR_INVALID_ARG_TYPE and a test had to wrap the ask in a function.
+  Nothing runs until something awaits, as before. Drizzle's QueryPromise is the
+  prior art.
 - A lowered body's `&&` and `||` lower to `and-then` and `or-else`, where they
   lowered to `and` and `or`. TypeScript's operators short-circuit, and so do
   those two special forms, while `and` and `or` are relations that evaluate

@@ -15,7 +15,10 @@
  *     work at all
  *   - `await ans` executes and collapses, which is where Drizzle and Kysely put
  *     execution and is the platform's own promise protocol rather than an
- *     invented `.all()`
+ *     invented `.all()`; an Answers is a whole `Promise`, `catch` and
+ *     `finally` included, so `assert.rejects(ans, ...)` and `Promise.all`
+ *     take it as they take a promise [tested: "is a promise of its answers,
+ *     lazily"]
  *   - leaving a `for await` early calls the iterator's `return()`, which closes
  *     the cursor and destroys the engine behind it, so an unbounded generator
  *     is safe to walk
@@ -190,6 +193,40 @@ function breathe(): Promise<void> {
 }
 
 /**
+ * A handle that IS a promise of `T` by delegating `then`, so `catch`,
+ * `finally`, `Promise.all` and `assert.rejects` take it as they take a
+ * promise, and work behind it starts no earlier than `then` starts it.
+ * Drizzle's QueryPromise is the same shape for the same reason, a query
+ * builder that awaits like its query [source: drizzle-orm
+ * drizzle-orm/src/query-promise.ts at ea42866cf64aa6748758458ba70d94c6fb71deca].
+ */
+export abstract class PromiseFace<T> implements Promise<T> {
+  abstract then<R1 = T, R2 = never>(
+    onFulfilled?: ((value: T) => R1 | PromiseLike<R1>) | null,
+    onRejected?: ((reason: unknown) => R2 | PromiseLike<R2>) | null,
+  ): Promise<R1 | R2>;
+
+  abstract get [Symbol.toStringTag](): string;
+
+  catch<R = never>(onRejected?: ((reason: unknown) => R | PromiseLike<R>) | null): Promise<T | R> {
+    return this.then(undefined, onRejected);
+  }
+
+  finally(onFinally?: (() => void) | null): Promise<T> {
+    return this.then(
+      (value) => {
+        onFinally?.();
+        return value;
+      },
+      (reason: unknown) => {
+        onFinally?.();
+        throw reason;
+      },
+    );
+  }
+}
+
+/**
  * The answers to one ask: a description first, a stream second, a set third.
  *
  * ```ts
@@ -200,7 +237,7 @@ function breathe(): Promise<void> {
  * const maybe = (await ans.find()) ?? S.none;  // at most one
  * ```
  */
-export class Answers<T> implements AsyncIterable<T>, PromiseLike<T[]> {
+export class Answers<T> extends PromiseFace<T[]> implements AsyncIterable<T> {
   /** How this ask reads, for a console that must not consume it to print it. */
   readonly description: string;
 
@@ -222,6 +259,7 @@ export class Answers<T> implements AsyncIterable<T>, PromiseLike<T[]> {
     signal?: AbortSignal,
     plan?: Plan,
   ) {
+    super();
     this.description = description;
     this.#open = open;
     this.#signal = signal;
@@ -259,12 +297,12 @@ export class Answers<T> implements AsyncIterable<T>, PromiseLike<T[]> {
     return withSignal(source, this.#signal)[Symbol.asyncIterator]();
   }
 
-  get [Symbol.toStringTag](): string {
+  override get [Symbol.toStringTag](): string {
     return "Answers";
   }
 
   /** A lazy ask prints as the ask it is, never as a half-consumed object. */
-  toString(): string {
+  override toString(): string {
     return `Answers(${this.description})`;
   }
 
@@ -276,10 +314,10 @@ export class Answers<T> implements AsyncIterable<T>, PromiseLike<T[]> {
    * lazy handle does not survive an async return. Say `return { ans }` or
    * hand it back from a synchronous function when the laziness is the point.
    */
-  then<R1 = T[], R2 = never>(
+  override then<R1 = T[], R2 = never>(
     onFulfilled?: ((value: T[]) => R1 | PromiseLike<R1>) | null,
     onRejected?: ((reason: unknown) => R2 | PromiseLike<R2>) | null,
-  ): PromiseLike<R1 | R2> {
+  ): Promise<R1 | R2> {
     return this.toArray().then(onFulfilled, onRejected);
   }
 

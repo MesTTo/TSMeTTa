@@ -43,7 +43,7 @@
  *     atoms, read by the engine's own classifier, undefined where the form has
  *     no such part and empty bags where the answers only differ in order
  *     [tested: "hands a harness the parts of a failed assertion as atoms";
- *     commit=PENDING]
+ *     commit=c8ce18f24ac8192e77ddc1f173f3c5229cf58345]
  *   - a reduction that failed across several nondeterministic branches raises
  *     the platform's own `AggregateError` with one `cause`-chained entry per
  *     branch, rather than an error shape invented here

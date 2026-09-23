@@ -1,7 +1,7 @@
 /**
  * Purpose: verify tensor dimensions and coordinates at the numeric boundary.
  * Guarantees: malformed coordinates never alias an element
- *   [tested: npm test; commit=WORKTREE].
+ *   [tested: npm test; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

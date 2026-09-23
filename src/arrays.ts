@@ -8,7 +8,7 @@
  *     in this runtime already produces, and it needs no protocol negotiation
  * Guarantees:
  *   - Tensor rejects nonintegral extents and coordinates before offset arithmetic
- *     [tested: test/tensor-boundary.test.ts; commit=WORKTREE]
+ *     [tested: test/tensor-boundary.test.ts; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9]
  *   - an array crosses and comes back as the VERY SAME object, so a reduction
  *     that passes one through has not copied a megabyte
  *     [tested: "crosses by reference, with identity"]

@@ -12,7 +12,7 @@
  *     protocol documented there
  * Guarantees:
  *   - asynchronous query completion waits for provider finalizers
- *     [tested: test/resource-table-boundary.test.ts; commit=WORKTREE].
+ *     [tested: test/resource-table-boundary.test.ts; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  *   - resource control can run outside ambient transaction and snapshot
  *     policies [tested: "opens and closes observations independently of speculative writes"; commit=94e5fc7eb685b895dde2878e7054332a0cb61c7d].
  *   - Node and browser boot share the job and wire implementation

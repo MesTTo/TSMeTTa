@@ -9,7 +9,7 @@
  *     [source: ai-typescript-design.md move 4, the ArkType isomorphism law]
  * Guarantees:
  *   - parseType preserves type variables and Schema.S checks declared arities
- *     [tested: test/schema-boundary.test.ts; commit=WORKTREE]
+ *     [tested: test/schema-boundary.test.ts; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9]
  *   - one writing, three realms: the TypeScript type, the runtime term, and
  *     the engine-side declaration all derive from the same object literal
  *   - a declared name is typed exactly on the schema's own factory, and an

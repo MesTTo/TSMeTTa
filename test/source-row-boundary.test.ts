@@ -1,7 +1,7 @@
 /**
  * Purpose: compare typed source columns with the engine reader.
  * Guarantees: literal query columns exclude strings, comments and anonymous variables
- *   [tested: npm run typecheck and npm test; commit=WORKTREE].
+ *   [tested: npm run typecheck and npm test; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  * Owns resources: the runtime is disposed after the test.
  * Open Obligations:
  *   To Do: None

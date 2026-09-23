@@ -1,6 +1,6 @@
 /**
  * Purpose: check host prototype names as typed vocabulary entries.
- * Guarantees: named property calls construct atoms [tested: npm run typecheck and npm test; commit=WORKTREE].
+ * Guarantees: named property calls construct atoms [tested: npm run typecheck and npm test; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

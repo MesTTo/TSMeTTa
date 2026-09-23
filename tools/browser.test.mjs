@@ -3,7 +3,7 @@
  *   documentation site's runnable fences on top of it.
  * Guarantees:
  *   - an unreadable website worker receives a completed HTTP refusal
- *     [tested: node tools/browser.test.mjs; commit=WORKTREE].
+ *     [tested: node tools/browser.test.mjs; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  *   - boot, wire answers, host callbacks, matching and evaluation status run in
  *     a page, with worker boot checked separately
  *     [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]

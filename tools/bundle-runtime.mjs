@@ -26,7 +26,7 @@
  *
  * Guarantees:
  *   - linked engine and library roots are copied as files before npm packs them
- *     [tested: npm pack and standalone consumer boot; commit=WORKTREE]
+ *     [tested: npm pack and standalone consumer boot; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9]
  *   - build products are excluded by extension: a shipped `.qlf` shadows the
  *     source it was built from and ties the package to one SWI version, and a
  *     host `.so` is meaningless to a WebAssembly engine

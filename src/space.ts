@@ -10,7 +10,7 @@
  *     [measured 2026-08-27; quote operand return rechecked 2026-08-30]
  * Guarantees:
  *   - awaited iterator return completes provider cleanup
- *     [tested: test/resource-table-boundary.test.ts; commit=WORKTREE].
+ *     [tested: test/resource-table-boundary.test.ts; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  *   - disposable identities and committed live queries retain engine ownership
  *     [tested: "maintains joined rows and one progress boundary for an atomic batch"; commit=94e5fc7eb685b895dde2878e7054332a0cb61c7d].
  *   - `add`, `delete`, `has`, `size` and `clear` mean what `Set` means by them,

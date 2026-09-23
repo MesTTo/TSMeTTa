@@ -2,7 +2,7 @@
  * Purpose: verify asynchronous resource release and table bridge equality.
  * Owns resources: the runtime and attached provider close after each test.
  * Guarantees: cleanup finishes before an awaited take returns, and repeated
- *   columns unify [tested: npm test; commit=WORKTREE].
+ *   columns unify [tested: npm test; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

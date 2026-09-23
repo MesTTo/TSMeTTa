@@ -9,7 +9,7 @@
  *     a row becomes the atom
  * Guarantees:
  *   - repeated columns unify and literal dollars remain constraints
- *     [tested: test/resource-table-boundary.test.ts; commit=WORKTREE].
+ *     [tested: test/resource-table-boundary.test.ts; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  *   - a schema is a SET of declarations the way a function is a set of
  *     equations, so a query answers the union of every shape that admits it,
  *     exactly as overlapping equations answer together

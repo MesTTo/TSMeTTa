@@ -9,7 +9,7 @@
  *     the bracket door and the call door both are.
  * Guarantees:
  *   - inherited host names have vocabulary types as well as vocabulary values
- *     [tested: test/factory-boundary.test.ts; commit=WORKTREE]
+ *     [tested: test/factory-boundary.test.ts; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9]
  *   - the attribute door and the call door mint the SAME atom for a name the
  *     map leaves alone, so `S.parent === S("parent")`
  *   - `S.then` is undefined and nothing else is, because a namespace that

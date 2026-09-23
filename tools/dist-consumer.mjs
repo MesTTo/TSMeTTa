@@ -7,7 +7,7 @@
  *   `dist/`, `browser/` and `_runtime/`.
  * Guarantees:
  *   - nested worktrees resolve the unpacked consumer package
- *     [tested: node tools/dist-consumer.mjs; commit=WORKTREE].
+ *     [tested: node tools/dist-consumer.mjs; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  *   - exits 0 having evaluated one program through the built library, reached
  *     from a directory that is NOT a checkout, and exits nonzero naming what
  *     failed otherwise [tested: extensions/node/check.sh node-dist]

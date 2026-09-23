@@ -9,7 +9,7 @@
  *     source, and the door is chosen by which one was written
  * Guarantees:
  *   - generator effects include nondeterministic delivery
- *     [tested: test/resource-table-boundary.test.ts; commit=WORKTREE].
+ *     [tested: test/resource-table-boundary.test.ts; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  *   - what `define` returns IS the callable, and calling it ASKS, so there is
  *     one call door rather than three
  *   - a definition costs ZERO host crossings per call: the whole body is in the

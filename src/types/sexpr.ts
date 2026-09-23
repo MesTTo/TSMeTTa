@@ -12,7 +12,7 @@
  *     gone before a type can read it
  * Guarantees:
  *   - quoted and commented dollars do not become query columns
- *     [tested: test/source-row-boundary.test.ts; commit=WORKTREE]
+ *     [tested: test/source-row-boundary.test.ts; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9]
  *   - `SourceRow<"(likes Ada $drink)">` is `{ drink: Atom }`, so destructuring
  *     a name the pattern does not bind is a compile error rather than an
  *     `undefined` at run time

@@ -7,7 +7,7 @@
  *     seed that produced it
  * Guarantees:
  *   - pattern instances and their shrinks preserve named-variable sharing
- *     [tested: test/resource-table-boundary.test.ts; commit=WORKTREE].
+ *     [tested: test/resource-table-boundary.test.ts; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  *   - the same seed produces the same atoms, on every platform and every run,
  *     because the source is an arithmetic generator here rather than
  *     `Math.random` [tested: "generates the same atoms from the same seed"]

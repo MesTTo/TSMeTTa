@@ -7,7 +7,7 @@
  *     here either builds a term or asks the engine one
  * Guarantees:
  *   - literal query columns and schema arities survive TypeScript inference
- *     [tested: test/source-row-boundary.test.ts and test/schema-boundary.test.ts; commit=WORKTREE].
+ *     [tested: test/source-row-boundary.test.ts and test/schema-boundary.test.ts; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  *   - prepared queries and disposable spaces share the native Space doors
  *     [tested: "refuses a prepared execution after its space was released"; commit=94e5fc7eb685b895dde2878e7054332a0cb61c7d].
  *   - browser evaluation uses the same surface as Node; host file paths refuse

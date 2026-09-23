@@ -1,7 +1,7 @@
 /**
  * Purpose: check polymorphic schema atoms and the declared factory arity.
  * Guarantees: runtime variables and TypeScript argument counts follow the declaration
- *   [tested: npm run typecheck and npm test; commit=WORKTREE].
+ *   [tested: npm run typecheck and npm test; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9].
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

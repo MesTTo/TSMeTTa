@@ -20,6 +20,11 @@ Open Obligations: None. -->
   "reads a property" or "calls something that is not a plain name". The word
   door's heads live in one table, `WORD_HEADS`, that the builders and the
   lowering both read.
+- A lowered body reads the word door's `caseOf(x).with(pattern, handler)`
+  chain as MeTTa's `case`, each handler's destructured names being its
+  pattern's variables, `.otherwise` the catch-all arm and `.end()` none; `_`
+  is the anonymous variable; and `match` and `atoms` read back on a parameter
+  or const declared as a `Space`.
 - `space.fn` and `m.fn` ASK the engine's functions: `m.fn.carAtom(x)` is
   `m.eval(fn.carAtom(x))`, spelled by the map `fn` uses, which is now one
   exported function, `fnHead`.

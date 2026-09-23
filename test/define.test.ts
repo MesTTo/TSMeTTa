@@ -24,9 +24,13 @@ import { strict as assert } from "node:assert";
 import { after, before, describe, it } from "node:test";
 
 import {
+  type Atom,
   Collapse,
   Empty,
   type Space,
+  _,
+  add,
+  caseOf,
   alphaEqual,
   Expression,
   G,
@@ -323,6 +327,44 @@ describe("a lowered body mentions", () => {
       return;
     });
     assert.deepEqual(await open(7), [UNIT]);
+  });
+
+  it("a caseOf chain as a case tower, its handlers reading the pattern's variables", async () => {
+    const len = m.define(function len(list: Term): Term {
+      return caseOf(list)
+        .with([], () => 0)
+        .with(S.cons(_, V.tail), ({ tail }) => add(len(tail), 1))
+        .end();
+    });
+    assert.ok(alphaEqual(
+      len.equations[0]!,
+      rewrite(S.len(V.list), S.case(V.list, [[[], 0], [S.cons(_, V.tail), S["+"](S.len(V.tail), 1)]])),
+    ));
+    assert.deepEqual(await len([1, 2, 3]), [toAtom(3)]);
+
+    const describe = m.define(function describe(value: Term): Term {
+      return caseOf(value)
+        .with(S.pair(V.left, V.right), ({ left: chosen }) => S.picked(chosen))
+        .otherwise(() => {
+          const fallback = S.other;
+          return fallback;
+        });
+    });
+    assert.deepEqual(await describe(S.pair(1, 2)), [S.picked(1)]);
+    assert.deepEqual(await describe(S.lone), [S.other.atom]);
+  });
+
+  it("a space's methods on a parameter the program declares as a space", async () => {
+    const first = m.define(function firstOf(space: Space, pattern: Atom): Term {
+      return fn.once(space.match(pattern, pattern));
+    });
+    assert.ok(alphaEqual(
+      first.equations[0]!,
+      rewrite(S.firstOf(V.space, V.pattern), S.once(S.match(V.space, V.pattern, V.pattern))),
+    ));
+    const kb = m.space(S.lowerFirst);
+    kb.add(S.item(1), S.item(2));
+    assert.deepEqual(await first(kb, S.item(V.n)), [S.item(1)]);
   });
 
   it("this as the space the definition lives in, and that space's own methods", async () => {

@@ -250,13 +250,18 @@ function spaceMethod(
   const member = callee as { object: AcornExpression; property: { name?: string }; computed: boolean };
   if (member.computed || member.property.name === undefined) return undefined;
   const receiver = member.object;
+  const name = receiver.type === "Identifier" ? (receiver as { name: string }).name : undefined;
+  // A space is `this`, a space handed in through the scope, or a parameter or
+  // const the program declares as one: the method name is the one on `Space`,
+  // and TypeScript's checker is what holds the declared type to it.
   const isSpace =
     receiver.type === "ThisExpression" ||
-    (receiver.type === "Identifier" &&
-      !bindings.has((receiver as { name: string }).name) &&
+    (name !== undefined && bindings.has(name) && Object.hasOwn(SPACE_METHODS, member.property.name)) ||
+    (name !== undefined &&
+      !bindings.has(name) &&
       scope.scope !== undefined &&
-      Object.hasOwn(scope.scope, (receiver as { name: string }).name) &&
-      toAtom(scope.scope[(receiver as { name: string }).name] as Term) instanceof SpaceHandle);
+      Object.hasOwn(scope.scope, name) &&
+      toAtom(scope.scope[name] as Term) instanceof SpaceHandle);
   if (!isSpace) return undefined;
   const method = SPACE_METHODS[member.property.name];
   if (method === undefined || method.arity !== arity) {
@@ -266,6 +271,86 @@ function spaceMethod(
     );
   }
   return { head: method.head, space: lowerExpression(receiver, bindings, scope) };
+}
+
+/**
+ * A `caseOf(subject).with(pattern, handler)...` chain as MeTTa's `case`, the
+ * term `CaseBuilder` builds at run time, read here from the source.
+ *
+ * A handler's destructured names are the pattern's variables, `({ b }) => ...`
+ * reading `$b`, and its body is lowered like any other; `.otherwise(handler)`
+ * is the catch-all arm and `.end()` closes with none, where an unmatched
+ * subject answers nothing, as `case` itself does.
+ */
+function caseTower(node: AcornExpression, bindings: Bindings, scope: LowerScope): Atom | undefined {
+  const arms: { pattern: Atom; handler: AcornExpression }[] = [];
+  // How the chain closes: `.otherwise(handler)` adds the catch-all arm, `.end()`
+  // adds none. An unclosed chain is a builder, not a term, so it is not one.
+  let closing: { readonly otherwise?: AcornExpression } | undefined;
+  let at: AcornExpression = node;
+  for (;;) {
+    if (at.type !== "CallExpression") return undefined;
+    const call = at as { callee: AcornExpression; arguments: readonly AcornExpression[] };
+    if (call.callee.type === "Identifier") {
+      if ((call.callee as { name: string }).name !== "caseOf" || bindings.has("caseOf")) return undefined;
+      if (closing === undefined || call.arguments.length !== 1) return undefined;
+      const subject = lowerExpression(call.arguments[0] as AcornExpression, bindings, scope);
+      const lowered = arms.reverse().map(({ pattern, handler }) => expr(pattern, lowerHandler(handler, bindings, scope)));
+      if (closing.otherwise !== undefined) {
+        lowered.push(expr(variable("_"), lowerHandler(closing.otherwise, bindings, scope)));
+      }
+      return expr(sym("case"), subject, exprOf(lowered));
+    }
+    if (call.callee.type !== "MemberExpression") return undefined;
+    const member = call.callee as { object: AcornExpression; property: { name?: string }; computed: boolean };
+    const method = member.computed ? undefined : member.property.name;
+    if (method === "with" && call.arguments.length === 2 && closing !== undefined) {
+      arms.push({
+        pattern: lowerExpression(call.arguments[0] as AcornExpression, bindings, scope),
+        handler: call.arguments[1] as AcornExpression,
+      });
+    } else if (method === "otherwise" && call.arguments.length === 1 && closing === undefined) {
+      closing = { otherwise: call.arguments[0] as AcornExpression };
+    } else if (method === "end" && call.arguments.length === 0 && closing === undefined) {
+      closing = {};
+    } else {
+      return undefined;
+    }
+    at = member.object;
+  }
+}
+
+/** A case arm's handler: its destructured names bound to the pattern's variables, its body lowered. */
+function lowerHandler(handler: AcornExpression, bindings: Bindings, scope: LowerScope): Atom {
+  if (handler.type !== "ArrowFunctionExpression" && handler.type !== "FunctionExpression") {
+    refuse(
+      `an arm of a case in ${scope.selfName} is not a function`,
+      "each with(...) takes the pattern and a function of its bindings, ({ x }) => ...",
+    );
+  }
+  const written = handler as unknown as { params: readonly Pattern[]; body: AcornExpression | BlockStatement };
+  const inner = new Map(bindings);
+  const [bound] = written.params;
+  if (bound !== undefined) {
+    if (bound.type !== "ObjectPattern" || written.params.length > 1) {
+      refuse(
+        `an arm of a case in ${scope.selfName} takes its bindings as something other than one object pattern`,
+        "destructure the pattern's variables by name, ({ head, tail }) => ...",
+      );
+    }
+    for (const property of (bound as { properties: readonly { type: string; key: { name?: string }; value: Pattern }[] }).properties) {
+      if (property.type !== "Property" || property.key.name === undefined || property.value.type !== "Identifier") {
+        refuse(
+          `an arm of a case in ${scope.selfName} destructures something other than a variable name`,
+          "name each variable the pattern binds, ({ head, tail }) or ({ head: first })",
+        );
+      }
+      inner.set((property.value as { name: string }).name, variable(property.key.name));
+    }
+  }
+  return written.body.type === "BlockStatement"
+    ? lowerBlock((written.body as BlockStatement).body, inner, scope)
+    : lowerExpression(written.body as AcornExpression, inner, scope);
 }
 
 /** The bindings in force at one point of the walk: parameters, then `const`s. */
@@ -594,6 +679,8 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
       const name = (node as { name: string }).name;
       const bound = bindings.get(name);
       if (bound !== undefined) return bound;
+      // The factories' anonymous variable, fresh at every occurrence.
+      if (name === "_") return variable("_");
       if (Object.hasOwn(WORD_CONSTANTS, name)) return WORD_CONSTANTS[name] as Atom;
       return resolve(name, scope, "a value");
     }
@@ -670,6 +757,9 @@ function lowerExpression(node: AcornExpression, bindings: Bindings, scope: Lower
       // A mention used as a value: S("isPrime"), V("x"), fn("assertEqual").
       const exact = mentioned(node, bindings);
       if (exact !== undefined) return exact;
+      // The case tower, as the word door builds it: caseOf(x).with(p, f)....
+      const cased = caseTower(node, bindings, scope);
+      if (cased !== undefined) return cased;
       // A mention APPLIED: S.pair(a, b), fn.carAtom(x), S["x"](...), S("x")(...).
       const applied = mentioned(call.callee, bindings);
       if (applied !== undefined) return expr(applied, ...args());

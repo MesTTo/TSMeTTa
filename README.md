@@ -661,12 +661,32 @@ all the lowering reads, the factories and words are recognised by NAME: a local
 binding of the same name shadows them, and a renamed import
 (`import { S as Sym }`) is not one of them.
 
+A structural case is the word door's `caseOf` chain, which a body writes the
+way host code builds it: each handler destructures the variables its pattern
+binds, and `.otherwise` is the catch-all where `.end()` leaves none. A body
+typed in terms rather than numbers uses the word door's arithmetic, `add`, so
+the TypeScript checks what the engine will compute:
+
+```ts
+import { _, add, caseOf } from "tsmetta";
+
+const len = m.define(function len(list: Term): Term {
+  return caseOf(list)
+    .with([], () => 0)
+    .with(S.cons(_, V.tail), ({ tail }) => add(len(tail), 1))
+    .end();
+});
+String(await len([1, 2, 3]).one()); // "3"
+```
+
 `this` is the space the definition lives in, and a body says to it what host
 code says: `this.match(pattern, template)` queries and `this.atoms()` lists,
 the two host doors one MeTTa head performs exactly. A write names the engine's
 own operation, `fn.addAtom(this, atom)`, because the host `add` and `delete`
-doors are wider than any one head. A space the body reaches by closure is
-named in `{ scope }`, since the source is all the lowering reads. A statement
+doors are wider than any one head. The same two methods read back on a
+parameter or const the program declares as a `Space`, and a space the body
+reaches by closure is named in `{ scope }`, since the source is all the
+lowering reads. A statement
 run for its effect is MeTTa's `chain`, and running off the end answers the
 unit, `()`, as a TypeScript function without a return answers `undefined`:
 

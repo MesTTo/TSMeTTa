@@ -72,8 +72,11 @@ pattern `let`), `switch` (a `case`, `default` tried last), a statement run for
 its effect (`chain`), a bare `return;` or running off the end (the unit `()`)
 and recursion. `this` is the space the definition installs into:
 `this.match(p, t)` and `this.atoms()` lower to `match` and `get-atoms`, and a
-write names its head, `fn.addAtom(this, x)`; a space from `{ scope }` takes
-the same two methods. Atoms are mentioned as they are
+write names its head, `fn.addAtom(this, x)`; a parameter declared as a
+`Space` and a space from `{ scope }` take the same two methods. A structural
+case is `caseOf(x).with(pattern, ({ a }) => ...).otherwise(() => ...)` (or
+`.end()` for no catch-all), each handler destructuring its pattern's
+variables; `_` is the anonymous variable. Atoms are mentioned as they are
 built: `S.name`, `S.f(a, b)`, `S["x"]`, `S("exact")`, `V.x`, `fn.carAtom(x)`,
 `G("text")`, `float(2)`. Word-door functions (`If`, `Let`, `Collapse`,
 `Superpose`, `Quote`, `Empty`, `Match`, `carAtom`, `neg`, `e`, `nil`, the

@@ -582,6 +582,14 @@ when a matching atom lands, under the match's bindings; the managed heads are
 fires first, from a production system's own conflict-resolution vocabulary:
 declaration, recency, specificity, priority, user.
 
+`kb.preAdd(handler)` claims the space's pre-add hook: every write asks the
+handler, a definition or a name such as `S.guard`, and does what its verdict
+says, `Accept()`, `Accept(atom)`, `Refuse(words)` or `Drop()`.
+`kb.postAdd(handler)` reads the same verdicts against the atom that landed.
+The claim is made from the space the handler's equations went into. One
+handler holds a hook, and a second is refused naming both. The `ScopeHandle`
+the door answers undeclares the hook only while its handler still holds it.
+
 `saga(m, receiptSpace)` is the compensating-transaction journal. Declare
 `compensates(m, "charge", "refund")`, run steps with `await book.run(term)`,
 and `await book.rollback()` undoes them in reverse. A receipt is an ordinary

@@ -28,11 +28,14 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
 import {
+  Accept,
   type Atom,
   CUSTOM_MATCH,
   capabilitiesOf,
   type CustomMatch,
+  Drop,
   G,
+  Refuse,
   IMAGES,
   type MeTTa,
   S,
@@ -54,6 +57,7 @@ import {
   registerToken,
   registerType,
   repoRoot,
+  rewrite,
   spanOf,
   sym,
   tokens,
@@ -755,6 +759,88 @@ describe("a reaction, and which one fires first", () => {
     assert.throws(
       () => alarms.reacts(S.alert(V.w), S.insert(sym("&x"), S.y()), { priority: 1.5 }),
       /priority is a whole number/,
+    );
+  });
+});
+
+describe("a space's write hooks", () => {
+  it("claims a pre-add hook from the space its handler was defined in, and releases it at the end of a block", async () => {
+    // The engine runs a handler in the module current at its claim, so a
+    // handler whose equations went into another space answers its verdict only
+    // when the claim is made there; made from the pool it is a stuck state.
+    const home = m.space("&hookhome");
+    const pool = m.space("&hooked");
+    const judge = m.define(
+      function hookJudge(_atom: Term): Term {
+        return Refuse("the hooked pool says no");
+      },
+      { space: home },
+    );
+    {
+      using _claim = pool.preAdd(judge);
+      assert.throws(() => pool.add(S.x(1)), /&hooked refused \[x,1\]: the hooked pool says no/);
+    }
+    pool.add(S.x(2));
+    assert.deepEqual((await pool.atoms()).map(String), ["(x 2)"]);
+  });
+
+  it("claims for a rule set by its symbol, refuses a second claimant, and releases only its own claim", async () => {
+    const pool = m.space("&ruled");
+    m.rules(function* ruledJudge(x: Term) {
+      yield rewrite(S.ruledJudge(S.keep(x)), Accept());
+      yield rewrite(S.ruledJudge(S.swap(x)), Accept(S.swapped(x)));
+    });
+    const other = m.define(function otherJudge(_atom: Term): Term {
+      return Drop();
+    });
+    const claim = pool.preAdd(S.ruledJudge);
+    pool.add(S.keep(1), S.swap(2));
+    assert.deepEqual((await pool.atoms()).map(String), ["(keep 1)", "(swapped 2)"]);
+    assert.throws(
+      () => pool.preAdd(other),
+      /ruled-judge already claims the pre-add hook on &ruled and other-judge tried to claim it too/,
+    );
+    // The holder claiming again answers a second handle to the same claim.
+    const again = pool.preAdd(S.ruledJudge);
+    assert.throws(() => pool.preAdd(other), /ruled-judge already claims/);
+    // Freed through that second handle and claimed by another, the hook stays
+    // the new holder's when the first handle, never released, is released.
+    again.release();
+    const replaced = pool.preAdd(other);
+    claim.release();
+    pool.add(S.keep(3));
+    assert.equal((await pool.atoms()).length, 2, "other-judge still drops every write");
+    replaced.release();
+    pool.add(S.keep(3));
+    assert.equal((await pool.atoms()).length, 3);
+  });
+
+  it("claims a post-add hook, whose verdict reads the atom that landed", async () => {
+    const pool = m.space("&audited");
+    m.rules(function* auditJudge(x: Term) {
+      yield rewrite(S.auditJudge(S.draft(x)), Drop());
+      yield rewrite(S.auditJudge(S.raw(x)), Accept(S.cooked(x)));
+      yield rewrite(S.auditJudge(S.final(x)), Accept());
+    });
+    {
+      using _claim = pool.postAdd(S.auditJudge);
+      pool.add(S.draft(1), S.raw(2), S.final(3));
+      assert.deepEqual((await pool.atoms()).map(String).toSorted(), ["(cooked 2)", "(final 3)"]);
+    }
+    pool.add(S.draft(4));
+    assert.ok((await pool.atoms()).map(String).includes("(draft 4)"));
+  });
+
+  it("refuses a handler that does not take exactly one atom", () => {
+    const pool = m.space("&unhooked");
+    const pairJudge = m.define(function pairJudge(_a: Term, _b: Term): Term {
+      return Accept();
+    });
+    assert.throws(
+      () => pool.preAdd(pairJudge),
+      (error: unknown) =>
+        error instanceof TypeError &&
+        error.message === "a pre-add handler takes exactly one atom, and pair-judge takes 2",
     );
   });
 });

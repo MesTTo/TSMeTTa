@@ -42,6 +42,13 @@
  *   - concurrent takes return only after deleting an exact candidate; a loser
  *     retries [tested: "lets concurrent takes consume distinct matching atoms";
  *     commit=62369c406ca1afee026539a825fa2469c768d957]
+ *   - `preAdd` and `postAdd` claim a write hook from the space the handler's
+ *     equations went into, `Defined.space` for a definition and the engine's
+ *     self space for a name, and the handle they answer undeclares the hook
+ *     only while that handler still holds it [tested: "claims a pre-add hook
+ *     from the space its handler was defined in, and releases it at the end of
+ *     a block", "claims for a rule set by its symbol, refuses a second
+ *     claimant, and releases only its own claim"; commit=WORKTREE]
  * Decides: the collection verbs are SYNCHRONOUS. The transport is in process,
  *   so a synchronous twin genuinely exists, and the async-primary law asks for
  *   an async surface where the transport needs one rather than everywhere. The
@@ -99,7 +106,8 @@ import {
 import { showsAs } from "./present.ts";
 import { atomFromWire, wireFromAtom } from "./wire.ts";
 import { ScopeHandle } from "./scopes.ts";
-import { type Head, fnHead } from "./factories.ts";
+import type { Defined } from "./define/define.ts";
+import { type Head, type Name, fnHead } from "./factories.ts";
 import { type LibraryRef } from "./library.ts";
 import { resolvePath } from "./platform.ts";
 
@@ -608,6 +616,75 @@ export class Space implements Disposable {
       this.#claimed = true;
     }
     return declared;
+  }
+
+  /**
+   * Claim this space's pre-add hook: every write into the space first asks the
+   * handler about the incoming atom, and does what its verdict says.
+   *
+   * ```ts
+   * const guard = m.define(function guard(atom: Term): Term {
+   *   return caseOf(atom)
+   *     .with(S.secret(_), () => Refuse("no secrets in this pool"))
+   *     .otherwise(() => Accept());
+   * });
+   * {
+   *   using _ = pool.preAdd(guard);
+   *   pool.add(S.secret(1)); // throws "&pool refused [secret,1]: no secrets in this pool"
+   * }                        // released here, so the next write is direct
+   * ```
+   *
+   * The verdicts are `Accept()`, `Accept(atom)` for a transformed atom,
+   * `Refuse(words)` and `Drop()`. The claim is the engine's `declare-pre-add!`,
+   * made from the space the handler's equations went into, because the engine
+   * runs a handler in the module current at its claim: a defined callable's own
+   * space, and the engine's self space for a name such as `S.guard`, which is
+   * where `rules` puts a rule set by default. One handler holds the hook. Another is refused
+   * naming both, and the holder claiming again changes nothing. Releasing the
+   * answer undeclares the hook only while this handler still holds it.
+   */
+  preAdd(handler: Defined | Name | Sym): ScopeHandle {
+    return this.#claim("pre-add", handler);
+  }
+
+  /**
+   * Claim this space's post-add hook: the handler reads each atom after it has
+   * landed, and the same four verdicts keep it, replace it, remove it quietly,
+   * or undo the write and throw. The claim, where it is made, and its release
+   * are `preAdd`'s.
+   */
+  postAdd(handler: Defined | Name | Sym): ScopeHandle {
+    return this.#claim("post-add", handler);
+  }
+
+  /** Claim one of this space's write hooks for a handler of one atom. */
+  #claim(slot: "pre-add" | "post-add", handler: Defined | Name | Sym): ScopeHandle {
+    // Only a definition knows its arity and the space its equations went into.
+    const defined = "space" in handler ? handler : undefined;
+    if (defined !== undefined && defined.arity !== 1) {
+      throw new TypeError(
+        `a ${slot} handler takes exactly one atom, and ${defined.head} takes ${String(defined.arity)}`,
+      );
+    }
+    const head = handler instanceof Sym ? handler : handler.atom;
+    const home = defined === undefined ? "&self" : defined.space.reference;
+    const ask = (term: Atom): void => {
+      this.#command(["eval", this.#wire(term), home]).sync();
+    };
+    ask(expr(sym(`declare-${slot}!`), this.handle, head));
+    return new ScopeHandle(() => {
+      if (this.#released || this.#engine.closed) return;
+      // The claim's contract atom in &metta names its holder, so the undeclare
+      // runs only where that atom still names this handler.
+      ask(
+        expr(
+          sym("match"),
+          sym("&metta"),
+          expr(sym(slot), this.handle, head),
+          expr(sym(`undeclare-${slot}!`), this.handle),
+        ),
+      );
+    });
   }
 
   /**

@@ -533,6 +533,12 @@ await counter.settled();
 counter.state; // 1
 ```
 
+`space.preAdd(handler)` claims the space's write door for one handler of the
+incoming atom, which answers `Accept()`, `Accept(atom)`, `Refuse(words)` or
+`Drop()`. `space.postAdd(handler)` reads the same verdicts against the atom
+that landed. The handler is a definition or a name, one handler holds a hook,
+and `using` releases the claim at the end of a block.
+
 `space.reacts(pattern, operation)` publishes an engine reaction;
 `space.agenda(policy)` declares its ordering. `fold` accumulates host state.
 A finite `queueMax` makes an undrained queue fail loudly instead of losing

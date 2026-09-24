@@ -4,6 +4,17 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- `Space.preAdd(handler)` and `Space.postAdd(handler)` claim a space's write
+  hooks, the engine's `declare-pre-add!` and `declare-post-add!`. Each answers
+  a `ScopeHandle` whose release undeclares the hook while that handler still
+  holds it, so `using` scopes a hook as it scopes a space, and a handle never
+  frees a claim another handler made. The handler is a definition or a name
+  such as `S.guard`. The claim is made from the space the handler's equations
+  went into, which `Defined.space` now names, because the engine runs a
+  handler in the module current at its claim: a handler defined into another
+  space and claimed from the pool was a stuck state at every write. A handler
+  that does not take exactly one atom is a `TypeError`.
+
 - A host operation's failure reaches the outer call as the value it threw.
   One of this package's own errors, a `CastError` or a provider's
   `ProviderError`, is raised as itself, class, code and fields intact.

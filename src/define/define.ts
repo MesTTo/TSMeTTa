@@ -116,6 +116,11 @@ export interface Defined {
   readonly arity: number;
   /** The equations this definition put in the space, for a program that reads its own. */
   readonly equations: readonly Atom[];
+  /**
+   * The space the definition went into. Its equations are in scope in that
+   * space's module, which is where a hook claim naming it has to be made.
+   */
+  readonly space: Space;
   /** Remove the definition from the space it went into. */
   forget(): void;
 }
@@ -295,6 +300,7 @@ function callable(
     atom: symbol,
     arity,
     equations,
+    space,
     forget: (): void => {
       for (const equation of equations) space.delete(equation);
     },

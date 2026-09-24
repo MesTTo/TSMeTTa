@@ -25,7 +25,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { Expression, G, type MeTTa, S, type Space, V, arrow, metta, repoRoot, typeAtom } from "../src/index.ts";
+import {
+  Expression,
+  G,
+  type MeTTa,
+  PlatformCapabilityError,
+  S,
+  type Space,
+  V,
+  arrow,
+  metta,
+  repoRoot,
+  typeAtom,
+} from "../src/index.ts";
 import {
   TO_ATOM,
   build,
@@ -266,17 +278,19 @@ describe("linting", () => {
   });
 
   it("names a head this build declares and cannot run", async () => {
-    // The engine's standard library declares `py-atom`; the Python seat is what
-    // implements it, and a WebAssembly engine has no janus and so no seat. The
-    // call therefore answers ITSELF, which is a silent wrong answer rather than
-    // a refusal, and this is the rule that says so before anything runs.
+    // The engine's standard library declares `py-atom` as a door of the
+    // python capability; the Python seat is what implements it, and a
+    // WebAssembly engine has no janus and so no seat. The call refuses naming
+    // the capability, and this is the rule that says so before anything runs.
     const findings = await lint(m, '!(py-atom "1 + 1")', { rules: ["unimplemented-head"] });
     assert.equal(findings.length, 1, findings.map(String).join("; "));
     assert.match(findings[0]?.message ?? "", /^py-atom is declared \(-> Atom %Undefined%\)/);
-    assert.match(findings[0]?.message ?? "", /answers itself unreduced/);
-    // And the engine really does answer it unreduced, which is the condition
-    // the sentence above describes.
-    assert.deepEqual(m.run('!(py-atom "1 + 1")')[0]?.texts, ['(py-atom "1 + 1")']);
+    assert.match(findings[0]?.message ?? "", /door of the python capability/);
+    // And the engine really does refuse it, which is the condition the
+    // sentence above describes: a platform refusal, never the call answered
+    // back unreduced.
+    assert.throws(() => m.run('!(py-atom "1 + 1")'), (error: unknown) =>
+      error instanceof PlatformCapabilityError && /python capability/.test(error.message));
   });
 
   it("takes the more specific diagnosis over unknown-head", async () => {
@@ -338,7 +352,8 @@ describe("linting", () => {
       }
     }
     assert.deepEqual([...heads].sort(), [
-      "Kwargs", "py-atom", "py-call", "py-dict", "py-dot", "py-iter", "py-list", "py-tuple",
+      "Kwargs", "py-atom", "py-call", "py-dict", "py-dot", "py-iter", "py-iter-once", "py-list",
+      "py-tuple",
     ]);
   });
 });

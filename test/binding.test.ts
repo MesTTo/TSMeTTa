@@ -167,12 +167,17 @@ describe("boot", () => {
       // stronger than the census's own resolution check: a library whose
       // source is here and whose foreign half is not raises something other
       // than a missing source, and that escapes this catch and fails the test.
-      const verdict = m.engine.once(
-        `${specsOf(row.requires)}, ` +
-          "( forall(member(Spec, Specs), " +
-          "catch(census_probe:use_module(Spec), error(existence_error(source_sink, _), _), fail)) " +
-          "-> Loads = yes ; Loads = no )",
-      );
+      // A row the standard library declares rests on a SEAT, extension(Name),
+      // which is present when that seat loaded rather than when a library does.
+      const seat = /^extension\(([^)]+)\)$/.exec(row.requires)?.[1];
+      const verdict = seat !== undefined
+        ? m.engine.once("( metta_extension_loaded(Seat) -> Loads = yes ; Loads = no )", { Seat: seat })
+        : m.engine.once(
+          `${specsOf(row.requires)}, ` +
+            "( forall(member(Spec, Specs), " +
+            "catch(census_probe:use_module(Spec), error(existence_error(source_sink, _), _), fail)) " +
+            "-> Loads = yes ; Loads = no )",
+        );
       assert.equal(
         String(verdict["Loads"]) === "yes",
         row.present,
@@ -217,9 +222,13 @@ describe("boot", () => {
 
   it("names the libraries each absence needs, and what it costs", () => {
     for (const refusal of m.refusals) {
+      // A platform row names libraries; a row the standard library declares,
+      // such as python for the py-* doors, names the one seat that implements
+      // it, extension(Name).
       const read = m.engine.once(
         `${specsOf(refusal.requires)}, ` +
-          "( Specs \\== [], forall(member(Spec, Specs), Spec = library(_)) -> Named = yes ; Named = no )",
+          "( Specs \\== [], ( Specs = [extension(_)] ; forall(member(Spec, Specs), Spec = library(_)) ) " +
+          "-> Named = yes ; Named = no )",
       );
       assert.equal(String(read["Named"]), "yes", `${refusal.capability} requires ${refusal.requires}`);
       assert.ok(

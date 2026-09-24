@@ -16,21 +16,23 @@
  *     [tested: "an ok comment suppresses only its own rule"]
  *   - `unimplemented-head` names a call this BUILD cannot run and the five
  *     other rules cannot see: a head the engine declares with an arrow whose
- *     result is `%Undefined%` and that the engine cannot reduce here. Over the
- *     whole example corpus that is exactly eight heads, the seven `py-` doors
+ *     result is `%Undefined%` and that the engine cannot reduce here, or that
+ *     is a door of a capability this build lacks, which reduces only to the
+ *     platform refusal (metta_capability_door/2 against the census). Over the
+ *     whole example corpus that is exactly nine heads, the eight `py-` doors
  *     and `Kwargs`, and no constructor. `Error` is declared
  *     `(-> Atom Atom ErrorType)` and is equally unreducible: the arrow's RESULT
  *     is what tells a door with no implementation from a term that stands for
  *     itself, because a constructor names the type it builds and `%Undefined%`
  *     is the engine's own word for a result it cannot describe
- *     [tested: "names a head this build declares and cannot run",
+ *     [tested 2026-09-25T03:31:22+10:00: "names a head this build declares and cannot run",
  *     "says nothing about a constructor the engine declares",
  *     "says nothing about the arrow in a type declaration",
- *     "flags exactly the doors the corpus needs a host for"; commit=a8b50dae12518adb626bf2594258eeaaf4a7f76d]
+ *     "flags exactly the doors the corpus needs a host for"]
  * Decides: six rules, each one a question a reader would ask of the source
  *   anyway. It is not a type checker: the engine has one, and a linter that
  *   guessed at types would disagree with it. Five read the source alone;
- *   `unimplemented-head` asks the ENGINE two questions per head, because
+ *   `unimplemented-head` asks the ENGINE up to three questions per head, because
  *   whether a build implements a declared name is not in the text.
  * Open Obligations:
  *   To Do: None
@@ -237,6 +239,23 @@ export async function lint(
   // reduces a declaration lookup and `reducible` is the engine's own
   // `metta_reducible_head/2`.
   const where = options.space ?? surface.self;
+  // A door of a capability this build lacks reduces, to the platform refusal,
+  // so whether a call reduces no longer says whether it runs: the engine names
+  // the capability each declared door rests on (metta_capability_door/2) and
+  // its census says which are absent here. One read per distinct head.
+  const lacking = new Map<string, string | undefined>();
+  const absentCapability = (name: string): string | undefined => {
+    if (lacking.has(name)) return lacking.get(name);
+    const answer = surface.engine.once(
+      "( metta_capability_door(C, Door), metta_platform(C, absent, _, _) " +
+        "-> Capability = C ; Capability = none )",
+      { Door: name },
+    );
+    const capability = String(answer["Capability"]);
+    const found = capability === "none" ? undefined : capability;
+    lacking.set(name, found);
+    return found;
+  };
   const foreignHead = new Map<string, Atom | undefined>();
   const declaredElsewhere = (name: string): Atom | undefined => {
     const held = foreignHead.get(name);
@@ -279,13 +298,19 @@ export async function lint(
         const called = headOf(call) as Sym;
         if (defined.has(called.name) || declared.has(called.name)) continue;
         const declaration = declaredElsewhere(called.name);
-        if (declaration === undefined || surface.reducible(call, where)) continue;
+        if (declaration === undefined) continue;
+        const capability = absentCapability(called.name);
+        if (capability === undefined && surface.reducible(call, where)) continue;
         unimplemented.add(call);
         say(
           "unimplemented-head",
-          `${called.name} is declared ${declaration.text} and nothing in this build ` +
-            `implements it, so the call answers itself unreduced instead of running; ` +
-            `it needs a seat this build does not carry`,
+          capability === undefined
+            ? `${called.name} is declared ${declaration.text} and nothing in this build ` +
+                `implements it, so the call answers itself unreduced instead of running; ` +
+                `it needs a seat this build does not carry`
+            : `${called.name} is declared ${declaration.text} and is a door of the ` +
+                `${capability} capability, which this build does not have, so the call ` +
+                `refuses instead of running`,
         );
       }
     }

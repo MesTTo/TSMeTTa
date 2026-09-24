@@ -4,6 +4,19 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- The `py-*` doors refuse on this seat with a `PlatformCapabilityError`
+  naming the python capability, whose `requires` is `extension(python)`,
+  where each call used to answer itself unreduced:
+  `m.run('!(py-call (math.floor 2.5))')` throws, and
+  `!(if-error (catch (py-call (math.floor 2.5))) no yes)` answers `no`. The
+  engine's standard library declares which heads are the capability's doors,
+  so `m.refusals` lists python beside the platform's own capabilities. `lint`'s
+  `unimplemented-head` rule asks the engine for a door's capability as well as
+  whether the call reduces, since a refusing door reduces, and names the
+  capability: `py-atom is declared (-> Atom %Undefined%) and is a door of the
+  python capability, which this build does not have, so the call refuses
+  instead of running`. `py-iter-once` joins the heads it names.
+
 - lib_file's `exit!` ends the Node process with the status it asks for,
   inside `catch` or not, as its contract says and the Python seat's test
   holds. SWI's halt ends in Emscripten's `exit()`, which threw an

@@ -141,11 +141,12 @@ export interface RemoteRequest {
  * a last-wins policy because dropping the first value silently lets a peer
  * smuggle one value past a reader that saw the other.
  *
- * `JSON.parse` still does the parsing; a second pass over the same text finds
- * the keys, which is protobuf.js's shape for the same law
+ * `transportFromJson` does the parsing, with an explicit stack so a body of
+ * any depth reads; a second pass over the same text finds the keys, which is
+ * protobuf.js's shape for the same law
  * [source: protobufjs/protobuf.js ext/protojson.js, checkDuplicateKeys]. The
  * pass runs AFTER the parse, so it only ever walks text that is already valid
- * JSON and a malformed body keeps `JSON.parse`'s own syntax message.
+ * JSON and a malformed body is the parser's `SyntaxError`, naming the position.
  *
  * The MeTTa surface's `json-decode` is a DIFFERENT door with a different
  * ruling: it asks the same codec for shape(classic), which keeps both pairs

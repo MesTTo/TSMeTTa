@@ -4,6 +4,15 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- The portable transport's JSON doors, `transportToJson` and
+  `transportFromJson`, and with them the remote gateway's bodies, read and write
+  a term at any depth. They went through `JSON.stringify` and a `JSON.parse`
+  reviver, which recurse once per nesting level, so the stored atoms of a
+  program building a Peano number 2,500 deep could not be written; both now
+  walk with an explicit stack and answer what the two did, and a cycle is
+  refused rather than written forever. Malformed text is a `SyntaxError` naming
+  the position.
+
 - The engine's stack ceiling is derived from the host's memory instead of
   SWI's 1 GiB default. Once the engine and the bridge have loaded, boot sets
   half of what the memory can still grow to, about 2 GiB on build 9, whose

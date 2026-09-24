@@ -278,7 +278,7 @@ describe("the remote protocol", () => {
       ["3", 3],
     ];
     for (const [text, value] of kept) assert.deepEqual(readJson(text), value, text);
-    // Malformed text keeps JSON.parse's own message rather than gaining one.
+    // Malformed text is a SyntaxError, as JSON.parse's is.
     assert.throws(() => readJson('{"a":1'), SyntaxError);
   });
 

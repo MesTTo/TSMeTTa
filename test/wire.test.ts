@@ -56,9 +56,12 @@ import {
   space,
   sym,
   toTransport,
+  transportFromJson,
+  transportToJson,
   variable,
   wireFromAtom,
 } from "../src/index.ts";
+import { type Arbitrary, forAll } from "../src/testing.ts";
 
 /** `(f (f ... x ...))` `depth` deep, built bottom up so building it is not the test. */
 function deepAtom(depth: number, leaf: Atom = sym("x")): Atom {
@@ -393,6 +396,13 @@ describe("a term deeper than the JavaScript stack", () => {
     // itself a recursive walk and gives out at this depth: the assertion would
     // be the thing that could not read a term the codec now can.
     assert.equal(atomFromWire(toTransport(wireFromAtom(atom)) as never), atom);
+
+    // And its JSON text, both ways: the portable wire's last leg.
+    const text = transportToJson(transport);
+    // Each level is `["e",[["s","f"],` and `]]`, eighteen characters, round `["s","x"]`.
+    assert.equal(text.length, DEEP * 18 + 9);
+    assert.equal(atomFromWire(fromTransport(transportFromJson(text))), atom);
+    assert.equal(transportToJson(transportFromJson(text)), text);
   });
 
   it("renders one, so a deep answer can be read", () => {
@@ -408,6 +418,130 @@ describe("a term deeper than the JavaScript stack", () => {
     assert.ok(wide instanceof Expression);
     assert.equal(decodeEngine(encodeEngine(wide), {}), wide);
     assert.equal(atomFromWire(wireFromAtom(wide)), wide);
+  });
+});
+
+// The two JSON doors as they stood before 2026-09-24: JSON.stringify over a
+// copy holding each `n` payload as a raw literal, and JSON.parse with a
+// reviver reading each payload's source text. Both recurse once per nesting
+// level, which is why they were replaced, and they are the oracle here for
+// every document shallow enough for them to read.
+interface SourceJson {
+  rawJSON(text: string): unknown;
+  parse(text: string, reviver: (this: unknown, key: string, value: unknown, context?: { source?: string }) => unknown): unknown;
+}
+const oracleJson = JSON as unknown as SourceJson;
+
+function oracleWrite(document: unknown): string {
+  const copy = (value: unknown, payload: boolean): unknown => {
+    if (payload && (typeof value === "number" || typeof value === "bigint")) {
+      if (typeof value === "bigint") return oracleJson.rawJSON(value.toString());
+      if (!Number.isFinite(value)) throw new WireError("non-finite");
+      const text = Object.is(value, -0) ? "-0" : String(value);
+      return oracleJson.rawJSON(/[.e]/.test(text) ? text : `${text}.0`);
+    }
+    if (typeof value === "bigint") throw new WireError("a bigint outside an n payload");
+    if (typeof value !== "object" || value === null) return value;
+    if (Array.isArray(value)) {
+      const numeric = value.length === 2 && value[0] === "n";
+      return Array.from({ length: value.length }, (_, at) => copy(value[at], numeric && at === 1));
+    }
+    return Object.fromEntries(Object.entries(value).map(([key, member]) => [key, copy(member, false)]));
+  };
+  return JSON.stringify(copy(document, false));
+}
+
+function oracleRead(text: string): unknown {
+  return oracleJson.parse(text, function revive(this: unknown, key, held, context): unknown {
+    if (typeof held !== "number" || key !== "1" || !Array.isArray(this) || this[0] !== "n") return held;
+    const source = context?.source as string;
+    if (!/[.e]/i.test(source)) return BigInt(source);
+    const value = Number(source);
+    if (!Number.isFinite(value)) throw new WireError("out of range");
+    return value;
+  });
+}
+
+/** Every kind of member a document on this wire can hold, a few levels deep. */
+const documents: Arbitrary<unknown> = {
+  generate: (random, size): unknown => {
+    const KEYS = ["a", "b", "", "__proto__", "1", "10", "n", "\u00e9", "\n", "\"", "\u{1D400}"];
+    const STRINGS = ["", "s", "e", "n", "\\", "\"", "\u0000", "\t", "\u2028", "\u{1F600}", "\ud800"];
+    const leaf = (): unknown => {
+      switch (random.between(0, 9)) {
+        case 0: return null;
+        case 1: return random.between(0, 1) === 1;
+        case 2: return STRINGS[random.between(0, STRINGS.length - 1)];
+        case 3: return random.between(-1000, 1000);
+        case 4: return (random.next() - 0.5) * 10 ** random.between(-5, 20);
+        case 5: return ["n", BigInt(random.between(-1000, 1000)) * 10n ** BigInt(random.between(0, 30))];
+        case 6: return ["n", random.between(0, 1) === 1 ? -0 : (random.next() - 0.5) * 1e6];
+        case 7: return ["n", random.between(-5, 5)];
+        case 8: return undefined;
+        default: return ["s", STRINGS[random.between(0, STRINGS.length - 1)]];
+      }
+    };
+    const node = (depth: number): unknown => {
+      if (depth === 0 || random.between(0, 3) === 0) return leaf();
+      const width = random.between(0, 4);
+      if (random.between(0, 1) === 0) return Array.from({ length: width }, () => node(depth - 1));
+      const object: Record<string, unknown> = {};
+      for (let at = 0; at < width; at += 1) {
+        Object.defineProperty(object, KEYS[random.between(0, KEYS.length - 1)] as string, {
+          value: node(depth - 1), writable: true, enumerable: true, configurable: true,
+        });
+      }
+      return object;
+    };
+    return node(size + 2);
+  },
+};
+
+/** What a door answers or the class of what it raised. */
+function outcome(run: () => unknown): { readonly value?: unknown; readonly raised?: string } {
+  try {
+    return { value: run() };
+  } catch (error) {
+    return { raised: (error as Error).constructor.name };
+  }
+}
+
+describe("the transport's JSON text", () => {
+  it("writes and reads as the recursive doors did, over generated documents", () => {
+    const outcomes = forAll(documents, (document) => {
+      const written = outcome(() => transportToJson(document));
+      assert.deepStrictEqual(written, outcome(() => oracleWrite(document)));
+      if (typeof written.value !== "string") return true;
+      assert.deepStrictEqual(outcome(() => transportFromJson(written.value as string)), outcome(() => oracleRead(written.value as string)));
+      return true;
+    }, { runs: 400 });
+    assert.ok(outcomes.ok, outcomes.ok ? "" : `seed ${String(outcomes.seed)}: ${String(outcomes.error)}`);
+  });
+
+  it("refuses malformed text where JSON.parse does, and reads the rest as it does", () => {
+    const CUTS = ["{", "}", "[", "]", ",", ":", '"', "\\", " ", "0", "-", ".", "e", "t", "n", "x"];
+    const outcomes = forAll(documents, (document) => {
+      const text = oracleWrite(document);
+      if (typeof text !== "string") return true;
+      for (let trial = 0; trial < 8; trial += 1) {
+        const at = (text.length * trial) >> 3;
+        const cut = CUTS[(text.length + trial * 7) % CUTS.length] as string;
+        for (const variant of [text.slice(0, at), text.slice(0, at) + text.slice(at + 1), text.slice(0, at) + cut + text.slice(at)]) {
+          assert.deepStrictEqual(outcome(() => transportFromJson(variant)), outcome(() => oracleRead(variant)), variant);
+        }
+      }
+      return true;
+    }, { runs: 200 });
+    assert.ok(outcomes.ok, outcomes.ok ? "" : `seed ${String(outcomes.seed)}: ${String(outcomes.error)}`);
+  });
+
+  it("refuses a cycle rather than writing forever", () => {
+    const cycle: unknown[] = ["e"];
+    cycle.push(cycle);
+    assert.throws(() => transportToJson(cycle), TypeError);
+    // A value reached twice without a cycle is written twice, as JSON writes it.
+    const shared = ["s", "x"];
+    assert.equal(transportToJson(["e", [shared, shared]]), '["e",[["s","x"],["s","x"]]]');
   });
 });
 

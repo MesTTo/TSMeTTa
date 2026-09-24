@@ -36,9 +36,15 @@
  *     handle"]
  *   - NOTHING here recurses per nesting level: every walk carries its depth on
  *     an explicit worklist, so a term's depth costs heap and never the
- *     JavaScript call stack
+ *     JavaScript call stack, the portable transport's JSON text included
  *     [tested: carries a term a hundred thousand deep through every codec leg;
- *     commit=c530ccb8fb7d0a5b2aa53df6e9f981ada9f81be8]
+ *     commit=WORKTREE]
+ *   - transportToJson and transportFromJson write and read what JSON.stringify
+ *     and JSON.parse with the payload reviver did, malformed text included, and
+ *     refuse a cycle [tested: "writes and reads as the recursive doors did, over
+ *     generated documents", "refuses malformed text where JSON.parse does, and
+ *     reads the rest as it does", "refuses a cycle rather than writing forever";
+ *     commit=WORKTREE]
  *   - the engine path builds NO intermediate tree: {@link decodeEngine} reads
  *     the flat token list straight into atoms and {@link encodeEngine} writes
  *     atoms straight into tokens
@@ -277,37 +283,6 @@ function engineNumber(tag: string, payload: unknown): unknown {
 // The JSON serialisation of a transport document.
 
 /**
- * ECMAScript's JSON source-text access, which TypeScript 6.0 does not declare.
- *
- * `JSON.rawJSON` and the reviver's `context.source` are the proposal that
- * shipped in V8 12.4, so every Node this package's `engines` field admits has
- * them (>=22.18 carries V8 12.4). One cast rather than a `declare global`,
- * because augmenting `JSON` here would augment it for every consumer of this
- * package's declarations too.
- */
-interface RawJson {
-  readonly rawJSON: string;
-}
-interface SourceAwareJson {
-  rawJSON(text: string): RawJson;
-  parse(
-    text: string,
-    reviver: (
-      this: unknown,
-      key: string,
-      value: unknown,
-      context?: { readonly source?: string },
-    ) => unknown,
-  ): unknown;
-}
-const sourceJson = JSON as unknown as SourceAwareJson;
-
-/** Whether the reviver's holder and key are the payload half of an `n` pair. */
-function atNumberPayload(holder: unknown, key: string): boolean {
-  return key === "1" && Array.isArray(holder) && holder[0] === "n";
-}
-
-/**
  * A transport number as the JSON literal that reads back as the same value.
  *
  * An integer is its digits, exactly and at any width, which is what makes
@@ -334,113 +309,253 @@ function jsonNumberLiteral(value: number | bigint): string {
 /**
  * A document holding transport terms, as JSON text.
  *
- * `JSON.stringify` alone cannot write this wire: it writes the float 1.0 as
- * `1`, which is the same failure as rounding a wide integer with a different
- * cause [source: CODEC.md, "Number and BigInt are exact, or refused"].
- * `JSON.rawJSON` is ECMAScript's own answer and places a literal verbatim.
+ * `JSON.stringify` cannot write this wire, for two reasons. It writes the
+ * float 1.0 as `1`, the same failure as rounding a wide integer with a
+ * different cause [source: CODEC.md, "Number and BigInt are exact, or
+ * refused"], so each `n` payload is written as its own literal here. And it
+ * recurses once per nesting level, so a term a few thousand deep raised
+ * `Maximum call stack size exceeded` inside it [measured 2026-09-24: the
+ * stored atoms of 04-peanofast, `(num (S ... Z))` 2,500 deep, on tsmetta
+ * f9db4b5], where every other walk in this file takes a worklist. So the text
+ * is written here, depth first with an explicit stack, and a leaf is the only
+ * thing `JSON.stringify` still sees.
  *
- * The literals go into the STRUCTURE first rather than through a
- * `JSON.stringify` replacer, because a replacer cannot be trusted to see a
- * `bigint` at all: `JSON.stringify` asks each value for `toJSON` BEFORE it
- * calls the replacer, and booting this seat's engine installs
- * `BigInt.prototype.toJSON`, which answers the decimal string. Under a
- * replacer this gateway answered `["n", "1"]` for the integer 1, a string
- * where the grammar says a number, and the replacer was never reached
- * [measured 2026-09-05: `typeof BigInt.prototype.toJSON` is `undefined`
- * before `metta()` and `function` after it; tested: "writes a wide integer as
- * a JSON number after the engine has booted"]. Placing the literal depends on
- * nothing any library did to a prototype.
+ * A `bigint` anywhere OTHER than an `n` payload is refused: nothing in this
+ * protocol puts one there, and booting this seat's engine installs
+ * `BigInt.prototype.toJSON`, which answers the decimal string, so writing one
+ * would put a string where the grammar says a number [measured 2026-09-05:
+ * `typeof BigInt.prototype.toJSON` is `undefined` before `metta()` and
+ * `function` after it; tested: "writes a wide integer as a JSON number after
+ * the engine has booted"]. Everything else is written as `JSON.stringify`
+ * writes it: an object's own enumerable string-keyed members in order, a
+ * member holding `undefined`, a function or a symbol left out, such an array
+ * element written `null`, and a cycle refused with the same `TypeError`.
+ * Time: one step per value and per member. Space: one frame per open
+ * container, and the text.
  */
-export function transportToJson(value: unknown): string {
-  return JSON.stringify(literalised(value));
-}
-
-/** A container this walk copies rather than passes through. */
-function branching(value: unknown): value is unknown[] | Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-/** An empty copy of one container, for the walk to fill. */
-function shell(value: unknown[] | Record<string, unknown>): unknown[] | Record<string, unknown> {
-  return Array.isArray(value) ? new Array<unknown>(value.length) : {};
-}
-
-/**
- * A document with every `n` payload replaced by its own JSON literal.
- *
- * An explicit worklist rather than recursion, the same shape every other walk
- * in this file takes. A `bigint` anywhere OTHER than an `n` payload is
- * refused: nothing in this protocol puts one there, and letting it through
- * would hand it to `JSON.stringify`, where the engine's `toJSON` would turn
- * it into a string without saying so.
- */
-function literalised(root: unknown): unknown {
-  if (typeof root === "bigint") {
-    throw wireError("a bigint outside an n payload has no JSON spelling on this wire");
-  }
-  if (!branching(root)) return root;
-  const out = shell(root);
-  const work: [unknown[] | Record<string, unknown>, unknown[] | Record<string, unknown>][] = [
-    [root, out],
-  ];
-  while (work.length > 0) {
-    const [from, into] = work.pop() as [
-      unknown[] | Record<string, unknown>,
-      unknown[] | Record<string, unknown>,
-    ];
-    const numeric = Array.isArray(from) && from.length === 2 && from[0] === "n";
-    for (const [key, child] of Object.entries(from)) {
-      const target = into as Record<string, unknown>;
-      if (numeric && key === "1" && (typeof child === "number" || typeof child === "bigint")) {
-        target[key] = sourceJson.rawJSON(jsonNumberLiteral(child));
-        continue;
-      }
-      if (typeof child === "bigint") {
-        throw wireError("a bigint outside an n payload has no JSON spelling on this wire");
-      }
-      if (!branching(child)) {
-        target[key] = child;
-        continue;
-      }
-      const nested = shell(child);
-      target[key] = nested;
-      work.push([child, nested]);
+export function transportToJson(document: unknown): string {
+  const text: string[] = [];
+  const frames: WriteFrame[] = [];
+  const open = new Set<object>();
+  // Write one value where it stands, answering whether it had a spelling.
+  const write = (value: unknown, payload: boolean): boolean => {
+    if (payload && (typeof value === "number" || typeof value === "bigint")) {
+      text.push(jsonNumberLiteral(value));
+      return true;
+    }
+    if (typeof value === "bigint") {
+      throw wireError("a bigint outside an n payload has no JSON spelling on this wire");
+    }
+    if (typeof value !== "object" || value === null) {
+      const leaf = JSON.stringify(value) as string | undefined;
+      if (leaf === undefined) return false;
+      text.push(leaf);
+      return true;
+    }
+    if (open.has(value)) throw new TypeError("Converting circular structure to JSON");
+    open.add(value);
+    if (Array.isArray(value)) {
+      text.push("[");
+      frames.push({ node: value, members: undefined, payload: value.length === 2 && value[0] === "n", next: 0 });
+    } else {
+      text.push("{");
+      const members = Object.entries(value).filter(([, member]) => !unspelled(member));
+      frames.push({ node: value, members, payload: false, next: 0 });
+    }
+    return true;
+  };
+  if (!write(document, false)) return JSON.stringify(document) as string;
+  while (frames.length > 0) {
+    const frame = frames[frames.length - 1] as WriteFrame;
+    const length = frame.members === undefined ? (frame.node as readonly unknown[]).length : frame.members.length;
+    if (frame.next === length) {
+      text.push(frame.members === undefined ? "]" : "}");
+      open.delete(frame.node);
+      frames.pop();
+      continue;
+    }
+    const at = frame.next;
+    frame.next += 1;
+    if (at > 0) text.push(",");
+    if (frame.members === undefined) {
+      if (!write((frame.node as readonly unknown[])[at], frame.payload && at === 1)) text.push("null");
+    } else {
+      const [key, member] = frame.members[at] as [string, unknown];
+      text.push(JSON.stringify(key), ":");
+      write(member, false);
     }
   }
-  return out;
+  return text.join("");
+}
+
+/** A container being written: its members, and the next one to write. */
+interface WriteFrame {
+  readonly node: object;
+  /** An object's members that have a spelling; `undefined` for an array. */
+  readonly members: readonly (readonly [string, unknown])[] | undefined;
+  /** Whether this array is an `n` pair, whose second element is a number literal. */
+  readonly payload: boolean;
+  next: number;
+}
+
+/** A member `JSON.stringify` leaves out of an object. */
+function unspelled(value: unknown): boolean {
+  return value === undefined || typeof value === "function" || typeof value === "symbol";
 }
 
 /**
  * JSON text holding transport terms, as the document it spells.
  *
- * The inverse of {@link transportToJson}, and it needs the same help:
- * `JSON.parse` has one numeric kind, so `["n", 1]` and `["n", 1.0]` arrive
- * identical and `["n", 9007199254740993]` arrives rounded. The reviver's
- * `context.source` is the literal's own text, which is the mechanism CODEC.md
- * points at for exactly this, so an integer literal becomes a `bigint` and a
- * float literal a `number`, at any width and with no rounding anywhere.
+ * The inverse of {@link transportToJson}, and it needs the same help.
+ * `JSON.parse` has one numeric kind, so `["n", 1]` and `["n", 1.0]` would
+ * arrive identical and `["n", 9007199254740993]` rounded; here the second
+ * element of an array whose first is `"n"` keeps its literal's own text, so an
+ * integer literal becomes a `bigint` and a float literal a `number`, at any
+ * width and with no rounding anywhere, which is CODEC.md's rule. `JSON.parse`
+ * also applies a reviver once per nesting level, the recursion
+ * {@link transportToJson} names, so the text is read here with an explicit
+ * stack. Everything else reads as `JSON.parse` reads it: a string token is
+ * decoded by `JSON.parse` itself, a member is an own property even when its
+ * key is `__proto__`, and a repeated key keeps its last value; the remote
+ * gateway's `readJson` refuses one. Malformed text is a `SyntaxError` naming
+ * the position.
  *
  * A float literal that overflows to infinity is refused rather than becoming
  * one, which is what SWI's reader does with the same text
  * [measured 2026-09-05: metta._binding.json.loads('{"n":1e400}') refuses].
+ * Time: one step per character. Space: one frame per open container.
  */
 export function transportFromJson(text: string): unknown {
-  return sourceJson.parse(text, function revive(this: unknown, key, held, context): unknown {
-    if (typeof held !== "number" || !atNumberPayload(this, key)) return held;
-    const source = context?.source;
-    if (source === undefined) {
-      throw wireError(
-        `this runtime's JSON.parse does not expose a number's source text, so an ` +
-          `n payload cannot be read exactly; Node 22 and later do`,
-      );
+  let at = 0;
+  const fail = (what: string): never => {
+    throw new SyntaxError(`${what} in JSON at position ${String(at)}`);
+  };
+  const skip = (): void => {
+    while (at < text.length) {
+      const code = text.charCodeAt(at);
+      if (code !== 0x20 && code !== 0x0a && code !== 0x0d && code !== 0x09) return;
+      at += 1;
     }
-    if (!/[.e]/i.test(source)) return BigInt(source);
-    const held2 = Number(source);
-    if (!Number.isFinite(held2)) {
-      throw wireError(`the number ${source} is out of range for a float`);
+  };
+  // A string token, decoded by JSON.parse, which knows every escape.
+  const string = (): string => {
+    const from = at;
+    at += 1;
+    for (;;) {
+      if (at >= text.length) fail("Unterminated string");
+      const code = text.charCodeAt(at);
+      at += 1;
+      if (code === 0x22) break;
+      if (code === 0x5c) at += 1;
     }
-    return held2;
-  });
+    return JSON.parse(text.slice(from, at)) as string;
+  };
+  const key = (): string => {
+    skip();
+    if (text[at] !== '"') fail("Expected a property name");
+    const name = string();
+    skip();
+    if (text[at] !== ":") fail("Expected ':' after a property name");
+    at += 1;
+    return name;
+  };
+  const frames: ReadFrame[] = [];
+  for (;;) {
+    skip();
+    let value: unknown;
+    let literal: string | undefined;
+    const here = text[at];
+    if (here === "{" || here === "[") {
+      at += 1;
+      skip();
+      if (here === "{" && text[at] === "}") {
+        at += 1;
+        value = {};
+      } else if (here === "[" && text[at] === "]") {
+        at += 1;
+        value = [];
+      } else {
+        frames.push(here === "{" ? { object: {}, key: key() } : { items: [], payload: undefined });
+        continue;
+      }
+    } else if (here === '"') {
+      value = string();
+    } else if (here === "t" && text.startsWith("true", at)) {
+      at += 4;
+      value = true;
+    } else if (here === "f" && text.startsWith("false", at)) {
+      at += 5;
+      value = false;
+    } else if (here === "n" && text.startsWith("null", at)) {
+      at += 4;
+      value = null;
+    } else {
+      JSON_NUMBER.lastIndex = at;
+      const number = JSON_NUMBER.exec(text);
+      if (number === null) fail(at >= text.length ? "Unexpected end of JSON input" : "Unexpected token");
+      literal = (number as RegExpExecArray)[0];
+      at += literal.length;
+      value = Number(literal);
+    }
+    // Hand the value to the container it completes, closing every container
+    // whose end follows, until one takes another member or the text ends.
+    for (;;) {
+      const frame = frames[frames.length - 1];
+      if (frame === undefined) {
+        skip();
+        if (at < text.length) fail("Unexpected non-whitespace character after JSON");
+        return value;
+      }
+      if ("items" in frame) {
+        if (literal !== undefined && frame.items.length === 1 && frame.items[0] === "n") frame.payload = literal;
+        frame.items.push(value);
+        skip();
+        if (text[at] === ",") {
+          at += 1;
+          break;
+        }
+        if (text[at] !== "]") fail("Expected ',' or ']' after an array element");
+        at += 1;
+        frames.pop();
+        if (frame.payload !== undefined) frame.items[1] = exactNumber(frame.payload);
+        value = frame.items;
+      } else {
+        Object.defineProperty(frame.object, frame.key, {
+          value,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+        skip();
+        if (text[at] === ",") {
+          at += 1;
+          frame.key = key();
+          break;
+        }
+        if (text[at] !== "}") fail("Expected ',' or '}' after a property value");
+        at += 1;
+        frames.pop();
+        value = frame.object;
+      }
+      literal = undefined;
+    }
+  }
+}
+
+/** JSON's number grammar, anchored where the reader stands. */
+const JSON_NUMBER = /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
+
+/** A container being read. */
+type ReadFrame =
+  | { readonly items: unknown[]; payload: string | undefined }
+  | { readonly object: Record<string, unknown>; key: string };
+
+/** An `n` payload's literal as the number it spells: a `bigint` or a finite float. */
+function exactNumber(literal: string): number | bigint {
+  if (!/[.e]/i.test(literal)) return BigInt(literal);
+  const value = Number(literal);
+  if (!Number.isFinite(value)) throw wireError(`the number ${literal} is out of range for a float`);
+  return value;
 }
 
 // ---------------------------------------------------------------------------

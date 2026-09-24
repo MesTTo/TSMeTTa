@@ -4,6 +4,19 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- A host operation's failure reaches the outer call as the value it threw.
+  One of this package's own errors, a `CastError` or a provider's
+  `ProviderError`, is raised as itself, class, code and fields intact.
+  Anything else, an author's `RangeError` thrown, rejected or raised midway
+  through a generator, becomes the `cause` of the `EngineError` the call
+  raises. This is the policy PyMeTTa's boundary follows, where an author's
+  exception rides as `.original`. Both used to arrive as an `EngineError`
+  (`ERR_METTA_ENGINE`) holding only the thrown value's message, so a
+  provider's refusal could not be told from the engine's own. The bridge's
+  ball is now `metta_node_host_error(Message, Key)`. `Key` names the thrown
+  value, which the job keeps until it closes, and a MeTTa program that
+  catches the failure as data sees it as the second argument.
+
 - `checkCodec` names both sides' anonymous variables alike before comparing a
   term that carries one, so a codec that keeps `$_` as `$_`, which this
   package's own wire and JSON transport do, passes as the engine's round trip

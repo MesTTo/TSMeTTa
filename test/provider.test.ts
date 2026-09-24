@@ -31,6 +31,7 @@ import {
   Match,
   MettaError,
   type MeTTa,
+  ProviderError,
   S,
   type SpaceProvider,
   type Term,
@@ -244,9 +245,12 @@ describe("a space implemented in TypeScript", () => {
     const kb = m.attach(name, frozen);
     assert.deepEqual((await kb.atoms()).map(String), ["locked"]);
     assert.throws(() => kb.add(S.anything), (error: unknown) => {
-      assert.ok(error instanceof MettaError);
-      // The provider's own sentence reaches the caller, rather than a generic
+      // The provider's refusal reaches the caller as itself, the class and
+      // code this package gives a space implemented in TypeScript that
+      // refused, and in the provider's own sentence rather than a generic
       // "does not implement add".
+      assert.ok(error instanceof ProviderError);
+      assert.equal(error.code, "ERR_METTA_PROVIDER");
       assert.match(String(error), /published/);
       return true;
     });

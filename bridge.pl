@@ -7,6 +7,11 @@
 %   encoded term of four slots, each empty where the form carries none [tested:
 %   extensions/node/test/errors.test.ts, "hands a harness the parts of a failed
 %   assertion as atoms"; commit=c8ce18f24ac8192e77ddc1f173f3c5229cf58345].
+% Guarantees: a host operation's failure is the ball
+%   metta_node_host_error(Message, Key), and its refusal's Fields carry
+%   `host-error` Key, the key src/engine.ts's Job kept the thrown value under
+%   [tested: extensions/node/test/define.test.ts, "hands a host operation's own
+%   error back as itself or as the cause"; commit=WORKTREE].
 % Guarantees: metta_node_render/2 scopes message capture through
 %   metta_engine:metta_with_trailed/3
 %   [source: extensions/node/bridge.pl:metta_node_render/2; commit=40b71fc99571872ca5fc85cdaf7902b467166539].
@@ -228,12 +233,20 @@ metta_node_error(Ball, [error, Text, Kind, Fields, Ground, Remedy, Parts]) :-
     metta_node_render(Ball, Text),
     (   catch(metta_host_error_kind(Ball, Classified, Pairs), _, fail)
     ->  Kind = Classified,
-        metta_node_error_fields(Pairs, Fields)
+        metta_node_error_fields(Pairs, Found)
     ;   Kind = engine,
-        Fields = []
+        Found = []
     ),
+    metta_node_host_key_field(Ball, Found, Fields),
     metta_node_error_reading(Ball, Ground, Remedy),
     metta_node_assertion_parts(Kind, Ball, Parts).
+
+% A host operation's own failure names the key the host kept what it threw
+% under, as the field `host-error`, so the JavaScript side finds the very
+% object. Only a ball metta_node_host_throw/2 shaped carries one.
+metta_node_host_key_field(error(metta_node_host_error(_, Kept), _), Fields,
+                          ['host-error', Kept|Fields]) :- !.
+metta_node_host_key_field(_, Fields, Fields).
 
 % A failed assertion's four parts, read off the ball by the engine's own
 % classifier, the one the Python seat reads: the value produced (a test's
@@ -1786,7 +1799,7 @@ metta_node_dispatch_det(Name, Args, Result) :-
 metta_node_det_reply([ok, Wire], Names, Result) :- !,
     metta_node_decode(Wire, Names, _, Result).
 metta_node_det_reply([fail], _, _) :- !, fail.
-metta_node_det_reply([error, Text], _, _) :- !, metta_node_host_throw(Text).
+metta_node_det_reply([error, Text, Key], _, _) :- !, metta_node_host_throw(Text, Key).
 metta_node_det_reply(Reply, _, _) :-
     throw(error(metta_node_bad_reply(Reply),
                 context(metta_node_dispatch_det/3, 'the host answered nothing this side reads'))).
@@ -1806,7 +1819,7 @@ metta_node_many_reply([many, Wires], Names, Result) :- !,
 metta_node_many_reply([stream, Id], Names, Result) :- !,
     metta_node_pull(Id, Names, Result).
 metta_node_many_reply([fail], _, _) :- !, fail.
-metta_node_many_reply([error, Text], _, _) :- !, metta_node_host_throw(Text).
+metta_node_many_reply([error, Text, Key], _, _) :- !, metta_node_host_throw(Text, Key).
 metta_node_many_reply(Reply, _, _) :-
     throw(error(metta_node_bad_reply(Reply),
                 context(metta_node_dispatch_many/3, 'the host answered nothing this side reads'))).
@@ -1832,8 +1845,8 @@ metta_node_pull(Id, Names, Result) :-
     ->  metta_node_decode(Wire, Names, _, Result)
     ;   Reply = [done]
     ->  !, fail
-    ;   Reply = [error, Text]
-    ->  !, metta_node_host_throw(Text)
+    ;   Reply = [error, Text, Key]
+    ->  !, metta_node_host_throw(Text, Key)
     ;   !, throw(error(metta_node_bad_reply(Reply),
                        context(metta_node_pull/1,
                                'the host answered nothing this side reads')))
@@ -1878,13 +1891,22 @@ metta_node_yield(Request) :-
                                inside a transaction or speculate scope, and \c
                                engine_yield/1 cannot unwind through either')))).
 
-metta_node_host_throw(Text) :-
+% A host operation's failure carries the KEY the host kept the thrown value
+% under, beside the words, so the outer door can hand back the very object:
+% the host's own error class as itself, an author's error as the cause of the
+% engine's. The key rides in the formal term, where janus puts the live Python
+% exception in python_error(Class, Obj) for the Python seat to re-raise
+% [source: extensions/python/metta/_binding/transport_errors.pl,
+% metta_py_original_exception/2]. A program that catches the ball as MeTTa
+% data sees the key as the host's name for that one failure.
+metta_node_host_throw(Text, Key) :-
     metta_node_atom(Text, Message),
-    throw(error(metta_node_host_error(Message),
-                context(metta_node_host_throw/1, 'a host operation raised'))).
+    metta_node_atom(Key, Kept),
+    throw(error(metta_node_host_error(Message, Kept),
+                context(metta_node_host_throw/2, 'a host operation raised'))).
 
 :- multifile prolog:error_message//1.
-prolog:error_message(metta_node_host_error(Message)) -->
+prolog:error_message(metta_node_host_error(Message, _Kept)) -->
     [ 'the host operation raised: ~w'-[Message] ].
 prolog:error_message(metta_node_not_in_engine(_)) -->
     [ 'a host operation cannot answer here: the engine has no suspension \c

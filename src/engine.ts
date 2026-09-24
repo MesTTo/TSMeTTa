@@ -33,7 +33,12 @@
  *     "leaves an abandoned stream's remaining answers uncomputed";
  *     commit=ea2c1bde39a7b002b1e5948cf6c53bc469dac084]
  *   - a host operation is called from the middle of a reduction, may be async,
- *     and may answer lazily; its rejection becomes the engine's own error
+ *     and may answer lazily; what it throws, or rejects with, reaches the
+ *     outer call as itself when it is a MettaError and otherwise as the cause
+ *     of the EngineError raised there, the split PyMeTTa's _classify makes
+ *     [tested: "hands a host operation's own error back as itself or as the
+ *     cause", "refuses a capability the provider does not implement, in its
+ *     own words"; commit=WORKTREE]
  *   - nothing reaches the host's console unless boot() was asked for verbose:
  *     an engine error is raised here and a program's output is buffered
  *   - every number crosses exactly: a Prolog integer arrives as a bigint and
@@ -146,20 +151,38 @@ function refusal(
   outcome: readonly unknown[],
   decode: (tokens: unknown) => Atom,
   where?: string,
+  cause?: unknown,
 ): MettaError {
   const said = hostText(outcome[1]).trimEnd();
   const flat = (outcome[3] ?? []) as readonly unknown[];
   const fields: Record<string, string> = {};
   for (let at = 0; at + 1 < flat.length; at += 2) {
-    fields[hostText(flat[at])] = hostText(flat[at + 1]);
+    const name = hostText(flat[at]);
+    if (name !== HOST_KEY) fields[name] = hostText(flat[at + 1]);
   }
+  const carried = declared(outcome[4], outcome[5]);
   return engineError(
     where === undefined ? said : `${said}\n${where}`,
     hostText(outcome[2]),
     fields,
-    declared(outcome[4], outcome[5]),
+    cause === undefined ? carried : { ...carried, cause },
     assertionParts(outcome[6], decode),
   );
+}
+
+/**
+ * The refusal field naming the key a host operation's failure was kept under,
+ * which bridge.pl's metta_node_host_key_field/3 writes.
+ */
+const HOST_KEY = "host-error";
+
+/** The key a host operation's failure was kept under, where the refusal names one. */
+function hostKey(outcome: readonly unknown[]): string | undefined {
+  const flat = (outcome[3] ?? []) as readonly unknown[];
+  for (let at = 0; at + 1 < flat.length; at += 2) {
+    if (hostText(flat[at]) === HOST_KEY) return hostText(flat[at + 1]);
+  }
+  return undefined;
 }
 
 /**
@@ -452,6 +475,16 @@ export class Job {
   #pending = new Map<number, AsyncIterator<unknown> | Iterator<unknown>>();
   #nextStream = 1;
   #cleanup: Promise<void>[] = [];
+  // What each of this job's host operations threw, by the key its ball
+  // carries, so the outer door hands back the very value: one of this
+  // package's own errors as itself, anything else as the cause of the
+  // engine's error, the policy PyMeTTa's boundary follows [source:
+  // extensions/python/metta/_binding/runtime.py, _classify]. Dropped at close,
+  // since a failure a MeTTa program caught as data never reaches that door.
+  // [tested: "hands a host operation's own error back as itself or as the
+  // cause"; commit=WORKTREE]
+  #thrown = new Map<string, unknown>();
+  #nextThrown = 1;
 
   /** @internal */
   constructor(engine: Engine, command: Command, scopes: readonly Scope[]) {
@@ -598,6 +631,7 @@ export class Job {
     // holding a resource releases it rather than being dropped on the floor.
     for (const iterator of this.#pending.values()) this.#close(iterator);
     this.#pending.clear();
+    this.#thrown.clear();
     const channel = this.#channel;
     if (channel?.home === true) this.#engine.askEnded(channel.id, channel.finished);
     else if (channel !== null) this.#engine.rawStop(channel.id);
@@ -645,8 +679,11 @@ export class Job {
         return { done: true, event: null };
       }
       if (tag === "error") {
+        const key = hostKey(event);
+        const thrown = key === undefined ? undefined : this.#thrown.get(key);
         this.close();
-        throw refusal(event, (tokens) => this.#engine.decodeAtom(tokens));
+        if (thrown instanceof MettaError) throw thrown;
+        throw refusal(event, (tokens) => this.#engine.decodeAtom(tokens), undefined, thrown);
       }
       if (tag !== "call" && tag !== "pull") {
         return { done: true, event: this.#engine.decodeEvent(tag, event) };
@@ -660,6 +697,14 @@ export class Job {
     }
   }
 
+  /** The reply for a host operation that threw: its words, and the key it is kept under. */
+  #failed(error: unknown): readonly unknown[] {
+    const key = String(this.#nextThrown);
+    this.#nextThrown += 1;
+    this.#thrown.set(key, error);
+    return ["error", messageOf(error), key];
+  }
+
   /** What to post back for one host-operation call. */
   #callReply(event: readonly unknown[]): readonly unknown[] | Promise<readonly unknown[]> {
     const name = hostText(event[1]);
@@ -671,7 +716,7 @@ export class Job {
     try {
       op = this.#engine.operation(name, wires.length);
     } catch (error) {
-      return ["error", messageOf(error)];
+      return this.#failed(error);
     }
     const raw = op.kind === "raw_det" || op.kind === "raw_many";
     let answered: unknown;
@@ -681,7 +726,7 @@ export class Job {
       const args = wires.map((tokens) => this.#engine.decodeAtom(tokens));
       answered = op.run(raw ? args : args.map((atom) => unwrap(atom)));
     } catch (error) {
-      return ["error", messageOf(error)];
+      return this.#failed(error);
     } finally {
       // Restored rather than cleared, so an operation that reaches the engine
       // and is called back into leaves the outer call's space in place.
@@ -698,7 +743,7 @@ export class Job {
     if (isPromise(answered)) {
       return answered.then(
         (settled) => this.#reply(name, wires, settled, many, journal),
-        (error: unknown) => ["error", messageOf(error)] as readonly unknown[],
+        (error: unknown) => this.#failed(error),
       );
     }
     return this.#reply(name, wires, answered, many, journal);
@@ -717,7 +762,7 @@ export class Job {
       journal?.push({ name, args, result });
       return reply;
     } catch (error) {
-      return ["error", messageOf(error)];
+      return this.#failed(error);
     }
   }
 
@@ -748,14 +793,14 @@ export class Job {
       step = iterator.next() as IteratorResult<unknown> | Promise<IteratorResult<unknown>>;
     } catch (error) {
       this.#pending.delete(id);
-      return ["error", messageOf(error)];
+      return this.#failed(error);
     }
     if (isPromise(step)) {
       return step.then(
         (settled) => this.#step(id, settled),
         (error: unknown) => {
           this.#pending.delete(id);
-          return ["error", messageOf(error)] as readonly unknown[];
+          return this.#failed(error);
         },
       );
     }

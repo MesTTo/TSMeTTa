@@ -215,6 +215,12 @@ else is `EngineError`. A `limit` is `undefined` where a budget expired inside a
 nested query, which is the one case the engine cannot name the number. The list
 is `tests/data/error-kinds.json`, shared with the Python seat.
 
+A host operation's failure is the value it threw. A `MettaError` is raised at
+the outer call as itself. Anything else, thrown, rejected or raised by a
+generator midway, is the `cause` of the `EngineError` raised there. MeTTa code
+that catches the failure reads `(metta_node_host_error Message Key)` inside
+its `Error`, where `Key` names the thrown value until the job closes.
+
 Every refusal also carries `.ground` and `.remedy`, read off the engine's own
 `(refusal ...)` catalog row for its kind and rendered by the engine with this
 refusal's own fields in it: `error.remedy.title` is one line saying what to do

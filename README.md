@@ -391,6 +391,10 @@ Every value above is printed by `examples/subpaths-snippet.ts` and asserted in
 `test/gallery.test.ts`, so the page cannot show a call the package does not
 have or an answer it does not give.
 
+A host operation that throws one of these errors hands the outer call that
+very object. Anything else it throws, or a promise it returns rejects with,
+becomes the `cause` of the `EngineError` the outer call raises.
+
 ## Queries, joins and guards
 
 Shared variables join patterns. A guard is a MeTTa term evaluated under those

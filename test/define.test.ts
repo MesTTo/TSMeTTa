@@ -33,6 +33,8 @@ import {
   and,
   caseOf,
   alphaEqual,
+  CastError,
+  EngineError,
   Expression,
   G,
   If,
@@ -908,11 +910,54 @@ describe("a host operation", () => {
     );
   });
 
-  it("turns a rejection into the engine's own error", async () => {
+  it("turns a rejection into the engine's own error, with the thrown one as its cause", async () => {
+    const thrown = new Error("no");
     m.op(function angry(): number {
-      throw new Error("no");
+      throw thrown;
     });
-    await assert.rejects(() => m.eval(S.angry()).one(), /the host operation raised: no/);
+    await assert.rejects(
+      () => m.eval(S.angry()).one(),
+      (error: unknown) =>
+        error instanceof EngineError &&
+        /the host operation raised: no/.test(error.message) &&
+        error.cause === thrown,
+    );
+  });
+
+  it("hands a host operation's own error back as itself or as the cause", async () => {
+    // One of this package's own errors IS the reading, as PyMeTTa re-raises
+    // its own: the caller catches the very object, class and code intact.
+    const own = new CastError("not a count");
+    m.op(function refusesToCount(): number {
+      throw own;
+    });
+    await assert.rejects(() => m.eval(S.refusesToCount()).one(), (error: unknown) => error === own);
+    // An author's error, rejected late or thrown mid-stream, rides on the
+    // engine's error as its cause.
+    const late = new RangeError("too late");
+    m.op(async function rejectsLate(): Promise<number> {
+      await Promise.resolve();
+      throw late;
+    });
+    await assert.rejects(
+      () => m.eval(S.rejectsLate()).one(),
+      (error: unknown) => error instanceof EngineError && error.cause === late,
+    );
+    const midway = new RangeError("ran out");
+    m.op(
+      function* runsOut(): Generator<number> {
+        yield 1;
+        throw midway;
+      },
+      { effect: "pureStructural" },
+    );
+    await assert.rejects(
+      () => m.eval(S.runsOut()).toArray(),
+      (error: unknown) => error instanceof EngineError && error.cause === midway,
+    );
+    // A failure MeTTa catches is data, and reaches no door.
+    const caught = await m.eval(fn.catch(S.refusesToCount())).one();
+    assert.ok(caught instanceof Expression && String(caught.items[0]) === "Error");
   });
 
   it("hands a raw body the atoms, unevaluated structure and all", async () => {

@@ -25,7 +25,7 @@
  *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
  *   - a `Channel` is Disposable and disposing it closes it, as the Python
  *     seat's Channel closes from `__exit__` [tested: "closes when the block
- *     holding it ends"; commit=WORKTREE]
+ *     holding it ends"; commit=3d12d7a7074f6cae3ba09945ac8fac2b827b5ed4]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

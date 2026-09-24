@@ -45,7 +45,7 @@
  *     calling into the ended runtime [tested: "ends the process with the
  *     status exit! asks, even inside catch", "ends the process from an
  *     awaited ask, and nothing after it runs", npm run test:browser "refuses
- *     exit! in a page and closes the engine it ended"; commit=WORKTREE]
+ *     exit! in a page and closes the engine it ended"; commit=1cdcc6c2790775746f15b9ab113b0d3e0d1a613e]
  *   - nothing reaches the host's console unless boot() was asked for verbose:
  *     an engine error is raised here and a program's output is buffered
  *   - every number crosses exactly: a Prolog integer arrives as a bigint and

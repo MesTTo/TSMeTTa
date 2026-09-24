@@ -18,7 +18,7 @@
  *     commit=6229e43cb68cc3685360810d462d992874992f6c]
  *   - a program's exit! ends the process it runs in, from an awaited ask
  *     inside catch, with the status it asked for [tested: "ends the process
- *     from an awaited ask, and nothing after it runs"; commit=WORKTREE]
+ *     from an awaited ask, and nothing after it runs"; commit=1cdcc6c2790775746f15b9ab113b0d3e0d1a613e]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

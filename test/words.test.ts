@@ -6,6 +6,9 @@
  *     what they claim, against the live engine
  *   - every word naming one head is that head in term position, checked for
  *     each entry of OPERATOR_HEADS and WORD_HEADS rather than a list here
+ *   - the verdict words build what a pre-add judge answers, and each acts as
+ *     its verdict against the live engine in a program that imports
+ *     lib_functional, whose two-input drop made a lowercase (drop) a call
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -16,8 +19,10 @@ import { strict as assert } from "node:assert";
 import { after, before, describe, it } from "node:test";
 
 import {
+  Accept,
   Atom,
   Collapse,
+  Drop,
   Empty,
   Expression,
   FloatAtom,
@@ -32,6 +37,7 @@ import {
   Quote,
   Rational,
   RationalAtom,
+  Refuse,
   S,
   Space,
   SpaceHandle,
@@ -330,5 +336,32 @@ describe("the word door and the free functions are one mechanism", () => {
     // A call is not a word: what a defined function answers is an ask, and an
     // ask refuses where a term goes.
     assert.throws(() => S.f(m.eval(S.x)), NameError);
+  });
+});
+
+describe("verdict words", () => {
+  it("are the verdicts a pre-add judge answers, beside a library defining drop", async () => {
+    // An engine of its own, because the program imports lib_functional into
+    // &self, and its two-input drop is the head a lowercase verdict became a
+    // call to.
+    const own = await metta();
+    try {
+      own.run(
+        "!(import! &self (library lib_functional))\n" +
+          `(= (words-judge (keep $x)) ${String(Accept())})\n` +
+          `(= (words-judge (swap $x)) ${String(Accept(S.swapped(V.x)))})\n` +
+          `(= (words-judge (bad $x)) ${String(Refuse(S.forbidden))})\n` +
+          `(= (words-judge (skip $x)) ${String(Drop())})\n` +
+          "!(declare-pre-add! &words-pool words-judge)",
+      );
+      const pool = own.space("&words-pool");
+      pool.add(S.keep(1));
+      pool.add(S.swap(2));
+      assert.throws(() => pool.add(S.bad(3)), /forbidden/);
+      pool.add(S.skip(4));
+      assert.deepEqual((await pool.atoms()).map(String).sort(), ["(keep 1)", "(swapped 2)"]);
+    } finally {
+      own.dispose();
+    }
   });
 });

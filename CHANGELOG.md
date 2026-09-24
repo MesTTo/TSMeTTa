@@ -4,6 +4,12 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- `Accept`, `Refuse` and `Drop` build the engine's capitalized verdicts,
+  `(Accept)`, `(Accept atom)`, `(Refuse words)` and `(Drop)`, which are the only
+  verdicts the engine now takes. The lowercase heads they built were calls
+  wherever a library defined a function of that name, `lib_functional`'s
+  two-input `drop` among them, and the engine refuses them as verdicts.
+
 - The portable transport's JSON doors, `transportToJson` and
   `transportFromJson`, and with them the remote gateway's bodies, read and write
   a term at any depth. They went through `JSON.stringify` and a `JSON.parse`

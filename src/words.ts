@@ -29,6 +29,10 @@
  *   - a control form is CAPITALISED (`If`, `Let`, `Case`, `Match`), which is
  *     forced for `if` and `let` by JavaScript's reserved words and kept for the
  *     rest so the whole family reads alike
+ *   - the verdict words `Accept`, `Refuse` and `Drop` build the engine's
+ *     capitalized verdicts, which stay data beside a library defining the
+ *     lowercase head [tested: "are the verdicts a pre-add judge answers,
+ *     beside a library defining drop"; commit=WORKTREE]
  * Decides: `div` is MeTTa's own `/` and inherits MeTTa's division semantics,
  *   which are the engine's to define and not this door's to normalise. The
  *   Python table flags `truediv` for the same reason.
@@ -115,9 +119,9 @@ export const WORD_HEADS = {
   Quote: "quote",
   Empty: "empty",
   In: "in",
-  Accept: "accept",
-  Refuse: "refuse",
-  Drop: "drop",
+  Accept: "Accept",
+  Refuse: "Refuse",
+  Drop: "Drop",
   Match: "match",
   unify: "unify",
 } as const;
@@ -392,10 +396,13 @@ export function In(member: Term, container: Term): Atom {
 }
 
 // ---------------------------------------------------------------------------
-// The pre-add verdicts: what a space's admission judge answers.
+// The pre-add verdicts: what a space's admission judge answers. Capitalized
+// like MeTTa's other constructors (True, Empty, Error), because a lowercase
+// head is a call wherever a library defines a function of that name:
+// lib_functional's two-input drop made a judge's (drop) an application.
 
 /**
- * `(accept)` or `(accept atom)`: keep the offered atom, or this one instead.
+ * `(Accept)` or `(Accept atom)`: keep the offered atom, or this one instead.
  *
  * The verdict an admission judge answers to let a write through. With an atom,
  * that atom is stored in place of the one offered, which is how a judge
@@ -405,12 +412,12 @@ export function Accept(atom?: Term): Atom {
   return atom === undefined ? expr(sym(WORD_HEADS.Accept)) : apply(WORD_HEADS.Accept, atom);
 }
 
-/** `(refuse words)`: reject a write, with the judge's own reason. */
+/** `(Refuse words)`: reject a write, with the judge's own reason. */
 export function Refuse(words: Term): Atom {
   return apply(WORD_HEADS.Refuse, words);
 }
 
-/** `(drop)`: skip a write silently, neither storing it nor refusing it. */
+/** `(Drop)`: skip a write silently, neither storing it nor refusing it. */
 export function Drop(): Atom {
   return expr(sym(WORD_HEADS.Drop));
 }

@@ -105,11 +105,23 @@
 %     suspend"]
 %   - a job's engine that meets a shared table another engine is completing
 %     suspends through prolog:tabling_wait/1 and claims the table again when
-%     resumed; an engine that is no job's, or cannot yield, fails the hook, so
+%     resumed; the home engine, whose asks are synchronous, refuses by name,
+%     and an engine that is no job's, or cannot yield, fails the hook, so
 %     boot/tabling.pl refuses by name rather than block [tested:
 %     test/tabling-wait.test.ts, "parks an ask behind the ask completing its
 %     table", "refuses on the synchronous door rather than wait";
-%     commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
+%     commit=WORKTREE]
+%   - every synchronous ask runs in the home engine, so a private table or an
+%     exact memo one fills is there for the next, and an ask posted while the
+%     home engine waits on the host runs on top of the suspended one [tested:
+%     test/home-engine.test.ts, "shares a private table between synchronous
+%     asks", "runs an operation's synchronous ask on top of the ask that
+%     called it"; commit=WORKTREE]
+%   - the home engine's local stack does not grow with the number of asks it
+%     serves: metta_node_await/1's recursion is a last call [measured
+%     2026-09-24: a pure-SWI model of metta_node_await/1 and
+%     metta_node_serve/1 held 1216 bytes of local stack at ask 1 and at ask
+%     50000; commit=WORKTREE]
 %   - a command or scope whose ARGUMENT COUNT is not the one its verb declares
 %     is refused by name, naming both counts, and an unknown verb is a separate
 %     refusal from a wrong count. A wrong count used to unify with no clause
@@ -145,7 +157,8 @@
 %     budget for a nonground journal entry"; commit=6b117a66f6d1028496594942d4b4bdb4cc2b14fe]
 % Owns: one host hold per open job, released by metta_node_stop/1, which the
 %   JavaScript iterator calls from its own return() so an abandoned for-await
-%   releases it; the watch queues; the registered-operation table.
+%   releases it; the home engine's hold, released by dispose() or when the
+%   engine contexts change; the watch queues; the registered-operation table.
 % Decides: a job, a host value and a watch are addressed by INTEGER, because
 %   the WebAssembly value conversion renders every Prolog blob as the same
 %   opaque {"$t":"b"} and a host that kept the blob could not hand it back.
@@ -851,9 +864,93 @@ metta_node_resume(Id, Reply, Answer) :-
 % iterator's return(), finds nothing the second time and is at peace.
 metta_node_stop(Id) :-
     (   retract(metta_node_job(Id, Engine))
-    ->  metta_host_hold_close(Engine)
+    ->  retractall(metta_node_home_engine(Engine, _)),
+        metta_host_hold_close(Engine)
     ;   true
     ).
+
+%%%%%%%%%% The home engine: where a synchronous ask runs %%%%%%%%%%
+%
+% An engine keeps what it fills: a private table, and lib_memo's exact memo,
+% which keeps one, belong to the engine that fills them. The Python seat's
+% eager runs share one engine and its lazy iteration gets an engine of its own,
+% and the C seat has done the same since mt_run_goal. So an ask the host drives
+% to its end in one synchronous call runs HERE, in the one engine every such
+% ask of this instance shares, while an ask that iterates lazily or awaits the
+% host keeps an engine of its own (metta_node_start/3). "Private" then means
+% the same in all three seats.
+%
+% The home engine answers nothing itself. It waits for [ask, Scopes, Command],
+% yields that ask's events one at a time and [done] after them, and waits
+% again. After an answer the host posts [next] for the event after it or [stop]
+% to leave the rest; every other event is a request the host answers as it
+% answers a job's.
+%
+% An engine is made inside the engine contexts in force when it is created
+% (metta_host_hold/3), and the home engine outlives them, so it is replaced
+% when seam:engine_context/1 answers differently: the next ask then runs in a
+% new engine, under the contexts a fresh job would have had.
+:- dynamic metta_node_home_engine/2.
+
+metta_node_home(Id) :-
+    findall(Context, seam:engine_context(Context), Contexts),
+    (   metta_node_home_engine(Engine, Created),
+        Created == Contexts,
+        metta_node_job(Id, Engine)
+    ->  true
+    ;   forall(( retract(metta_node_home_engine(Old, _)),
+                 retract(metta_node_job(_, Old)) ),
+               metta_host_hold_close(Old)),
+        metta_host_hold(_, metta_node_home_run, Engine),
+        metta_node_fresh_id(Id),
+        assertz(metta_node_job(Id, Engine)),
+        assertz(metta_node_home_engine(Engine, Contexts))
+    ).
+
+metta_node_home_run :-
+    metta_node_await(Message),
+    throw(error(metta_node_bad_reply(Message),
+                context(metta_node_home_run/0, 'the home engine takes asks only'))).
+
+% The host's answer to what this engine last yielded. While it waits, the host
+% may run a synchronous ask in this same engine, which is what a TypeScript
+% operation calling run() does: the ask is served here, on top of the
+% suspended one, as a nested query runs in the native seats, and the wait goes
+% on. An engine whose host never sends it an ask, a job's, answers the way it
+% always did. Every host reply passes here, so the ask is recognised by
+% unifying with the atom the host's text arrives as, which costs no inference,
+% where reading the head through metta_node_atom/2 cost about twelve a reply
+% [measured 2026-09-24: bench.sh host-op, 500 host calls in one ask, read
+% 87475 inferences that way against 81469 before the home engine].
+metta_node_await(Reply) :-
+    engine_fetch(Message),
+    (   Message = [ask, Scopes, Command]
+    ->  metta_node_serve([Scopes, Command]),
+        metta_node_await(Reply)
+    ;   Reply = Message
+    ).
+
+% One ask: every event yielded, the host deciding after each answer whether
+% the next is computed, and [done] once the ask is over. The if-then-else
+% commits a [stop], which discards the rest of the ask's choice points and
+% runs their cleanup, as destroying a job's engine does.
+metta_node_serve([Scopes, Command]) :-
+    (   metta_node_guarded(Scopes, Command, Event),
+        metta_node_yield(Event),
+        metta_node_await(Continue),
+        metta_node_stopped(Continue)
+    ->  true
+    ;   true
+    ),
+    metta_node_yield([done]).
+
+% [stop] leaves the rest of the ask, and [next] asks for the event after.
+metta_node_stopped([stop]) :- !.
+metta_node_stopped([next]) :- !, fail.
+metta_node_stopped(Message) :-
+    throw(error(metta_node_bad_reply(Message),
+                context(metta_node_serve/1,
+                        'after an event the host posts [next] or [stop]'))).
 
 %%%%%%%%%% Scopes: the wrappers a job runs inside %%%%%%%%%%
 %
@@ -868,9 +965,11 @@ metta_node_stop(Id) :-
 % the ENGINE runs by itself; the TypeScript world door is a draft that commits
 % through the transaction scope with pure data in hand.
 % A scope arrives from the host as a list whose head names it, the same shape
-% every other message here takes, and its head arrives as a STRING because the
-% WebAssembly conversion has one text type going in. metta_node_atom/2 is
-% where the two spellings become one, here as everywhere else in this file.
+% every other message here takes. Its head arrives as an atom, because
+% swipl-wasm's toProlog puts a JavaScript string as an atom unless a query asks
+% for strings, and Engine.once in src/engine.ts never does [source:
+% src/wasm/prolog.js toProlog, swipl-devel V10.1.14]. metta_node_atom/2 takes
+% either spelling, here as everywhere else in this file.
 metta_node_scoped([], Command, Event) :- !,
     metta_node_perform(Command, Event).
 metta_node_scoped([Scope|Rest], Command, Event) :-
@@ -1728,7 +1827,7 @@ metta_node_many_reply(Reply, _, _) :-
 metta_node_pull(Id, Names, Result) :-
     repeat,
     metta_node_yield([pull, Id]),
-    engine_fetch(Reply),
+    metta_node_await(Reply),
     (   Reply = [ok, Wire]
     ->  metta_node_decode(Wire, Names, _, Result)
     ;   Reply = [done]
@@ -1752,7 +1851,7 @@ metta_node_ask(Name, Args, Reply, Names) :-
     metta_node_encode_arguments(Args, [], Names, Wires),
     metta_node_call_event(Name, Wires, Event),
     metta_node_yield(Event),
-    engine_fetch(Reply).
+    metta_node_await(Reply).
 
 % The space rides the call ONLY when it is not the default, so a program that
 % never left &self sends the three-element event it always did and pays for
@@ -1792,6 +1891,10 @@ prolog:error_message(metta_node_not_in_engine(_)) -->
        point'-[] ].
 prolog:error_message(metta_node_table_stall(Message)) -->
     [ '~w'-[Message] ].
+prolog:error_message(metta_node_sync_wait(_)) -->
+    [ 'a shared table this ask needs is being completed by another ask, \c
+       which runs only once this one hands the thread back, and a \c
+       synchronous door cannot wait; use the awaiting form'-[] ].
 
 %%%%%%%%%% Waiting for a shared table %%%%%%%%%%
 %
@@ -1807,9 +1910,10 @@ prolog:error_message(metta_node_table_stall(Message)) -->
 % [error, Text] when every open job is parked, since nothing is left that could
 % complete the table. Kind is owner, for a table another engine is completing,
 % or restart, after this engine gave its own tables up to break a deadlock,
-% which is itself progress for the others. An engine that is not a job's (a
-% nested one, or the main engine running a synchronous door) and a job inside a
-% transaction or speculate scope cannot suspend, so the hook fails and
+% which is itself progress for the others. The home engine runs synchronous
+% asks, which have nobody to hand the thread to, so it refuses by name. An
+% engine that is not a job's (a nested one, or the main engine) and a job
+% inside a transaction or speculate scope cannot suspend, so the hook fails and
 % tabling_wait/2 raises permission_error(wait, shared_table, Goal) rather than
 % block or read the table incomplete.
 :- multifile prolog:tabling_wait/1.
@@ -1817,12 +1921,16 @@ prolog:error_message(metta_node_table_stall(Message)) -->
 prolog:tabling_wait(Reason) :-
     engine_self(Engine),
     metta_node_job(_, Engine),
-    metta_node_wait_kind(Reason, Kind),
-    catch(engine_yield([wait, Kind]),
-          error(permission_error(execute, _, _), _),
-          fail),
-    engine_fetch(Reply),
-    metta_node_waited(Reply).
+    (   metta_node_home_engine(Engine, _)
+    ->  throw(error(metta_node_sync_wait(Reason),
+                    context(prolog:tabling_wait/1, _)))
+    ;   metta_node_wait_kind(Reason, Kind),
+        catch(engine_yield([wait, Kind]),
+              error(permission_error(execute, _, _), _),
+              fail),
+        metta_node_await(Reply),
+        metta_node_waited(Reply)
+    ).
 
 metta_node_wait_kind(owner(_), owner).
 metta_node_wait_kind(restart, restart).

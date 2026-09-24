@@ -428,11 +428,13 @@ subpath and its test checks that list against package.json.
 
 A shared table, the default, outlives the evaluation that built it: every ask
 of the instance reads it, and `(table-stats ...)` reads its counters from any
-later ask. A private table belongs to the engine that fills it and every ask
-runs in an engine of its own, so a private table, and exact memoization, which
-keeps a private table, last one evaluation: read their counters in that
-evaluation before its answer stream closes. Bounded memoization keeps its
-entries across asks.
+later ask. A private table belongs to the engine that fills it. Every
+synchronous ask (`run`, `runOne`, `load`, the space doors) runs in one engine
+the instance keeps, as the Python seat's eager runs do, so a private table and
+exact memoization, which keeps a private table, outlive a synchronous ask. An
+awaiting ask (`eval`, a stream) runs in an engine of its own, so what it keeps
+privately lasts that ask: read those counters before its answer stream closes.
+Bounded memoization keeps its entries across every ask.
 
 `tsmetta/arrays` uses `TypedArray` storage. `new Tensor(data, shape)` validates
 nonnegative safe-integer dimensions and the element count, publishes `(Tensor dtype dimensions...)` as `.type`, and

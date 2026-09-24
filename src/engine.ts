@@ -58,7 +58,13 @@
  *     refuses rather than wait [tested: test/tabling-wait.test.ts, "parks an
  *     ask behind the ask completing its table", "evaluates a table its owner
  *     gave up", "refuses on the synchronous door rather than wait", "resolves
- *     two asks deadlocked over two tables"; commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
+ *     two asks deadlocked over two tables"; commit=WORKTREE]
+ *   - a job's first drive decides where its events come from: an awaiting one
+ *     gets an engine of its own and a synchronous one is an ask of the home
+ *     engine every synchronous ask of the instance shares; an ask that fails
+ *     or is refused ends without taking the home engine with it, and a job
+ *     refuses to be driven both ways [tested: test/home-engine.test.ts;
+ *     commit=WORKTREE]
  * Owns: one WebAssembly instance per boot(), one host hold per open job,
  *   the live-host-value table and, on a Node host, the engine's own temporary
  *   directory, all released by dispose(); a boot that fails after minting the
@@ -267,6 +273,19 @@ export type Scope =
 export type Command = readonly unknown[];
 
 /**
+ * Where a job's events come from: an engine of its own, or the home engine,
+ * which the job's ask shares with every synchronous ask of the instance.
+ * `started` is whether the home engine has been posted the ask, and
+ * `finished` whether it has answered the ask's `[done]`.
+ */
+interface Channel {
+  readonly home: boolean;
+  readonly id: number;
+  started: boolean;
+  finished: boolean;
+}
+
+/**
  * How a host operation answers.
  *
  * The catalog's `op-kind` vocabulary minus `async`, which this transport does
@@ -400,10 +419,21 @@ export async function whileCapturing<T>(
  * they are there. A `call` or a `pull` is a request only a JavaScript function
  * can answer, and this class answers it without the caller ever seeing one;
  * everything else is handed on.
+ *
+ * Where the events come from is decided by the first drive. An awaiting one
+ * (`next`, `all`) gets an engine of its own, since it may suspend at a promise
+ * or be iterated lazily. A synchronous one (`sync`, `syncAll`) is an ask of
+ * the home engine, the one engine every synchronous ask of this instance
+ * shares (bridge.pl, metta_node_home/1), so a private table or an exact memo
+ * one ask fills is there for the next, as the Python and C seats' eager runs
+ * share one engine.
  */
 export class Job {
   #engine: Engine;
-  #id: number | null;
+  readonly #command: Command;
+  readonly #scopes: readonly Scope[];
+  #channel: Channel | null = null;
+  #closed = false;
   // A MAP rather than one slot. A single slot could hold one live stream, so a
   // second one opened before the first was exhausted replaced it and the first
   // could never be resumed: every conjunction over a TypeScript-backed space
@@ -414,27 +444,85 @@ export class Job {
   #cleanup: Promise<void>[] = [];
 
   /** @internal */
-  constructor(engine: Engine, id: number) {
+  constructor(engine: Engine, command: Command, scopes: readonly Scope[]) {
+    engine.assertOpen();
     this.#engine = engine;
-    this.#id = id;
+    this.#command = command;
+    this.#scopes = scopes;
     engine.jobOpened();
+  }
+
+  /** The channel the first drive binds, and the one every later drive must match. */
+  #bind(home: boolean): Channel {
+    const bound = this.#channel;
+    if (bound !== null) {
+      if (bound.home !== home) {
+        throw new EngineError(
+          "a job is driven by awaiting or synchronously, not both: its events come " +
+            "from an engine of its own or from the home engine, fixed by its first drive",
+        );
+      }
+      return bound;
+    }
+    const channel: Channel = home
+      ? { home: true, id: this.#engine.homeAsk(), started: false, finished: false }
+      : { home: false, id: this.#engine.openJob(this.#command, this.#scopes), started: true, finished: false };
+    this.#channel = channel;
+    return channel;
+  }
+
+  /**
+   * The next raw event, or null once the job has none.
+   *
+   * A job's own engine steps; the home engine is posted the ask first and
+   * `[next]` after that, and its `[done]` is the end of this ask rather than
+   * of the engine.
+   */
+  #advance(): unknown {
+    const channel = this.#channel!;
+    if (!channel.home) return this.#engine.rawStep(channel.id);
+    const message = channel.started ? ["next"] : ["ask", this.#scopes.map((scope) => [...scope]), this.#command];
+    channel.started = true;
+    return this.#arrived(channel, this.#engine.rawResume(channel.id, message));
+  }
+
+  /** Answer a request and take the next raw event. */
+  #resume(reply: readonly unknown[]): unknown {
+    const channel = this.#channel!;
+    const raw = this.#engine.rawResume(channel.id, reply);
+    return channel.home ? this.#arrived(channel, raw) : raw;
+  }
+
+  /** A home-engine event, with this ask's `[done]` read as its end. */
+  #arrived(channel: Channel, raw: unknown): unknown {
+    if (raw === null) {
+      // The home engine answers `[done]` and waits again, so exhaustion is
+      // its goal having ended: it is gone, and the next ask starts another.
+      channel.finished = true;
+      this.#engine.homeLost();
+      throw new EngineError("the home engine ended in the middle of an ask");
+    }
+    if (hostText((raw as readonly unknown[])[0]) !== "done") return raw;
+    channel.finished = true;
+    return null;
   }
 
   /** The next event, or null once the job is finished. */
   async next(): Promise<JobEvent | null> {
-    if (this.#id === null) return null;
-    let raw = this.#engine.rawStep(this.#id);
+    if (this.#closed) return null;
+    this.#bind(false);
+    let raw = this.#advance();
     for (;;) {
       const settled = this.#settle(raw);
       if (settled.done) {
-        if (this.#id === null) await this.closed();
+        if (this.#closed) await this.closed();
         return settled.event;
       }
       const reply = await ("wait" in settled
         ? this.#engine.park(settled.wait === "restart")
         : settled.reply);
-      if (this.#id === null) return null;
-      raw = this.#engine.rawResume(this.#id, reply);
+      if (this.#closed) return null;
+      raw = this.#resume(reply);
     }
   }
 
@@ -455,25 +543,28 @@ export class Job {
   /** Every remaining event, collected without awaiting. */
   syncAll(): JobEvent[] {
     const events: JobEvent[] = [];
-    if (this.#id === null) return events;
-    let raw = this.#engine.rawStep(this.#id);
+    if (this.#closed) return events;
+    this.#bind(true);
+    let raw = this.#advance();
     for (;;) {
       const settled = this.#settle(raw);
       if (settled.done) {
         if (settled.event === null) return events;
         events.push(settled.event);
-        if (this.#id === null) return events;
-        raw = this.#engine.rawStep(this.#id);
+        if (this.#closed) return events;
+        raw = this.#advance();
         continue;
       }
       this.close();
+      // The home engine refuses a wait for a shared table by name, as an
+      // error event (bridge.pl, prolog:tabling_wait/1), so a wait here is a
+      // bridge that answers otherwise.
+      if ("wait" in settled) {
+        throw new EngineError("the home engine yielded a wait for a shared table, which it refuses by name");
+      }
       throw new UnsupportedError(
-        "wait" in settled
-          ? "a shared table this ask needs is being completed by another ask, " +
-              "which runs only once this one hands the thread back, and a " +
-              "synchronous door cannot; use the awaiting form"
-          : "a host operation answered with a promise on a synchronous door; use " +
-              "the awaiting form so this side can wait for it",
+        "a host operation answered with a promise on a synchronous door; use " +
+          "the awaiting form so this side can wait for it",
       );
     }
   }
@@ -488,17 +579,18 @@ export class Job {
     }
   }
 
-  /** Release the engine. Idempotent. */
+  /** Release the engine, or end the ask on the home engine. Idempotent. */
   close(): void {
-    const id = this.#id;
-    if (id === null) return;
-    this.#id = null;
+    if (this.#closed) return;
+    this.#closed = true;
     // A stream the engine cut rather than drained is still here, and this is
     // where it goes. `return()` runs a generator's own `finally`, so a body
     // holding a resource releases it rather than being dropped on the floor.
     for (const iterator of this.#pending.values()) this.#close(iterator);
     this.#pending.clear();
-    this.#engine.rawStop(id);
+    const channel = this.#channel;
+    if (channel?.home === true) this.#engine.askEnded(channel.id, channel.finished);
+    else if (channel !== null) this.#engine.rawStop(channel.id);
     this.#engine.jobClosed();
   }
 
@@ -554,7 +646,7 @@ export class Job {
       // synchronous door that refuses it leaves nothing scheduled against an
       // engine it is about to release.
       if (isPromise(reply)) return { done: false, reply };
-      raw = this.#engine.rawResume(this.#id!, reply);
+      raw = this.#resume(reply);
     }
   }
 
@@ -897,11 +989,78 @@ export class Engine {
 
   /** @internal Resource bookkeeping has explicit scopes, independent of business-call policies. */
   control(command: Command, scopes: readonly Scope[] = []): Job {
+    return new Job(this, command, scopes);
+  }
+
+  /** @internal Start an engine of a job's own, for an awaiting drive. */
+  openJob(command: Command, scopes: readonly Scope[]): number {
     const answer = this.once("metta_node_start(Sc, Cmd, Id)", {
       Sc: scopes.map((scope) => [...scope]),
       Cmd: command,
     });
-    return new Job(this, Number(answer["Id"]));
+    return Number(answer["Id"]);
+  }
+
+  // --- the home engine ----------------------------------------------------------
+  //
+  // Every synchronous ask of this instance runs in one engine (bridge.pl,
+  // metta_node_home/1), so what an engine keeps, a private table or an exact
+  // memo, outlives the ask as it does in the Python and C seats, whose eager
+  // runs share one engine. An ask started while another is running on it is
+  // one a TypeScript operation of that ask called, and the home engine serves
+  // it on top of the suspended one; only an ask started with none running asks
+  // the bridge whether the engine is still the one for the engine contexts in
+  // force, since a busy engine cannot be replaced.
+
+  #home: number | null = null;
+  #homeAsks = 0;
+
+  /** @internal The home engine's job id for an ask about to start. */
+  homeAsk(): number {
+    if (this.#homeAsks === 0 || this.#home === null) {
+      this.#home = Number(this.once("metta_node_home(Id)")["Id"]);
+    }
+    this.#homeAsks += 1;
+    return this.#home;
+  }
+
+  /**
+   * @internal An ask on the home engine is over. One the host stopped before
+   * its `[done]` is told `[stop]` until it answers it, which leaves the rest
+   * of its answers uncomputed and runs their cleanup, as destroying a job's
+   * engine does. A `[stop]` reaching a request the ask was waiting on is a
+   * reply it does not read, so the ask raises, and the `[stop]` after that
+   * ends it.
+   */
+  askEnded(id: number, finished: boolean): void {
+    this.#homeAsks -= 1;
+    if (finished || this.#closed || this.#home !== id) return;
+    try {
+      let raw = this.rawResume(id, ["stop"]);
+      while (raw !== null && hostText((raw as readonly unknown[])[0]) !== "done") {
+        raw = this.rawResume(id, ["stop"]);
+      }
+      if (raw === null) this.homeLost();
+    } catch (error) {
+      this.homeLost();
+      throw error;
+    }
+  }
+
+  /** @internal The home engine ended; the next ask starts another. */
+  homeLost(): void {
+    const id = this.#home;
+    this.#home = null;
+    if (id !== null && !this.#closed) this.once("metta_node_stop(Id)", { Id: id });
+  }
+
+  /** @internal Refuse to start anything on a released engine. */
+  assertOpen(): void {
+    if (this.#closed) {
+      throw new ClosedError(
+        `this engine was disposed; boot another with metta() rather than using a released one`,
+      );
+    }
   }
 
   /** @internal One raw event, or null on exhaustion. */
@@ -1201,6 +1360,8 @@ export class Engine {
    * {@link ClosedError} has always been for.
    */
   dispose(): void {
+    if (this.#home !== null && !this.#closed) this.once("metta_node_stop(Id)", { Id: this.#home });
+    this.#home = null;
     this.#closed = true;
     this.hostValues.clear();
     this.handles.clear();

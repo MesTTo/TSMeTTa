@@ -8,9 +8,9 @@
  *   - a table outlives the ask that built it, so a later ask reads it and its
  *     statistics [tested: "keeps a table across asks"; commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
  *   - a private table, and exact memoization, which keeps a private table,
- *     stay the ask's own, while bounded memoization outlives it [tested:
- *     "keeps a private table and exact memoization to their ask, and bounded
- *     memoization past it"; commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
+ *     stay an awaiting ask's own, while bounded memoization outlives it
+ *     [tested: "keeps a private table and exact memoization to their ask, and
+ *     bounded memoization past it"; commit=WORKTREE]
  *   - an ask that meets a table another ask is completing parks, and answers
  *     once that ask completes it, without running the table's body itself
  *     [tested: "parks an ask behind the ask completing its table";

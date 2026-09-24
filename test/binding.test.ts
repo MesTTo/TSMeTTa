@@ -98,9 +98,17 @@ const closeProbeJob = (id: number): void => {
   m.engine.once("metta_node_stop(Id)", { Id: id });
 };
 
-/** How many suspended engines the bridge currently owns. */
+/**
+ * How many suspended engines the bridge currently owns for jobs, the home
+ * engine aside: every synchronous ask runs in that one, and it lives as long
+ * as the instance.
+ */
 const liveProbeJobs = (): number =>
-  Number(m.engine.once("aggregate_all(count, metta_node_job(_,_), Count)")["Count"]);
+  Number(
+    m.engine.once(
+      "aggregate_all(count, (metta_node_job(_, E), \\+ metta_node_home_engine(E, _)), Count)",
+    )["Count"],
+  );
 
 /** Price only the allocator, with the surrounding statistics calls excluded. */
 const probeJobIdCost = (): number => {

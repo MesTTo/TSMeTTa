@@ -4,6 +4,20 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- Every synchronous ask of an instance (`run`, `runOne`, `load`, the space
+  doors) runs in one engine the instance keeps, where each used to get an
+  engine of its own, as the Python seat's eager runs share one engine and the
+  C seat's have since `mt_run_goal`. So what an engine keeps outlives a
+  synchronous ask there as it does there: a table declared private, and exact
+  memoization's, which is private too, are read by the next synchronous ask.
+  An awaiting ask (`eval`, a stream) still runs in an engine of its own, which
+  it needs to suspend at a promise or be iterated lazily, so what it keeps
+  privately lasts that ask, as the Python seat's lazy iteration does. A
+  synchronous ask that a TypeScript operation starts runs in the same engine,
+  on top of the ask that called the operation, as a nested query does in the
+  native seats. A job is driven by awaiting or synchronously and refuses to be
+  driven both ways. Bounded memoization outlived every ask already.
+
 - A table is shared by every ask of an instance, as a space is: a later ask
   reads the table an earlier one built, and `(table-stats ...)` from another
   ask reads it too, where each ask used to build and drop its own. The host
@@ -15,10 +29,7 @@ Open Obligations: None. -->
   ask makes progress and then lets it claim the table again. Two asks
   deadlocked over two tables resolve as SWI's threads do, the one that closes
   the cycle giving its tables up and waiting its turn. The synchronous door,
-  `runOne`, has nobody to hand the thread to and refuses by name. A table
-  declared private, and exact memoization's, which is private too, stay each
-  ask's own, where the Python seat, whose runs share one engine, keeps them;
-  bounded memoization already outlived its ask.
+  `runOne`, has nobody to hand the thread to and refuses by name.
 
 - An ask runs in the engine's evaluation fuel scope, as a runnable form does
   and as the Python and C seats' evaluations do, so

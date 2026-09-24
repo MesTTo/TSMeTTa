@@ -162,6 +162,17 @@ as written; a goal or a non-equation refuses before anything lands.
 `lib("name")`, `lib("alias", "file")` and a host path string are the other
 module forms, and `kb.import(...)` imports into `kb`.
 
+Under Node the engine sees this host's files at their own paths and starts in
+this process's working directory: every top-level directory is mounted live
+through NODEFS except the engine's own `/dev`, `/proc`, `/swipl` and `/metta`,
+a Windows drive is `/c` and so on, and `tmp_dir` is what a native SWI-Prolog
+here would choose, TMP or else `/tmp` (TEMP on Windows). So `loadFile`,
+`libraryPath` and a host path given to `import` read the file where it is, and
+a relative path in a program resolves as it does for the native engine; they
+used to copy the file's directory into the engine's own filesystem, which a
+relative path never reached. `m.engine.mount(dir, "/data")` shows a host
+directory at another engine path, live.
+
 ## Asking, lazily
 
 An answer set is a whole Promise of its answers (`then`, `catch`, `finally`)

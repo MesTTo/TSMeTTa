@@ -416,21 +416,13 @@ export class Space implements Disposable {
    * and answer the space, which is what `add` answers.
    *
    * `kb.import(lib.spaces)` loads the shipped library `lib_spaces`. A string is
-   * a HOST path, resolved against the working directory, whose directory is
-   * mounted first so the engine reads the file this process sees, the way
-   * `loadFile` reads one; a relative `import!` inside it then resolves beside
-   * it. A browser has no host path and refuses one.
+   * a HOST path, resolved against the working directory, which the engine
+   * reads where it is, the way `loadFile` reads one; a relative `import!`
+   * inside it then resolves beside it. A browser has no host path and refuses
+   * one.
    */
   import(module: LibraryRef | string): this {
-    let form: Atom;
-    if (typeof module === "string") {
-      const full = resolvePath(module);
-      const directory = full.slice(0, full.lastIndexOf("/")) || "/";
-      this.#engine.mount(directory, directory, (name) => name.endsWith(".metta") || name.endsWith(".pl"));
-      form = sym(full);
-    } else {
-      form = module.form;
-    }
+    const form = typeof module === "string" ? sym(resolvePath(module)) : module.form;
     this.runOne(expr(sym("import!"), this.handle, form));
     return this;
   }

@@ -281,9 +281,9 @@ describe("a restricted space", () => {
     // records as a gap it wanted closed: `m.space(S.reader, { grants: [...] })`
     // is one door for both.
     const reader = m.space(S.reader, { grants: ["file"] });
-    // A path the engine's own virtual filesystem carries: boot mounts this
-    // package's bridge there, and the host's cwd is not in that filesystem at
-    // all, so asking about one proves only that nothing refused.
+    // A path the engine's own virtual filesystem carries: boot copies this
+    // package's bridge there, so the answer is the same on every host and
+    // asking about it proves only that nothing refused.
     assert.deepEqual(
       (await reader.eval(S.exists_file("/metta/bridge.pl"))).map(String),
       ["true"],

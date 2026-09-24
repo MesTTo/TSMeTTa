@@ -183,6 +183,22 @@ String(await runtime.eval(terms.add(1, 2)).one()); // "3"
 runtime.dispose();
 ```
 
+Under Node the engine sees this host's files at the paths they have here and
+starts in this process's working directory, so a program reads
+`examples/data.csv` or `/home/ada/notes.metta` as the native engine does, and
+a file either side writes is there for the other at once. Every top-level
+directory is mounted live through emscripten's NODEFS but the engine's own,
+`/dev`, `/proc`, `/swipl` and `/metta`; a Windows drive is `/c`, `/d` and so
+on. The engine's temporary files go where a native SWI-Prolog here would put
+them, TMP or else `/tmp` (TEMP on Windows). `m.engine.mount(dir, "/data")`
+shows a host directory at another engine path as well.
+
+```ts
+m.import(lib.file);
+(await m.fn.fileExists("package.json")).map(String); // ["true"], beside this process
+m.loadFile("examples/family.metta");                  // read where it is, never copied
+```
+
 ### Spaces
 
 Store atoms, update a state cell, or query a TypeScript provider.

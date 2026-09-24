@@ -16,16 +16,25 @@
  *   - a file loads whatever else its directory holds, a link to nothing
  *     included [tested: "loads a file whose directory holds a link to
  *     nothing"; commit=a151c899a11b3b8ffb405b23b67d1f2000ded4dd]
+ *   - the engine sees this host's files at their own paths and starts in this
+ *     process's working directory, a working directory of / included, and a
+ *     Windows path is its drive's mount [tested: "resolves a relative path
+ *     against this process's working directory, as the native engine does",
+ *     "reads a host file written after boot and writes one the host reads",
+ *     "boots in a working directory of / with no mount of its own", "names a
+ *     Windows path by its drive's mount"]
  * Open Obligations: None.
  */
 
 import { strict as assert } from "node:assert";
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { after, before, describe, it } from "node:test";
 
 import { FALSE, G, type MeTTa, S, TRUE, V, e, fn, lib, metta, toAtom } from "../src/index.ts";
+import { enginePath } from "../src/platform.ts";
 
 let m: MeTTa;
 
@@ -66,8 +75,8 @@ describe("space.import", () => {
   });
 
   it("loads a file whose directory holds a link to nothing", async () => {
-    // What another process removes between the listing and the read looks the
-    // same to the mount as a link whose target is gone: nothing to copy.
+    // A directory another process writes into can hold a link whose target
+    // is gone; the engine reads the one file it was asked for.
     const directory = mkdtempSync(join(tmpdir(), "tsmetta-mount-"));
     try {
       writeFileSync(join(directory, "main.metta"), "(= (mounted) yes)\n");
@@ -91,5 +100,87 @@ describe("space.import", () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+});
+
+describe("the host's files", () => {
+  let host: MeTTa;
+
+  before(async () => {
+    host = await metta();
+    host.import(lib.file);
+    host.import(lib.system);
+  });
+
+  after(() => {
+    host.dispose();
+  });
+
+  it("resolves a relative path against this process's working directory, as the native engine does", async () => {
+    assert.deepEqual(await host.fn.workingDirectory(), [G(process.cwd())]);
+    assert.deepEqual(await host.fn.fileExists("package.json"), [TRUE]);
+    assert.deepEqual(await host.fn.fileExists("no-such-file.here"), [FALSE]);
+  });
+
+  it("reads a host file written after boot and writes one the host reads", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "tsmetta-host-"));
+    try {
+      writeFileSync(join(directory, "late.metta"), "(= (late) yes)\n");
+      host.loadFile(join(directory, "late.metta"));
+      assert.deepEqual(await host.fn.late(), [S.yes.atom]);
+      const written = join(directory, "from-engine.txt");
+      assert.deepEqual(await host.fn["write-file!"](written, "hello"), [TRUE]);
+      assert.equal(readFileSync(written, "utf8"), "hello");
+      // Named at another engine path, the same directory is live there too.
+      host.engine.mount(directory, "/elsewhere");
+      writeFileSync(join(directory, "later.txt"), "later");
+      assert.deepEqual(await host.fn["read-file!"]("/elsewhere/later.txt"), [G("later")]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("boots in a working directory of / with no mount of its own", () => {
+    // A child process, since a working directory belongs to the process: it
+    // starts at /, reads this package's manifest by its absolute path, and
+    // mints a temporary directory where TMP says, as a native engine would.
+    const temporary = mkdtempSync(join(tmpdir(), "tsmetta-root-"));
+    try {
+      const index = new URL(`../src/index.${import.meta.url.endsWith(".ts") ? "ts" : "js"}`, import.meta.url).href;
+      const manifest = resolve("package.json");
+      const program = `
+        import { lib, metta } from ${JSON.stringify(index)};
+        const m = await metta();
+        m.import(lib.file);
+        m.import(lib.system);
+        const text = async (answers) => (await answers).map(String);
+        const seen = {
+          working: await text(m.fn.workingDirectory()),
+          manifest: await text(m.fn.fileExists(${JSON.stringify(manifest)})),
+          temporary: String(await m.fn["temp-dir!"]("root").one()),
+        };
+        m.dispose();
+        process.stdout.write(JSON.stringify(seen));
+      `;
+      const seen = JSON.parse(
+        execFileSync(process.execPath, ["--input-type=module", "-e", program], {
+          cwd: "/",
+          env: { ...process.env, TMP: temporary },
+          encoding: "utf8",
+        }),
+      ) as { working: string[]; manifest: string[]; temporary: string };
+      assert.deepEqual(seen.working, ['"/"']);
+      assert.deepEqual(seen.manifest, ["true"]);
+      assert.ok(seen.temporary.startsWith(`"${temporary}/`), seen.temporary);
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  });
+
+  it("names a Windows path by its drive's mount", () => {
+    assert.equal(enginePath("C:\\Users\\ada\\x.metta", "win32"), "/c/Users/ada/x.metta");
+    assert.equal(enginePath("D:/data/y.pl", "win32"), "/d/data/y.pl");
+    assert.equal(enginePath("\\\\server\\share\\z", "win32"), "\\\\server\\share\\z");
+    assert.equal(enginePath("/home/ada/x.metta", "linux"), "/home/ada/x.metta");
   });
 });

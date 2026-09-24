@@ -63,12 +63,12 @@
 
 import {
   forgetRuntime,
+  type HostFS,
   loadSWIPL,
-  mountInto,
+  mountHost,
   packageRoot,
   prepareRuntime,
   repoRoot,
-  type RuntimeFS,
 } from "./platform.ts";
 
 import { Atom, Expression, G, Grounded, lift } from "./atom.ts";
@@ -331,7 +331,7 @@ interface PrologInterface {
 /** @internal The wasm instance used by the shared engine. */
 export interface Swipl {
   readonly prolog: PrologInterface;
-  readonly FS: RuntimeFS;
+  readonly FS: HostFS;
 }
 
 /** One effectful crossing a saga recorded, before it becomes a receipt atom. */
@@ -836,9 +836,13 @@ export class Engine {
     };
   }
 
-  /** Mount a host directory into the engine's virtual filesystem. */
-  mount(hostDir: string, virtualDir: string, keep?: (name: string) => boolean): void {
-    mountInto(this.#swipl.FS, hostDir, virtualDir, keep);
+  /**
+   * Show the engine a host directory at another path, live: a file the host
+   * writes there later is one the engine reads. Every host path is already in
+   * view at its own path, so this door is for naming one elsewhere.
+   */
+  mount(hostDir: string, virtualDir: string): void {
+    mountHost(this.#swipl.FS, hostDir, virtualDir);
   }
 
   // --- the job protocol -----------------------------------------------------
@@ -1206,6 +1210,25 @@ export async function boot(
   }
   if (hosted["Verdict"] !== "passed") {
     throw new EngineError(String(hosted["Refusal"]));
+  }
+  // A host that passed is shown this host's files, so the engine starts where
+  // this process is and writes temporary files where a native engine here
+  // would. The paths are bound as text rather than spliced into the goal, so
+  // no path can break the query.
+  const host = runtime.host;
+  if (host !== undefined) {
+    host.mount(swipl.FS);
+    const placed = swipl.prolog.query(
+      "working_directory(_, Working), atom_string(Temporary, TemporaryText), " +
+        "set_prolog_flag(tmp_dir, Temporary).",
+      { Working: host.working, TemporaryText: host.temporary },
+    ).once();
+    if (placed === undefined || placed.error === true) {
+      throw new EngineError(
+        `the engine could not start in ${host.working} with its temporary files in ` +
+          `${host.temporary}: ${String(placed?.message ?? "the query failed")}`,
+      );
+    }
   }
   const consulted = swipl.prolog.query(
     `consult('${VIRTUAL_ROOT}/engine/identity.pl'), ` +

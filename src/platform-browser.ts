@@ -42,7 +42,7 @@
 
 import type { Swipl } from "./engine.ts";
 import { CapabilityError, EngineError, SourceNotFoundError, UnsupportedError } from "./errors.ts";
-import type { PreparedRuntime, RuntimeFS } from "./platform.ts";
+import type { HostFS, PreparedRuntime } from "./platform.ts";
 
 declare const __METTA_PACKAGE_VERSION__: string;
 declare const __SWIPL_DATA_SIZE__: number;
@@ -78,8 +78,10 @@ export function resolvePath(_path: string): string {
 }
 
 /** Browser code cannot inspect a host directory. */
-export function isDirectory(_path: string): boolean {
-  throw new UnsupportedError("a browser cannot inspect a host filesystem directory");
+export function libraryDirectory(_path: string): string {
+  throw new UnsupportedError(
+    "libraryPath reads a host filesystem directory and is unavailable in a browser",
+  );
 }
 
 /** A browser caller supplies source text to lint rather than a host path. */
@@ -89,13 +91,8 @@ export function readTextFile(_path: string): string {
   );
 }
 
-/** Browser runtime sources are installed by prepareRuntime. */
-export function mountInto(
-  _fs: RuntimeFS,
-  _hostDir: string,
-  _virtualDir: string,
-  _keep?: (name: string) => boolean,
-): void {
+/** A browser has no host filesystem to mount. */
+export function mountHost(_fs: HostFS, _hostDir: string, _virtualDir: string): void {
   throw new UnsupportedError(
     "mount reads a host filesystem directory and is unavailable in a browser",
   );

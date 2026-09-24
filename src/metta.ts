@@ -50,7 +50,7 @@ import {
   termVars,
   toAtom,
 } from "./atom.ts";
-import { isDirectory, resolvePath } from "./platform.ts";
+import { libraryDirectory, resolvePath } from "./platform.ts";
 
 import { Answers, type AskOptions, type MatchOptions, type MatchTemplate, type Row } from "./answers.ts";
 import { type Derivation } from "./derivation.ts";
@@ -68,7 +68,6 @@ import {
   MettaError,
   NameError,
   ResultError,
-  SourceNotFoundError,
 } from "./errors.ts";
 import { race as raceAsks } from "./parallel.ts";
 import { showsAs } from "./present.ts";
@@ -569,30 +568,19 @@ export class MeTTa implements Disposable {
    * m.run("!(import! &self nars)");
    * ```
    *
-   * The directory is MOUNTED before it is registered, because the engine runs
-   * in a WebAssembly filesystem of its own and cannot see this process's:
-   * registering a host path the engine cannot reach would refuse at the first
-   * import that needed it, which is exactly where a path problem is hardest to
-   * read. Only `.metta` and `.pl` files cross, and the alias is idempotent.
+   * The directory is checked before it is registered, so a path that is not a
+   * directory refuses here rather than at the first import that needs it,
+   * which is exactly where a path problem is hardest to read. The engine
+   * reads it where it is, since it sees this host's files at their own paths,
+   * and the alias is idempotent.
    */
   libraryPath(directory: string, alias: string): void {
-    const full = resolvePath(directory);
-    if (!isDirectory(full)) {
-      throw new SourceNotFoundError(`a library path is a directory that exists, and ${full} is not`);
-    }
-    this.#engine.mount(full, full, (name) => name.endsWith(".metta") || name.endsWith(".pl"));
+    const full = libraryDirectory(directory);
     this.run(`!(register_metta_library_path ${alias} "${full}")`);
   }
 
   loadFile(path: string, space: Space = this.self): AnswerGroup[] {
-    const full = resolvePath(path);
-    const directory = full.slice(0, full.lastIndexOf("/")) || "/";
-    this.#engine.mount(
-      directory,
-      directory,
-      (name) => name.endsWith(".metta") || name.endsWith(".pl"),
-    );
-    return groupsOf(this.#engine.start(["load", full, space.reference]).sync());
+    return groupsOf(this.#engine.start(["load", resolvePath(path), space.reference]).sync());
   }
 
   /**

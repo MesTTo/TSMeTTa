@@ -15,15 +15,30 @@
  *   package resolves the runtime copy packed beside it;
  *   commit=c478620e8c8a6690212528c64c30012ab69acfa3].
  *   mountInto copies what a host directory holds while it is read, skipping
- *   an entry that is gone by the time it is read, so a directory another
- *   process writes into can be mounted [tested: "loads a file whose directory
- *   holds a link to nothing"; commit=a151c899a11b3b8ffb405b23b67d1f2000ded4dd].
+ *   an entry that is gone by the time it is read, so the runtime's engine and
+ *   library sources can be copied from a tree another process writes into
+ *   [tested: "loads a file whose directory holds a link to nothing";
+ *   commit=a151c899a11b3b8ffb405b23b67d1f2000ded4dd].
+ *   The engine sees this host's file system at the paths it has here: every
+ *   top-level directory but the engine's own is mounted through NODEFS at its
+ *   own path, its working directory is this process's, and its tmp_dir is
+ *   the one a native SWI-Prolog in this environment would choose, so a
+ *   relative or absolute path resolves as it does for the native engine
+ *   [tested: "resolves a relative path against this process's working
+ *   directory, as the native engine does", "reads a host file written after
+ *   boot and writes one the host reads", "boots in a working directory of /
+ *   with no mount of its own", "names a Windows path by its drive's mount"].
+ * Fails when: the host carries no NODEFS, which a host built before the
+ *   recipe at c68d1c9a3 does not; boot then refuses by name rather than show
+ *   the engine none of the host's files.
  * Owns resources: synchronous reads close their file descriptors before
- *   returning; the caller owns the destination WebAssembly filesystem.
+ *   returning; the caller owns the destination WebAssembly filesystem, and
+ *   every NODEFS mount lives exactly as long as the instance it is made in.
  */
 
 import { type Dirent, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,10 +51,28 @@ export interface RuntimeFS {
   writeFile(path: string, data: Uint8Array | string): void;
 }
 
+/** A runtime filesystem that can also mount a host directory, emscripten's `FS`. */
+export interface HostFS extends RuntimeFS {
+  mount(type: unknown, options: { readonly root: string }, mountpoint: string): unknown;
+  readonly filesystems: Readonly<Record<string, unknown>>;
+}
+
+/** A host whose files the engine is shown, and where the engine starts in them. */
+export interface HostView {
+  /** Mount the host's files, once the engine's host check has passed. */
+  mount(fs: HostFS): void;
+  /** The engine's working directory: this process's. */
+  readonly working: string;
+  /** The engine's `tmp_dir`: where a native SWI-Prolog here writes temporary files. */
+  readonly temporary: string;
+}
+
 /** Validated runtime sources and the optional browser asset resolver. */
 export interface PreparedRuntime {
   mount(fs: RuntimeFS): void;
   options?: Record<string, unknown>;
+  /** The host's files, on a host that has them to show. */
+  host?: HostView;
 }
 
 function findPackageRoot(from: string): string {
@@ -137,15 +170,129 @@ export function forgetRuntime(_root?: string): void {
   // Deliberately empty; see above.
 }
 
-/** Resolve the host path accepted by loadFile and libraryPath. */
-export function resolvePath(path: string): string {
-  if (path.startsWith("/")) return path;
-  return `${process.cwd()}/${path}`.replace(/\/\.\//g, "/");
+/**
+ * A host path as the engine sees it.
+ *
+ * On a POSIX host every top-level directory is mounted at its own path, so a
+ * path is itself. On Windows each drive root is mounted at `/<letter>`, so
+ * `C:\\Users\\ada\\x.metta` is `/c/Users/ada/x.metta`
+ * [source: pyodide src/templates/python_cli_entry.mjs at e4d3ae95,
+ * windowsPathToUnix]. A path with no drive letter is left as it is there.
+ */
+export function enginePath(path: string, platform: string = process.platform): string {
+  if (platform !== "win32") return path;
+  const drive = /^([A-Za-z]):[\\/]/.exec(path);
+  if (drive === null) return path;
+  return `/${(drive[1] as string).toLowerCase()}${path.slice(2).replace(/[\\/]+/g, "/")}`;
 }
 
-/** Whether a host path names an existing directory. */
-export function isDirectory(path: string): boolean {
-  return existsSync(path) && statSync(path).isDirectory();
+/** The engine's path for a host path, resolved against this process's working directory. */
+export function resolvePath(path: string): string {
+  return enginePath(resolve(path));
+}
+
+/** The engine's path for a library directory on this host, or a refusal naming it. */
+export function libraryDirectory(path: string): string {
+  const full = resolve(path);
+  if (!(existsSync(full) && statSync(full).isDirectory())) {
+    throw new SourceNotFoundError(`a library path is a directory that exists, and ${full} is not`);
+  }
+  return enginePath(full);
+}
+
+/**
+ * The engine's own top-level directories, which a host directory of the same
+ * name must not shadow: emscripten's device and process trees, the SWI-Prolog
+ * home this host preloads, and the runtime prepareRuntime mounts. Pyodide
+ * leaves out `lib` as well, because its own library lives there; nothing of
+ * this engine's does [source: pyodide src/templates/python_cli_entry.mjs at
+ * e4d3ae95, dirsToMount].
+ */
+const ENGINE_OWNED = new Set(["dev", "proc", "swipl", "metta"]);
+
+/**
+ * The host directories the engine is shown, each with the path it has there.
+ *
+ * Every top-level directory of a POSIX host, so any absolute path resolves,
+ * and a working directory of / needs no mount of its own, since everything
+ * under it is one of these. A Windows host lists only the working drive at /,
+ * so there the drive roots of the working directory and the temporary
+ * directory are mounted, as Pyodide mounts the drives its paths name.
+ */
+function hostMounts(): { readonly root: string; readonly mountpoint: string }[] {
+  if (process.platform === "win32") {
+    const drives = new Set<string>();
+    for (const path of [process.cwd(), temporaryDirectory()]) {
+      const drive = /^([A-Za-z]):[\\/]/.exec(path);
+      if (drive !== null) drives.add((drive[1] as string).toUpperCase());
+    }
+    return [...drives]
+      .toSorted()
+      .filter((drive) => isDirectory(`${drive}:\\`))
+      .map((drive) => ({ root: `${drive}:\\`, mountpoint: `/${drive.toLowerCase()}` }));
+  }
+  return readdirSync("/")
+    .filter((name) => !ENGINE_OWNED.has(name) && isDirectory(`/${name}`))
+    .map((name) => ({ root: `/${name}`, mountpoint: `/${name}` }));
+}
+
+/** Whether a host path names a directory this process can stat. */
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Where a native SWI-Prolog in this environment writes temporary files: TMP
+ * on a POSIX host and TEMP on Windows, else /tmp [source: swipl-devel
+ * src/os/pl-prologflag.c, setTmpDirPrologFlag, at V10.1.14]. Windows' own
+ * default stands in for SWI's compiled one there.
+ */
+function temporaryDirectory(): string {
+  const chosen = process.platform === "win32" ? process.env["TEMP"] : process.env["TMP"];
+  if (chosen !== undefined && chosen !== "") return chosen;
+  return process.platform === "win32" ? tmpdir() : "/tmp";
+}
+
+/**
+ * Show the engine this host's files, each at the path it has here.
+ *
+ * Refuses on a host with no NODEFS, which would otherwise show the engine
+ * none of them and let every relative path fail as a missing file.
+ */
+function mountHostFiles(fs: HostFS): void {
+  const nodefs = fs.filesystems["NODEFS"];
+  if (nodefs === undefined) {
+    throw new EngineError(
+      "this package's WebAssembly SWI-Prolog carries no NODEFS, so the engine cannot see " +
+        "this host's files; rebuild it from tools/wasm-host at c68d1c9a3 or later",
+    );
+  }
+  for (const { root, mountpoint } of hostMounts()) {
+    fs.mkdirTree(mountpoint);
+    fs.mount(nodefs, { root }, mountpoint);
+  }
+}
+
+/**
+ * Mount a host directory at an engine path, live: what the host holds there
+ * is what the engine reads, a file created after the mount included.
+ *
+ * Every host path is already in view at its own path, so mounting one there
+ * changes nothing and is left alone; this door names a host directory at
+ * another engine path.
+ */
+export function mountHost(fs: HostFS, hostDir: string, virtualDir: string): void {
+  const host = resolve(hostDir);
+  if (!isDirectory(host)) {
+    throw new SourceNotFoundError(`${host} is not a directory this host can read`);
+  }
+  if (enginePath(host) === virtualDir) return;
+  fs.mkdirTree(virtualDir);
+  fs.mount(fs.filesystems["NODEFS"], { root: host }, virtualDir);
 }
 
 /** Read UTF-8 source text from the host filesystem. */
@@ -162,8 +309,10 @@ export function readTextFile(path: string): string {
  * is skipped, as a tree walker skips ENOENT mid-walk; only the directory asked
  * for has to exist. The listing carries each entry's type, so a file `keep`
  * refuses is never opened and only a symbolic link is stat'ed, to follow it.
+ * It copies the runtime's engine and library sources into /metta, leaving out
+ * the native QLF images a live mount would show the engine.
  */
-export function mountInto(
+function mountInto(
   fs: RuntimeFS,
   hostDir: string,
   virtualDir: string,
@@ -248,6 +397,11 @@ export async function prepareRuntime(root: string): Promise<PreparedRuntime> {
         }
       }
       fs.writeFile("/metta/bridge.pl", readFileSync(join(packageRoot, "bridge.pl")));
+    },
+    host: {
+      mount: mountHostFiles,
+      working: enginePath(process.cwd()),
+      temporary: enginePath(temporaryDirectory()),
     },
   };
 }

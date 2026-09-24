@@ -4,6 +4,19 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- Under Node the engine sees this host's files at their own paths: every
+  top-level directory but the engine's own `/dev`, `/proc`, `/swipl` and
+  `/metta` is mounted live through emscripten's NODEFS, as Pyodide's Node
+  CLI mounts them, and a Windows drive is `/c` and so on. The engine starts in
+  this process's working directory, `/` included, and its `tmp_dir` is what a
+  native SWI-Prolog here would choose, TMP or else `/tmp` (TEMP on Windows).
+  So a relative path in a program resolves as it does for the native engine,
+  and a file either side writes is at once there for the other. `loadFile`,
+  `libraryPath` and `import` of a host path read the file where it is, where
+  they copied its directory's `.metta` and `.pl` files into the engine's own
+  filesystem; `engine.mount(hostDir, virtualDir)` mounts live and takes no
+  file filter. A host without NODEFS, one built before c68d1c9a3's recipe,
+  refuses at boot.
 - A free word is the head it names wherever a term goes, as its `fn`
   spelling is: `typed(S.plus, add)` is `(: plus +)` and `m.fn.getType(add)`
   asks about `+`. Every word of `OPERATOR_HEADS` and `WORD_HEADS` used to

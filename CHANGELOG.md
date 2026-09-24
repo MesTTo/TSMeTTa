@@ -4,6 +4,14 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- `m.eval`, `m.fn` and a live view's refresh evaluate through the engine's one
+  host evaluation door, `metta_host_evaluate/5`, which translates the term and
+  runs it inside the fuel scope, answering `Empty` as data. `metta_node_eval/3`
+  is gone, and the engine's `prolog-static` lane refuses a host transport that
+  evaluates any other way. An ask costs 17 inferences more and a query row 4
+  (define-call and query-rows): the door settles an open definition batch and
+  reads each answer's well-founded residue.
+
 - A registration of Prolog that its contract refuses throws
   `RegistrationError`, code `ERR_METTA_REGISTRATION`, carrying `requires`:
   what the registration lacks, which is the names to register, a declaration

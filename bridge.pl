@@ -792,36 +792,6 @@ metta_node_answer(Term, [Wire, Text]) :-
 metta_node_group(Terms, Encoded) :-
     maplist(metta_node_answer, Terms, Encoded).
 
-% The evaluation the eval and source commands share: the engine's eval/2
-% without its last goal. eval/2 ends in `Out \== 'Empty'`, which is MeTTa
-% pruning a branch, and that is right INSIDE a program. At a door it is
-% wrong, because an answer that crosses is data and the symbol Empty is data
-% like any other: pruning it there made `(atom-replace a ((a Empty)))` answer
-% nothing, where the rewrite produced Empty. So only an absent answer declines
-% here. Pruning inside the program is untouched: `(superpose (a Empty b))`
-% still answers a and b, since superpose drops the element in its own
-% compiled body. A `!` directive keeps the engine's pruning too, because the
-% run door is the engine's own [source: metta_py_solution/4 in
-% extensions/python/metta/_binding/evaluation.pl, the same three goals, and
-% its test_empty_symbol_is_a_literal_rewrite; tested: "answers the symbol
-% Empty as data, and prunes only inside a program"].
-%
-% It runs in the evaluation fuel scope every runnable form runs in, as the
-% Python seat's evaluation (metta_py_produce/5) and the C seat's mt_eval do,
-% so (pragma! max-stack-depth N) bounds it branch by branch and a branch that
-% runs out answers (Error <call> StackOverflow) after the finished ones.
-% Outside the scope nothing charged the balance and a goal recursed until the
-% stack gave out: (bounded-factorial 5) under a depth of 20 answered 120 and
-% then raised a 1Gb stack overflow, where the run door answers the error
-% [measured 2026-09-24 on tsmetta 143d12a; tested: "bounds an asked goal by
-% the stack-depth pragma, branch by branch"; commit=1fb327637bc22c5c135381f3f08abe8a86f6f6ed].
-metta_node_eval(Module, Term, Result) :-
-    metta_run_with_fuel(Value, Result,
-        with_metta_module(Module,
-            (   translate_cached_expr(Term, Goals, Produced),
-                call_goals_in_(Module, Goals),
-                translator:metta_boundary_result(Term, Produced, Value) ))).
-
 %%%%%%%%%% Jobs: one engine, suspended between events %%%%%%%%%%
 %
 % An SWI engine is a goal suspended between answers: it "can, if asked,
@@ -1223,12 +1193,22 @@ metta_node_remove_one(Space, Pattern) :-
 % and the match patterns do not pass through it; that is the line the Python
 % binding draws too. The walk is the identity when the receiver IS '&self',
 % which is the engine's default space and this surface's own.
+%
+% The evaluation is the engine's host evaluation door, which every seat shares:
+% it runs the term inside the fuel scope, so (pragma! max-stack-depth N) bounds
+% it branch by branch and a branch that runs out answers (Error <call>
+% StackOverflow) after the finished ones, and it answers the symbol Empty as
+% data, since an answer that crosses is data and pruning it made
+% `(atom-replace a ((a Empty)))` answer nothing where the rewrite produced
+% Empty [source 2026-09-25T05:56:02+10:00: engine/translator/runtime.pl,
+% metta_host_evaluate/5] [tested 2026-09-25T05:56:17+10:00:
+% "answers the symbol Empty as data, and prunes only inside a program",
+% "bounds an asked goal by the stack-depth pragma, branch by branch"].
 metta_node_command(eval, [Wire, Space0], [answer, Out, Text]) :-
     metta_node_space(Space0, Space),
     metta_node_decode(Wire, Term0),
     metta_substitute_self(Space, Term0, Term),
-    space_module(Space, Module),
-    metta_node_eval(Module, Term, Result),
+    metta_host_evaluate(Space, true, Term, Result, _),
     metta_node_answer(Result, [Out, Text]).
 
 % Evaluate MeTTa source text, through the engine's own reader. The substring
@@ -1242,8 +1222,7 @@ metta_node_command(source, [Src, Space0], [answer, Out, Text]) :-
     ->  metta_substitute_self(Space, Term0, Term)
     ;   Term = Term0
     ),
-    space_module(Space, Module),
-    metta_node_eval(Module, Term, Result),
+    metta_host_evaluate(Space, true, Term, Result, _),
     metta_node_answer(Result, [Out, Text]).
 
 % Run a program. The grouping walk, the working-dir defaulting and the load
@@ -2015,18 +1994,17 @@ metta_node_live_refresh(Id, Generation) :-
        metta_node_live_enqueue(Id, Progress)
     ; true ).
 
-% A refresh evaluates in the fuel scope too, as the Python seat's live view
-% does through its space's eval.
+% A refresh evaluates through the same door, in the fuel scope. A live view's
+% rows are what the program answers, so the symbol Empty is no row, as MeTTa
+% prunes it inside a program.
 metta_node_live_answers(Space, Mode, Term-Projection, Rows) :-
-    space_module(Space, Module),
-    with_metta_module(Module, (
-        metta_node_live_target(Mode, Space, Term, Projection, Goal),
-        metta_speculate(findall(Wire,
-            ( metta_run_with_fuel(Value, Answer, eval(Goal, Value)),
-              term_variables(Answer, Variables),
-              metta_node_live_names(Variables, 0, Names),
-              metta_node_encode_named(Answer, Names, Wire) ), Unsorted))
-    )),
+    metta_node_live_target(Mode, Space, Term, Projection, Goal),
+    metta_speculate(findall(Wire,
+        ( metta_host_evaluate(Space, true, Goal, Answer, _),
+          Answer \== 'Empty',
+          term_variables(Answer, Variables),
+          metta_node_live_names(Variables, 0, Names),
+          metta_node_encode_named(Answer, Names, Wire) ), Unsorted)),
     msort(Unsorted, Rows).
 
 % Each row is compared modulo variable names, preserving repeated variables.
@@ -2043,7 +2021,7 @@ metta_node_live_target(eval, Space, Term0, _, Goal) :-
     metta_substitute_self(Space, Term0, Term),
     ( nonvar(Term), Term = [Name|Args], atom(Name), length(Args, Arity),
       metta_host_stored('&metta', [tabled, Space, Name, Arity]),
-      eval(['table-stats', Term], Stats),
+      metta_host_evaluate(Space, true, ['table-stats', Term], Stats, _),
       memberchk([policy, Policy], Stats), memberchk(incremental, Policy)
     -> Goal = [chain, Term, Value, [quote, [Value]]]
     ; throw(error(domain_error(incremental_tabled_query, Term),

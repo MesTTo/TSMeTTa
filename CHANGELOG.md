@@ -4,6 +4,12 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- An ask runs in the engine's evaluation fuel scope, as a runnable form does
+  and as the Python and C seats' evaluations do, so
+  `(pragma! max-stack-depth N)` bounds `m.eval` and `m.fn` branch by branch:
+  `(bounded-factorial 5)` under a depth of 20 answers `120` and
+  `(Error -3 StackOverflow)`, where it answered 120 and then overflowed the
+  engine's stack. A live view's refresh runs in the scope too.
 - Under Node the engine sees this host's files at their own paths: every
   top-level directory but the engine's own `/dev`, `/proc`, `/swipl` and
   `/metta` is mounted live through emscripten's NODEFS, as Pyodide's Node

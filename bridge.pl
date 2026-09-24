@@ -772,11 +772,22 @@ metta_node_group(Terms, Encoded) :-
 % extensions/python/metta/_binding/evaluation.pl, the same three goals, and
 % its test_empty_symbol_is_a_literal_rewrite; tested: "answers the symbol
 % Empty as data, and prunes only inside a program"].
+%
+% It runs in the evaluation fuel scope every runnable form runs in, as the
+% Python seat's evaluation (metta_py_produce/5) and the C seat's mt_eval do,
+% so (pragma! max-stack-depth N) bounds it branch by branch and a branch that
+% runs out answers (Error <call> StackOverflow) after the finished ones.
+% Outside the scope nothing charged the balance and a goal recursed until the
+% stack gave out: (bounded-factorial 5) under a depth of 20 answered 120 and
+% then raised a 1Gb stack overflow, where the run door answers the error
+% [measured 2026-09-24 on tsmetta 143d12a; tested: "bounds an asked goal by
+% the stack-depth pragma, branch by branch"; commit=WORKTREE].
 metta_node_eval(Module, Term, Result) :-
-    with_metta_module(Module,
-        (   translate_cached_expr(Term, Goals, Produced),
-            call_goals_in_(Module, Goals),
-            translator:metta_boundary_result(Term, Produced, Result) )).
+    metta_run_with_fuel(Value, Result,
+        with_metta_module(Module,
+            (   translate_cached_expr(Term, Goals, Produced),
+                call_goals_in_(Module, Goals),
+                translator:metta_boundary_result(Term, Produced, Value) ))).
 
 %%%%%%%%%% Jobs: one engine, suspended between events %%%%%%%%%%
 %
@@ -1825,12 +1836,15 @@ metta_node_live_refresh(Id, Generation) :-
        metta_node_live_enqueue(Id, Progress)
     ; true ).
 
+% A refresh evaluates in the fuel scope too, as the Python seat's live view
+% does through its space's eval.
 metta_node_live_answers(Space, Mode, Term-Projection, Rows) :-
     space_module(Space, Module),
     with_metta_module(Module, (
         metta_node_live_target(Mode, Space, Term, Projection, Goal),
         metta_speculate(findall(Wire,
-            ( eval(Goal, Answer), term_variables(Answer, Variables),
+            ( metta_run_with_fuel(Value, Answer, eval(Goal, Value)),
+              term_variables(Answer, Variables),
               metta_node_live_names(Variables, 0, Names),
               metta_node_encode_named(Answer, Names, Wire) ), Unsorted))
     )),

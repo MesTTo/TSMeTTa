@@ -13,6 +13,10 @@
  *     accepts each public identity directly [tested: "walks solve's left
  *     variables once"; "reads through each parent identity without a name
  *     adapter"; commit=b9b4cbcf7b9bf0b77df7ecde3c38d9d5dfe46395]
+ *   - an ask is bounded by the stack-depth pragma as a runnable form is, its
+ *     runaway branch answering its error beside the finished ones [tested:
+ *     "bounds an asked goal by the stack-depth pragma, branch by branch";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -250,6 +254,26 @@ describe("scopes", () => {
       assert.equal(String(await m.eval(S["+"](1, 1)).one()), "2");
     }
     assert.equal(String(await m.eval(S["+"](1, 1)).one()), "2");
+  });
+
+  it("bounds an asked goal by the stack-depth pragma, branch by branch", async () => {
+    // An ask runs in the engine's evaluation fuel scope, as a runnable form
+    // does, so a depth of 20 stops the runaway branch with its error and keeps
+    // the finished one. Outside the scope the same ask answered 120 and then
+    // overflowed the engine's stack.
+    m.run(`
+      (= (depth-factorial 0) 1)
+      (= (depth-factorial $n) (* $n (depth-factorial (- $n 1))))
+    `);
+    await m.fn["pragma!"](S["max-stack-depth"], 20).toArray();
+    try {
+      const expected = ["120", "(Error -3 StackOverflow)"];
+      assert.deepEqual((await m.eval(S["depth-factorial"](5)).toArray()).map(String), expected);
+      assert.deepEqual((await m.fn("depth-factorial")(5).toArray()).map(String), expected);
+      assert.deepEqual(m.run("!(depth-factorial 5)")[0]?.texts, expected);
+    } finally {
+      await m.fn["pragma!"](S["max-stack-depth"], S.none).toArray();
+    }
   });
 
   it("discards what a speculation wrote", async () => {

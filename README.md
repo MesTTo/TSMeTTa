@@ -1039,7 +1039,7 @@ Every code-module entry point the package exports, which is what
 | `tsmetta/seam` | This seat's one extension seam, the seat-level twin of `engine/ext_points.pl` and of `metta.seam` on the Python seat: `GROUP`, `KINDS`, `Point`, `Declaration`, `Claim` |
 | `tsmetta/spaces` | Space views and combinators, every one an ordinary `SpaceProvider`: a live `Map` becomes queryable and two spaces read as one. `view`, `union`, `overlay`, `diff`, `mapped`, `objectView`, `readOnly` |
 | `tsmetta/strategies` | The rewriting strategies the engine's strategy library reifies, so a plan is built in TypeScript and then stored, queried, serialised and applied: `Id`, `Fail`, `Seq`, `Choice`, `All`, `One`, `Repeat`, `BottomUp`, `Innermost` |
-| `tsmetta/structures` | `TabledMap`; tables are query-local because the WebAssembly SWI-Prolog has threads disabled, so forms within one `run()` reuse and later jobs recompute |
+| `tsmetta/structures` | `TabledMap`; a table is shared by every ask of the instance, so a later `get()` reads what an earlier ask computed |
 | `tsmetta/subscribe` | Standing queries: a pattern, a space, and something that happens every time an atom matching it arrives or leaves. `subscribe`, `Subscription`, `LiveView`, `Event` |
 | `tsmetta/tables` | `tableSpace`, `arrayTables`, and `bridge` |
 | `tsmetta/testing` | Generate atoms, check properties over them, and hold a space implemented in TypeScript to the contract the engine expects of one: `atoms`, `forAll`, `booleans`, `Arbitrary` |

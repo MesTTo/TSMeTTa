@@ -11,10 +11,10 @@
  *     derived from its own exports map rather than from a list here
  *     [tested: "ties every documented subpath to a package export";
  *     commit=c6ed562a1a6f964aba906206f2558489b107dc24]
- *   - the public `TabledMap` row states that swipl-wasm tables end with one
- *     run, so the class cannot drift back to promising a persistent cache
- *     [tested: "pins the Node table lifetime at the run boundary";
- *     commit=c6ed562a1a6f964aba906206f2558489b107dc24]
+ *   - the public `TabledMap` row states that a table is shared by every ask
+ *     of the instance, so the row cannot drift back to a lifetime the host no
+ *     longer has [tested: "pins the Node table lifetime to the instance";
+ *     commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -107,7 +107,7 @@ describe("the README's public subpaths", () => {
     }
   });
 
-  it("pins the Node table lifetime at the run boundary", () => {
+  it("pins the Node table lifetime to the instance", () => {
     const readme = readFileSync(join(packageRoot, "README.md"), "utf8");
     const documented = section(readme, "Public subpaths");
     const tabledMap = documented
@@ -115,8 +115,7 @@ describe("the README's public subpaths", () => {
       .find((line) => line.includes("`tsmetta/structures`"));
 
     assert.ok(tabledMap, "README has no TabledMap subpath row");
-    assert.match(tabledMap, /query-local/);
-    assert.match(tabledMap, /one `run\(\)`/);
-    assert.match(tabledMap, /later jobs recompute/);
+    assert.match(tabledMap, /shared by every ask of the instance/);
+    assert.match(tabledMap, /a later `get\(\)` reads what an earlier ask computed/);
   });
 });

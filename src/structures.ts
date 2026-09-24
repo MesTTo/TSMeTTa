@@ -10,9 +10,10 @@
  *   - the two VIEWS at the end are different, and say so: a closure and a
  *     computed table are readings of a space, and both rest on the engine's
  *     own tabling, which is what makes a cyclic closure terminate and a table
- *     stay correct when its inputs change. swipl-wasm has threads disabled,
- *     so that table is query-local: forms in one `run()` share it, while each
- *     later `get()` or `has()` runs in a fresh engine and recomputes
+ *     stay correct when its inputs change. Every ask of an instance reads that
+ *     one table: the WebAssembly host shares it between the engines its asks
+ *     run in, as a threaded SWI shares it between threads, so a later `get()`
+ *     or `has()` reads what an earlier one computed
  *   - atoms are interned, so a `Map` keyed by an atom is already a structural
  *     map and only the ALPHA and the UNIFICATION questions need machinery
  * Guarantees:
@@ -37,10 +38,11 @@
  *     [tested: "answers in registration order"; "walks registration order without sorting";
  *     commit=fc5eb6ec4f780dd7abab83aa753a1277feddcd47]
  *   - the Node table lifetime is measured rather than implied by the class
- *     name: a repeated run pays the first run's inference cost, while two
- *     forms in one run reuse the table [tested: "recomputes across Node runs
- *     and reuses within one run";
- *     commit=42df19d71823b963fce5594a42f57fd23a89b7a9]
+ *     name: a later run reads the table an earlier run built, costing what
+ *     every run over the complete table costs and less than the run that
+ *     built it, as a second form in one run reads what the first built
+ *     [tested: "reuses a table across Node runs as within one";
+ *     commit=WORKTREE]
  * Decides: `MatchIndex` is an imperfect discrimination tree — the term-indexing
  *   structure automated theorem provers use at millions-of-terms scale. The
  *   tree answers CANDIDATES and `matchTerms` confirms, which is what makes a
@@ -765,13 +767,11 @@ export interface TableStats {
  * await distances.stats();
  * ```
  *
- * The table is the ENGINE's, not a `Map` kept beside it. On a threaded SWI,
- * engines share that table and invalidation keeps it fresh when source atoms
- * change. swipl-wasm has threads disabled, so each Node job owns its table:
- * runnable forms in one `run()` reuse it, but `get()` and `has()` each open a
- * new job and recompute. Query-local tabling still terminates recursive cycles
- * and preserves the function's answer set; this class does not promise a
- * persistent host-side cache on Node.
+ * The table is the ENGINE's, not a `Map` kept beside it, and every ask of the
+ * instance reads that one table: on a threaded SWI its threads share it, and
+ * the WebAssembly host shares it between the engines its asks run in, an ask
+ * that meets a table another ask is still completing waiting for it.
+ * Invalidation keeps it fresh when source atoms change.
  */
 export class TabledMap {
   readonly #space: Space;
@@ -847,7 +847,7 @@ export class TabledMap {
     };
   }
 
-  /** Drop this function's tables; on Node a later job already recomputes. */
+  /** Drop this function's tables, so the next call from any ask builds them again. */
   clear(surface: ViewHost): void {
     surface.run(`!(table-clear ${this.#pattern.text})`);
   }

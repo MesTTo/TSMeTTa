@@ -4,6 +4,22 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- A table is shared by every ask of an instance, as a space is: a later ask
+  reads the table an earlier one built, and `(table-stats ...)` from another
+  ask reads it too, where each ask used to build and drop its own. The host
+  (WebAssembly build 7) carries the SWI patch that shares a `table ... as
+  shared` predicate's table between the engines of a build without threads,
+  and an ask that meets a table another ask is still completing, which it can
+  be only while that ask awaits a TypeScript operation inside it, now waits
+  for that ask: its engine yields to this side, which parks it until another
+  ask makes progress and then lets it claim the table again. Two asks
+  deadlocked over two tables resolve as SWI's threads do, the one that closes
+  the cycle giving its tables up and waiting its turn. The synchronous door,
+  `runOne`, has nobody to hand the thread to and refuses by name. A table
+  declared private, and exact memoization's, which is private too, stay each
+  ask's own, where the Python seat, whose runs share one engine, keeps them;
+  bounded memoization already outlived its ask.
+
 - An ask runs in the engine's evaluation fuel scope, as a runnable form does
   and as the Python and C seats' evaluations do, so
   `(pragma! max-stack-depth N)` bounds `m.eval` and `m.fn` branch by branch:

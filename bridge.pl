@@ -103,6 +103,13 @@
 %     it is reached outside an engine, rather than with SWI's vmi message
 %     [tested: "refuses a host operation reached where the engine cannot
 %     suspend"]
+%   - a job's engine that meets a shared table another engine is completing
+%     suspends through prolog:tabling_wait/1 and claims the table again when
+%     resumed; an engine that is no job's, or cannot yield, fails the hook, so
+%     boot/tabling.pl refuses by name rather than block [tested:
+%     test/tabling-wait.test.ts, "parks an ask behind the ask completing its
+%     table", "refuses on the synchronous door rather than wait";
+%     commit=WORKTREE]
 %   - a command or scope whose ARGUMENT COUNT is not the one its verb declares
 %     is refused by name, naming both counts, and an unknown verb is a separate
 %     refusal from a wrong count. A wrong count used to unify with no clause
@@ -1783,6 +1790,48 @@ prolog:error_message(metta_node_host_error(Message)) -->
 prolog:error_message(metta_node_not_in_engine(_)) -->
     [ 'a host operation cannot answer here: the engine has no suspension \c
        point'-[] ].
+prolog:error_message(metta_node_table_stall(Message)) -->
+    [ '~w'-[Message] ].
+
+%%%%%%%%%% Waiting for a shared table %%%%%%%%%%
+%
+% A table is instance state, like a space, so every ask reads the one shared
+% table, which the host shares between the engines of this threadless build
+% [tested: test/tabling-wait.test.ts, "keeps a table across asks";
+% commit=WORKTREE]. The engines of this build run one at a time, so
+% an ask that meets a table another ask's engine is completing cannot block as
+% a thread does: that owner only runs once this engine hands the thread back.
+% boot/tabling.pl's tabling_wait/2 calls this hook instead. The job yields
+% [wait, Kind] and the host parks it until another job made progress, then
+% posts [ok] and the claim is tried again (engine.ts, Engine.park); it posts
+% [error, Text] when every open job is parked, since nothing is left that could
+% complete the table. Kind is owner, for a table another engine is completing,
+% or restart, after this engine gave its own tables up to break a deadlock,
+% which is itself progress for the others. An engine that is not a job's (a
+% nested one, or the main engine running a synchronous door) and a job inside a
+% transaction or speculate scope cannot suspend, so the hook fails and
+% tabling_wait/2 raises permission_error(wait, shared_table, Goal) rather than
+% block or read the table incomplete.
+:- multifile prolog:tabling_wait/1.
+
+prolog:tabling_wait(Reason) :-
+    engine_self(Engine),
+    metta_node_job(_, Engine),
+    metta_node_wait_kind(Reason, Kind),
+    catch(engine_yield([wait, Kind]),
+          error(permission_error(execute, _, _), _),
+          fail),
+    engine_fetch(Reply),
+    metta_node_waited(Reply).
+
+metta_node_wait_kind(owner(_), owner).
+metta_node_wait_kind(restart, restart).
+
+metta_node_waited([ok]) :- !.
+metta_node_waited([error, Text]) :-
+    metta_node_atom(Text, Message),
+    throw(error(metta_node_table_stall(Message),
+                context(prolog:tabling_wait/1, _))).
 
 %%%%%%%%%% Watching a space %%%%%%%%%%
 %

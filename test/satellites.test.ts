@@ -9,10 +9,10 @@
  *     retained prefix after its streaming pass
  *     [tested: "matches a full stable top-k order across bounds and non-finite scores",
  *     "sorts only the retained top-k prefix after one streaming pass"; commit=6b5caa45cc0abc8b2d396c0614e22f427678be4b]
- *   - swipl-wasm tabling is query-local: separate `run()` calls recompute the
- *     same call, while two runnable forms in one call reuse its answer trie
- *     [tested: "recomputes across Node runs and reuses within one run";
- *     commit=42df19d71823b963fce5594a42f57fd23a89b7a9]
+ *   - a table outlives the run that built it: a later `run()` costs what every
+ *     run over the complete table costs, less than the run that built it, and
+ *     a second form in one run reads what the first built [tested: "reuses a
+ *     table across Node runs as within one"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -555,7 +555,7 @@ describe("the tabled views", () => {
     assert.match(String(squares), /^TabledMap\(square\/1 on /);
   });
 
-  it("recomputes across Node runs and reuses within one run", () => {
+  it("reuses a table across Node runs as within one", () => {
     m.run(`
       (= (node-run-fib $n)
          (if (< $n 2)
@@ -566,26 +566,38 @@ describe("the tabled views", () => {
       !(tabled (node-run-fib $n))
     `);
 
-    const beforeFirst = m.engine.counters.inferences;
-    const first = m.run("!(node-run-fib 26)");
-    const firstCost = m.engine.counters.inferences - beforeFirst;
-    const beforeRepeated = m.engine.counters.inferences;
-    const repeated = m.run("!(node-run-fib 26)");
-    const repeatedCost = m.engine.counters.inferences - beforeRepeated;
-    const beforeTogether = m.engine.counters.inferences;
-    const together = m.run("!(node-run-fib 26)\n!(node-run-fib 26)");
-    const togetherCost = m.engine.counters.inferences - beforeTogether;
+    const measured = (source: string): [(readonly string[])[], number] => {
+      const before = m.engine.counters.inferences;
+      const answers = m.run(source).map(({ texts }) => texts);
+      return [answers, m.engine.counters.inferences - before];
+    };
+    const one = "!(node-run-fib 26)";
+    const [first, firstCost] = measured(one);
+    const [repeated, repeatedCost] = measured(one);
+    const [, thirdCost] = measured(one);
+    m.run("!(table-clear (node-run-fib $n))");
+    const [together, togetherCost] = measured(`${one}\n${one}`);
+    const [, rebuiltCost] = measured(one);
 
-    assert.deepEqual(first.map(({ texts }) => texts), [["121393"]]);
-    assert.deepEqual(repeated.map(({ texts }) => texts), [["121393"]]);
-    assert.deepEqual(together.map(({ texts }) => texts), [["121393"], ["121393"]]);
+    assert.deepEqual(first, [["121393"]]);
+    assert.deepEqual(repeated, [["121393"]]);
+    assert.deepEqual(together, [["121393"], ["121393"]]);
+    // Inference counts are exact, so these are equalities. A run over a
+    // complete table costs the same whichever run built it, and less than
+    // the run that built it [measured 2026-09-24 on build 7: 2333 to build,
+    // 767 to read].
+    assert.equal(thirdCost, repeatedCost);
+    assert.equal(rebuiltCost, repeatedCost);
     assert.ok(
-      Math.abs(firstCost - repeatedCost) <= 32,
-      `separate jobs did not both recompute: first=${String(firstCost)}, repeated=${String(repeatedCost)}`,
+      repeatedCost < firstCost,
+      `a later run recomputed the table: first=${String(firstCost)}, repeated=${String(repeatedCost)}`,
     );
+    // After table-clear, the run of two forms builds the table once: the
+    // second form reads it, where building it again would cost the run a
+    // second build rather than less than a read in a run of its own.
     assert.ok(
       togetherCost < firstCost + repeatedCost,
-      `forms in one job did not reuse: together=${String(togetherCost)}, separate=${String(firstCost + repeatedCost)}`,
+      `two forms built the table twice: together=${String(togetherCost)}, first=${String(firstCost)}`,
     );
   });
 });

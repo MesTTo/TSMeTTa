@@ -51,6 +51,14 @@
  *   - a job exposes complete collection, not a partial uniqueness helper that
  *     can return before proving uniqueness [tested: "does not expose the partial Job.only helper";
  *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
+ *   - a job whose engine meets a shared table another job is completing parks
+ *     until another job makes progress and then claims the table again; a
+ *     restart after a deadlock wakes the others as it parks, every open job
+ *     parked is a stall each parked job is told of, and the synchronous door
+ *     refuses rather than wait [tested: test/tabling-wait.test.ts, "parks an
+ *     ask behind the ask completing its table", "evaluates a table its owner
+ *     gave up", "refuses on the synchronous door rather than wait", "resolves
+ *     two asks deadlocked over two tables"; commit=WORKTREE]
  * Owns: one WebAssembly instance per boot(), one host hold per open job,
  *   the live-host-value table and, on a Node host, the engine's own temporary
  *   directory, all released by dispose(); a boot that fails after minting the
@@ -409,6 +417,7 @@ export class Job {
   constructor(engine: Engine, id: number) {
     this.#engine = engine;
     this.#id = id;
+    engine.jobOpened();
   }
 
   /** The next event, or null once the job is finished. */
@@ -421,7 +430,9 @@ export class Job {
         if (this.#id === null) await this.closed();
         return settled.event;
       }
-      const reply = await settled.reply;
+      const reply = await ("wait" in settled
+        ? this.#engine.park(settled.wait === "restart")
+        : settled.reply);
       if (this.#id === null) return null;
       raw = this.#engine.rawResume(this.#id, reply);
     }
@@ -457,8 +468,12 @@ export class Job {
       }
       this.close();
       throw new UnsupportedError(
-        "a host operation answered with a promise on a synchronous door; use " +
-          "the awaiting form so this side can wait for it",
+        "wait" in settled
+          ? "a shared table this ask needs is being completed by another ask, " +
+              "which runs only once this one hands the thread back, and a " +
+              "synchronous door cannot; use the awaiting form"
+          : "a host operation answered with a promise on a synchronous door; use " +
+              "the awaiting form so this side can wait for it",
       );
     }
   }
@@ -484,6 +499,7 @@ export class Job {
     for (const iterator of this.#pending.values()) this.#close(iterator);
     this.#pending.clear();
     this.#engine.rawStop(id);
+    this.#engine.jobClosed();
   }
 
   /** Release the job and await every provider's asynchronous finalizer. */
@@ -498,13 +514,16 @@ export class Job {
    * Either the raw event is one the caller should see (or the end), or it is a
    * request only this side can answer. Answering it may be immediate, in which
    * case the next raw event comes back at once, or it may need a promise, which
-   * is the one thing the synchronous door cannot do.
+   * is the one thing the synchronous door cannot do. A `wait` is the engine
+   * parking on a shared table another job is completing (Engine.park); every
+   * other event is progress, which is what wakes a parked job.
    */
   #settle(
     first: unknown,
   ):
     | { done: true; event: JobEvent | null }
-    | { done: false; reply: Promise<readonly unknown[]> } {
+    | { done: false; reply: Promise<readonly unknown[]> }
+    | { done: false; wait: "owner" | "restart" } {
     // A LOOP rather than tail recursion: a synchronous host operation is
     // answered and resumed here, and a generator answering ten thousand times
     // would otherwise be ten thousand JavaScript frames deep.
@@ -516,6 +535,8 @@ export class Job {
       }
       const event = raw as readonly unknown[];
       const tag = hostText(event[0]);
+      if (tag === "wait") return { done: false, wait: hostText(event[1]) === "restart" ? "restart" : "owner" };
+      this.#engine.progressed();
       if (tag === "spent") {
         this.#engine.counters.inferences += Number(hostText(event[1]));
         this.close();
@@ -699,6 +720,21 @@ function messageOf(error: unknown): string {
   return String(error);
 }
 
+/** A promise with its resolver: ES2024's Promise.withResolvers, on ES2023. */
+function withResolvers<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+/** What a parked job's hook raises when nothing is left to wake it. */
+const TABLE_STALL =
+  "every open ask is waiting for a shared table, so nothing is left that could " +
+  "complete it: its owner is an engine no ask drives, such as one a job created " +
+  "and holds suspended";
+
 /** A grounded atom's host value; anything else stays the atom itself. */
 function unwrap(atom: Atom): unknown {
   const held = atom as { value?: unknown; kind?: string };
@@ -880,6 +916,72 @@ export class Engine {
     const answer = this.once("metta_node_resume(Id, R, Ev)", { Id: id, R: reply });
     const events = answer["Ev"] as readonly unknown[];
     return events.length === 0 ? null : events[0];
+  }
+
+  // --- waiting for a shared table ---------------------------------------------
+  //
+  // Every ask shares one table store (the host carries
+  // swi-threadless-shared-table-private-per-engine), and its engines run one at
+  // a time, so an ask that meets a table another ask's engine is completing
+  // cannot block the way a thread does: the owner runs only once this side
+  // resumes it. The claimant's engine yields [wait, Kind] (bridge.pl,
+  // prolog:tabling_wait/1) and parks here until another job makes progress,
+  // then claims again. This is SWI's threaded claim_answer_table() wait, with
+  // this side as the scheduler, as XSB's shared completed tables suspend a
+  // consumer until the table completes. Progress is any event but a wait, a
+  // job closing, and a `restart`, whose engine just gave its own tables up to
+  // break a deadlock. When every open job is parked nothing is left that could
+  // complete the tables they wait for: a cycle among them would have been a
+  // deadlock the claim itself reports, so their owners are engines no job
+  // drives, and each is told so rather than left hanging.
+
+  #open = 0;
+  #parked = 0;
+  #wake = withResolvers<boolean>();
+
+  /** @internal A job opened. */
+  jobOpened(): void {
+    this.#open += 1;
+  }
+
+  /** @internal A job closed; whatever it owned is complete or given back. */
+  jobClosed(): void {
+    this.#open -= 1;
+    this.progressed();
+  }
+
+  /** @internal Something ran: wake every parked job to claim its table again. */
+  progressed(): void {
+    if (this.#parked === 0) return;
+    this.#wakeAll(true);
+  }
+
+  /**
+   * @internal Park a job until another makes progress, answering the reply
+   * its hook reads: `[ok]` to claim again, `[error, Text]` on a stall.
+   */
+  park(restart: boolean): Promise<readonly unknown[]> {
+    if (restart) this.progressed();
+    this.#parked += 1;
+    const wake = this.#wake.promise;
+    if (this.#parked === this.#open) {
+      if (restart) {
+        // Alone, it has nobody to wait for, and it just gave its tables up.
+        this.#parked -= 1;
+        return Promise.resolve(["ok"]);
+      }
+      this.#wakeAll(false);
+    }
+    return wake.then((progress) => (progress ? ["ok"] : ["error", TABLE_STALL]));
+  }
+
+  // The count drops HERE rather than as each parked job wakes, because a job
+  // that parks in the same turn must not count one that is already woken.
+  #wakeAll(progress: boolean): void {
+    const woken = this.#wake;
+    this.#wake = withResolvers<boolean>();
+    this.#parked = 0;
+    woken.resolve(progress);
   }
 
   /** @internal Release a job's engine. */

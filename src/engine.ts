@@ -38,7 +38,7 @@
  *     of the EngineError raised there, the split PyMeTTa's _classify makes
  *     [tested: "hands a host operation's own error back as itself or as the
  *     cause", "refuses a capability the provider does not implement, in its
- *     own words"; commit=WORKTREE]
+ *     own words"; commit=c52f5f0d2320ed2eea85d176318a6c384c7eab56]
  *   - nothing reaches the host's console unless boot() was asked for verbose:
  *     an engine error is raised here and a program's output is buffered
  *   - every number crosses exactly: a Prolog integer arrives as a bigint and
@@ -482,7 +482,7 @@ export class Job {
   // extensions/python/metta/_binding/runtime.py, _classify]. Dropped at close,
   // since a failure a MeTTa program caught as data never reaches that door.
   // [tested: "hands a host operation's own error back as itself or as the
-  // cause"; commit=WORKTREE]
+  // cause"; commit=c52f5f0d2320ed2eea85d176318a6c384c7eab56]
   #thrown = new Map<string, unknown>();
   #nextThrown = 1;
 

@@ -11,7 +11,7 @@
 %   metta_node_host_error(Message, Key), and its refusal's Fields carry
 %   `host-error` Key, the key src/engine.ts's Job kept the thrown value under
 %   [tested: extensions/node/test/define.test.ts, "hands a host operation's own
-%   error back as itself or as the cause"; commit=WORKTREE].
+%   error back as itself or as the cause"; commit=c52f5f0d2320ed2eea85d176318a6c384c7eab56].
 % Guarantees: metta_node_render/2 scopes message capture through
 %   metta_engine:metta_with_trailed/3
 %   [source: extensions/node/bridge.pl:metta_node_render/2; commit=40b71fc99571872ca5fc85cdaf7902b467166539].

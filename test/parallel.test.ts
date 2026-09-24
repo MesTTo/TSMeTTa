@@ -203,6 +203,20 @@ describe("taking from a channel without waiting", () => {
     assert.ok(!("queued" in channel));
   });
 
+  it("closes when the block holding it ends", async () => {
+    let held: Channel<number> | undefined;
+    {
+      using channel = new Channel<number>();
+      held = channel;
+      await channel.send(1);
+      assert.ok(!channel.closed);
+    }
+    assert.ok(held.closed, "leaving the block closed it");
+    assert.equal(await held.receive(), 1, "what was queued is still received");
+    assert.equal(await held.receive(), undefined, "then the channel is drained");
+    await assert.rejects(held.send(2), /this channel is closed/);
+  });
+
   it("releases a sender that a full channel had blocked", async () => {
     const channel = new Channel<number>({ max: 1 });
     await channel.send(1);

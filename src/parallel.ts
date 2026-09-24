@@ -23,6 +23,9 @@
  *   - `Channel.size` is the one queued-value count; the surface carries no
  *     synonymous alias [tested: "keeps one name for the queued count";
  *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
+ *   - a `Channel` is Disposable and disposing it closes it, as the Python
+ *     seat's Channel closes from `__exit__` [tested: "closes when the block
+ *     holding it ends"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -209,8 +212,9 @@ function sleep(ms: number, signal: AbortSignal | undefined): Promise<boolean> {
  * `max` bounds what is queued and makes a sender WAIT when it is reached,
  * which is `queue.Queue`'s policy rather than a ring buffer's: a full channel
  * slows the producer down instead of silently discarding what it produced.
+ * `using` closes it when the block ends.
  */
-export class Channel<T> implements AsyncIterable<T> {
+export class Channel<T> implements AsyncIterable<T>, Disposable {
   readonly #queued: T[] = [];
   readonly #waitingReceivers: ((value: IteratorResult<T>) => void)[] = [];
   readonly #waitingSenders: (() => void)[] = [];
@@ -287,6 +291,10 @@ export class Channel<T> implements AsyncIterable<T> {
       waiting({ done: true, value: undefined as never });
     }
     for (const waiting of this.#waitingSenders.splice(0)) waiting();
+  }
+
+  [Symbol.dispose](): void {
+    this.close();
   }
 
   [Symbol.asyncIterator](): AsyncIterator<T> {

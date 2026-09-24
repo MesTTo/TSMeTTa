@@ -4,6 +4,10 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- A `Channel` is `Disposable`: `using channel = new Channel()` closes it when
+  the block ends, as the Python seat's Channel closes from `__exit__`. A
+  program had to close one in a `finally` of its own.
+
 - `Space.preAdd(handler)` and `Space.postAdd(handler)` claim a space's write
   hooks, the engine's `declare-pre-add!` and `declare-post-add!`. Each answers
   a `ScopeHandle` whose release undeclares the hook while that handler still

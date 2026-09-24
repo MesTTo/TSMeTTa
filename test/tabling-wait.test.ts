@@ -6,24 +6,24 @@
  *   per-engine patch).
  * Guarantees:
  *   - a table outlives the ask that built it, so a later ask reads it and its
- *     statistics [tested: "keeps a table across asks"; commit=WORKTREE]
+ *     statistics [tested: "keeps a table across asks"; commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
  *   - a private table, and exact memoization, which keeps a private table,
  *     stay the ask's own, while bounded memoization outlives it [tested:
  *     "keeps a private table and exact memoization to their ask, and bounded
- *     memoization past it"; commit=WORKTREE]
+ *     memoization past it"; commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
  *   - an ask that meets a table another ask is completing parks, and answers
  *     once that ask completes it, without running the table's body itself
  *     [tested: "parks an ask behind the ask completing its table";
- *     commit=WORKTREE]
+ *     commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
  *   - an owner that gives the table up hands it back, and the parked ask
  *     evaluates it itself [tested: "evaluates a table its owner gave up";
- *     commit=WORKTREE]
+ *     commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
  *   - the synchronous door, which has nobody to hand the thread to, refuses by
  *     name [tested: "refuses on the synchronous door rather than wait";
- *     commit=WORKTREE]
+ *     commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
  *   - two asks deadlocked over two tables resolve, the one that detects the
  *     cycle giving its table up and waiting its turn [tested: "resolves two
- *     asks deadlocked over two tables"; commit=WORKTREE]
+ *     asks deadlocked over two tables"; commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
  * Open Obligations: None.
  */
 

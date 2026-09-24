@@ -12,7 +12,7 @@
  *   - a table outlives the run that built it: a later `run()` costs what every
  *     run over the complete table costs, less than the run that built it, and
  *     a second form in one run reads what the first built [tested: "reuses a
- *     table across Node runs as within one"; commit=WORKTREE]
+ *     table across Node runs as within one"; commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

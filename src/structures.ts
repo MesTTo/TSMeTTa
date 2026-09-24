@@ -42,7 +42,7 @@
  *     every run over the complete table costs and less than the run that
  *     built it, as a second form in one run reads what the first built
  *     [tested: "reuses a table across Node runs as within one";
- *     commit=WORKTREE]
+ *     commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
  * Decides: `MatchIndex` is an imperfect discrimination tree — the term-indexing
  *   structure automated theorem provers use at millions-of-terms scale. The
  *   tree answers CANDIDATES and `matchTerms` confirms, which is what makes a

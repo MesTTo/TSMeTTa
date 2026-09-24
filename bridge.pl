@@ -109,7 +109,7 @@
 %     boot/tabling.pl refuses by name rather than block [tested:
 %     test/tabling-wait.test.ts, "parks an ask behind the ask completing its
 %     table", "refuses on the synchronous door rather than wait";
-%     commit=WORKTREE]
+%     commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
 %   - a command or scope whose ARGUMENT COUNT is not the one its verb declares
 %     is refused by name, naming both counts, and an unknown verb is a separate
 %     refusal from a wrong count. A wrong count used to unify with no clause
@@ -1798,7 +1798,7 @@ prolog:error_message(metta_node_table_stall(Message)) -->
 % A table is instance state, like a space, so every ask reads the one shared
 % table, which the host shares between the engines of this threadless build
 % [tested: test/tabling-wait.test.ts, "keeps a table across asks";
-% commit=WORKTREE]. The engines of this build run one at a time, so
+% commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]. The engines of this build run one at a time, so
 % an ask that meets a table another ask's engine is completing cannot block as
 % a thread does: that owner only runs once this engine hands the thread back.
 % boot/tabling.pl's tabling_wait/2 calls this hook instead. The job yields

@@ -58,7 +58,7 @@
  *     refuses rather than wait [tested: test/tabling-wait.test.ts, "parks an
  *     ask behind the ask completing its table", "evaluates a table its owner
  *     gave up", "refuses on the synchronous door rather than wait", "resolves
- *     two asks deadlocked over two tables"; commit=WORKTREE]
+ *     two asks deadlocked over two tables"; commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
  * Owns: one WebAssembly instance per boot(), one host hold per open job,
  *   the live-host-value table and, on a Node host, the engine's own temporary
  *   directory, all released by dispose(); a boot that fails after minting the

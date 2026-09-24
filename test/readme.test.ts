@@ -14,7 +14,7 @@
  *   - the public `TabledMap` row states that a table is shared by every ask
  *     of the instance, so the row cannot drift back to a lifetime the host no
  *     longer has [tested: "pins the Node table lifetime to the instance";
- *     commit=WORKTREE]
+ *     commit=3e8b7d4778b0fc8ec98719d94c82667e1d4862c7]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

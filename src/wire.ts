@@ -38,13 +38,13 @@
  *     an explicit worklist, so a term's depth costs heap and never the
  *     JavaScript call stack, the portable transport's JSON text included
  *     [tested: carries a term a hundred thousand deep through every codec leg;
- *     commit=WORKTREE]
+ *     commit=50f5fdc43fe708afff18f9cb84aa6c81f7c9a89e]
  *   - transportToJson and transportFromJson write and read what JSON.stringify
  *     and JSON.parse with the payload reviver did, malformed text included, and
  *     refuse a cycle [tested: "writes and reads as the recursive doors did, over
  *     generated documents", "refuses malformed text where JSON.parse does, and
  *     reads the rest as it does", "refuses a cycle rather than writing forever";
- *     commit=WORKTREE]
+ *     commit=50f5fdc43fe708afff18f9cb84aa6c81f7c9a89e]
  *   - the engine path builds NO intermediate tree: {@link decodeEngine} reads
  *     the flat token list straight into atoms and {@link encodeEngine} writes
  *     atoms straight into tokens

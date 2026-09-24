@@ -48,7 +48,7 @@
  *     only while that handler still holds it [tested: "claims a pre-add hook
  *     from the space its handler was defined in, and releases it at the end of
  *     a block", "claims for a rule set by its symbol, refuses a second
- *     claimant, and releases only its own claim"; commit=WORKTREE]
+ *     claimant, and releases only its own claim"; commit=da1a54dd740bb9c0d2ce012a7197cdd72596647a]
  * Decides: the collection verbs are SYNCHRONOUS. The transport is in process,
  *   so a synchronous twin genuinely exists, and the async-primary law asks for
  *   an async surface where the transport needs one rather than everywhere. The

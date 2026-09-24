@@ -4,6 +4,14 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- `checkCodec` names both sides' anonymous variables alike before comparing a
+  term that carries one, so a codec that keeps `$_` as `$_`, which this
+  package's own wire and JSON transport do, passes as the engine's round trip
+  does. It compared the answer against the original with only the original's
+  anonymous variables named, which failed every such case of the most faithful
+  codec with `$_: came back as $_`; a codec that merges two anonymous variables
+  into one shared variable still fails.
+
 - `Accept`, `Refuse` and `Drop` build the engine's capitalized verdicts,
   `(Accept)`, `(Accept atom)`, `(Refuse words)` and `(Drop)`, which are the only
   verdicts the engine now takes. The lowercase heads they built were calls

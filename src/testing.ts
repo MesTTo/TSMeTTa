@@ -17,6 +17,11 @@
  *   - `checkSpaceProvider` exercises exactly the capabilities a provider
  *     claims, so a provider that implements four of the six is checked on four
  *     and refused on neither
+ *   - `checkCodec` names both sides' anonymous variables alike before it
+ *     compares a term carrying one, so a codec that keeps `$_` as `$_` passes
+ *     as the engine's round trip does and one that merges two into a shared
+ *     variable fails [tested: "holds a codec that keeps an anonymous variable
+ *     anonymous, and refuses one that shares two"]
  * Decides: no test-framework dependency. The property runner answers a RESULT
  *   rather than calling an assertion, so it works under `node:test`, under a
  *   runner this package has never heard of, and inside an ordinary program.
@@ -595,8 +600,11 @@ export async function checkGateway(
  * One exception, and it is the codec's contract rather than a weakening. An
  * ANONYMOUS variable has no name to preserve: two `$_` are two DIFFERENT
  * variables, and the wire has to distinguish them, so each comes back under a
- * fresh name of the engine's. A term carrying one is therefore compared up to
- * alpha equivalence, which is exactly the property that survives.
+ * fresh name of the engine's, or as `$_` again from a codec that keeps it
+ * anonymous. Both sides' anonymous variables are named alike before the
+ * comparison, so a term carrying one is compared up to alpha equivalence,
+ * which is exactly the property that survives, and a codec that merges two of
+ * them into one shared variable still fails.
  */
 export function checkCodec(
   roundTrip: (atom: Atom) => Atom,
@@ -608,7 +616,9 @@ export function checkCodec(
     const anonymous = atom.text.includes("$_");
     try {
       const back = roundTrip(atom);
-      const held = anonymous ? alphaEqual(back, nameAnonymous(atom)) : back === atom;
+      const held = anonymous
+        ? alphaEqual(nameAnonymous(back), nameAnonymous(atom))
+        : back === atom;
       results.push(
         held
           ? { name: atom.text, ok: true }

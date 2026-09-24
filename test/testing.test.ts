@@ -13,7 +13,23 @@
 import { strict as assert } from "node:assert";
 import { after, before, describe, it } from "node:test";
 
-import { type Atom, Expression, type MeTTa, S, V, metta } from "../src/index.ts";
+import {
+  type Atom,
+  Expression,
+  type MeTTa,
+  S,
+  V,
+  Var,
+  _,
+  atomFromWire,
+  fromTransport,
+  mapTerm,
+  metta,
+  toTransport,
+  transportFromJson,
+  transportToJson,
+  wireFromAtom,
+} from "../src/index.ts";
 import {
   Random,
   atoms,
@@ -114,6 +130,21 @@ describe("the corpus checks", () => {
     const results = checkCodec((atom: Atom) => m.roundTrip(atom), corpus);
     const failed = results.filter((each) => !each.ok);
     assert.deepEqual(failed, [], failed.map((each) => `${each.name}: ${each.detail ?? ""}`).join("\n"));
+  });
+
+  it("holds a codec that keeps an anonymous variable anonymous, and refuses one that shares two", () => {
+    // This package's own wire and JSON transport keep `$_` as `$_`, where the
+    // engine's round trip names it afresh; both are faithful codecs.
+    const kept = (atom: Atom) =>
+      atomFromWire(fromTransport(transportFromJson(transportToJson(toTransport(wireFromAtom(atom))))));
+    const anonymous = [S.f(_), S.f(_, _), S.g(S.h(_), V.x)];
+    assert.deepEqual(checkCodec(kept, anonymous).filter((each) => !each.ok), []);
+    const engine = checkCodec((atom: Atom) => m.roundTrip(atom), anonymous);
+    assert.deepEqual(engine.filter((each) => !each.ok), []);
+    // Two anonymous variables merged into one shared variable is another term.
+    const merged = (atom: Atom) =>
+      mapTerm(atom, (leaf) => (leaf instanceof Var && leaf.name === "_" ? V.shared : leaf));
+    assert.deepEqual(checkCodec(merged, [S.f(_, _)]).map((each) => each.ok), [false]);
   });
 
   it("counts distinct atoms up to variable spelling", () => {

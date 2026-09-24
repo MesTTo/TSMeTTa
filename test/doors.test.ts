@@ -26,7 +26,8 @@
  *     commit=1369817ebd86d76661ac9f36c0e39b5b3bf75007]
  *   - each engine mints its temporary names in a directory of its own, which
  *     its disposal removes [tested: "gives every engine a temporary directory
- *     of its own, and removes it when the engine is disposed"; commit=WORKTREE]
+ *     of its own, and removes it when the engine is disposed";
+ *     commit=609b2715276edf92ba47f9853c0a05a29221d787]
  * Open Obligations: None.
  */
 

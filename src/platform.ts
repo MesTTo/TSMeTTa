@@ -33,7 +33,7 @@
  *   temporary names two engines mint never collide although every WebAssembly
  *   engine's process id is 42 [tested: "gives every engine a temporary
  *   directory of its own, and removes it when the engine is disposed";
- *   commit=WORKTREE].
+ *   commit=609b2715276edf92ba47f9853c0a05a29221d787].
  * Fails when: the host carries no NODEFS, which a host built before the
  *   recipe at c68d1c9a3 does not; boot then refuses by name rather than show
  *   the engine none of the host's files.

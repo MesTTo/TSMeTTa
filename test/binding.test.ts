@@ -780,11 +780,19 @@ describe("the codec, through the engine", () => {
       let pattern = await regex.fn.reCompile("a").one();
       const before = held();
       pattern = undefined;
-      for (let round = 0; round < 3; round += 1) {
+      // A FinalizationRegistry callback runs as a task V8 posts after the
+      // collection that found the atom unreachable, and nothing bounds how
+      // many collections and turns that takes: three rounds read the value
+      // still held once under a loaded gate. So the program collects until
+      // the engine has dropped it, and the bound only turns a real leak into
+      // a failure rather than a hang.
+      let after = held();
+      for (let round = 0; round < 50 && after > 0; round += 1) {
         globalThis.gc();
         await new Promise((resolve) => setTimeout(resolve, 0));
+        after = held();
       }
-      console.log(JSON.stringify({ before, after: held() }));
+      console.log(JSON.stringify({ before, after }));
       m.dispose();
     `;
     const printed = execFileSync(process.execPath, ["--expose-gc", "--input-type=module", "-e", program], {

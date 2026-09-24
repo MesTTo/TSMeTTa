@@ -27,7 +27,8 @@
  *   [tested: "resolves a relative path against this process's working
  *   directory, as the native engine does", "reads a host file written after
  *   boot and writes one the host reads", "boots in a working directory of /
- *   with no mount of its own", "names a Windows path by its drive's mount"].
+ *   with no mount of its own", "names a Windows path by its drive's mount";
+ *   commit=1369817ebd86d76661ac9f36c0e39b5b3bf75007].
  * Fails when: the host carries no NODEFS, which a host built before the
  *   recipe at c68d1c9a3 does not; boot then refuses by name rather than show
  *   the engine none of the host's files.

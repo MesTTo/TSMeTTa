@@ -7,7 +7,7 @@ are one link of SWI-Prolog 10.1.14, swipl-devel commit
 69775434c8226897626b226aefcc8266499f1e2e, with every patch in MesTTo/MeTTa's
 `tests/checks/host_workarounds/` applied. They were compiled by
 npm-swipl-wasm's own Docker recipe at commit 774c700f2bae5c3f59706ad11dbfbd6d5f8af3e1, with
-emsdk 6.0.9, zlib 1.3.2 and pcre2-10.48, and report `compiled_at` Sep 24 2026, 05:24:27.
+emsdk 6.0.9, zlib 1.3.2 and pcre2-10.48, and report `compiled_at` Sep 24 2026, 06:12:34.
 
 Beyond that recipe the build links SWI's archive, utf8proc and yaml packages
 and clib's uuid binding over libarchive (MesTTo/MeTTa-Library-Pack's pinned

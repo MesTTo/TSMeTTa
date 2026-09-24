@@ -21,23 +21,39 @@
  *   commit=a151c899a11b3b8ffb405b23b67d1f2000ded4dd].
  *   The engine sees this host's file system at the paths it has here: every
  *   top-level directory but the engine's own is mounted through NODEFS at its
- *   own path, its working directory is this process's, and its tmp_dir is
- *   the one a native SWI-Prolog in this environment would choose, so a
- *   relative or absolute path resolves as it does for the native engine
+ *   own path, and its working directory is this process's, so a relative or
+ *   absolute path resolves as it does for the native engine
  *   [tested: "resolves a relative path against this process's working
  *   directory, as the native engine does", "reads a host file written after
  *   boot and writes one the host reads", "boots in a working directory of /
  *   with no mount of its own", "names a Windows path by its drive's mount";
  *   commit=1369817ebd86d76661ac9f36c0e39b5b3bf75007].
+ *   The engine's tmp_dir is a directory of its own, minted exclusively inside
+ *   the one a native SWI-Prolog in this environment would choose, so the
+ *   temporary names two engines mint never collide although every WebAssembly
+ *   engine's process id is 42 [tested: "gives every engine a temporary
+ *   directory of its own, and removes it when the engine is disposed";
+ *   commit=WORKTREE].
  * Fails when: the host carries no NODEFS, which a host built before the
  *   recipe at c68d1c9a3 does not; boot then refuses by name rather than show
  *   the engine none of the host's files.
  * Owns resources: synchronous reads close their file descriptors before
- *   returning; the caller owns the destination WebAssembly filesystem, and
- *   every NODEFS mount lives exactly as long as the instance it is made in.
+ *   returning; the caller owns the destination WebAssembly filesystem; every
+ *   NODEFS mount lives exactly as long as the instance it is made in; and
+ *   each engine's temporary directory, minted at boot, is removed with
+ *   everything in it by Engine.dispose, or when the process exits for an
+ *   engine nobody disposed.
  */
 
-import { type Dirent, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import {
+  type Dirent,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -58,14 +74,25 @@ export interface HostFS extends RuntimeFS {
   readonly filesystems: Readonly<Record<string, unknown>>;
 }
 
+/** A directory one engine owns: where the engine sees it, and its removal. */
+export interface OwnedDirectory {
+  /** The directory's engine path. */
+  readonly path: string;
+  /** Remove the directory and everything in it; a second call does nothing. */
+  release(): void;
+}
+
 /** A host whose files the engine is shown, and where the engine starts in them. */
 export interface HostView {
   /** Mount the host's files, once the engine's host check has passed. */
   mount(fs: HostFS): void;
   /** The engine's working directory: this process's. */
   readonly working: string;
-  /** The engine's `tmp_dir`: where a native SWI-Prolog here writes temporary files. */
-  readonly temporary: string;
+  /**
+   * Mint the engine's `tmp_dir`: a directory of its own inside the one a
+   * native SWI-Prolog here writes temporary files to.
+   */
+  temporary(): OwnedDirectory;
 }
 
 /** Validated runtime sources and the optional browser asset resolver. */
@@ -259,6 +286,41 @@ function temporaryDirectory(): string {
 }
 
 /**
+ * The directories minted for engines this process booted and has not
+ * released, removed when the process exits, so an engine nobody disposed
+ * leaves nothing behind, as a native SWI-Prolog removes its temporary files
+ * when it halts.
+ */
+const minted = new Set<string>();
+process.once("exit", () => {
+  for (const directory of minted) rmSync(directory, { recursive: true, force: true });
+});
+
+/**
+ * A directory of the engine's own inside the host's temporary directory.
+ *
+ * SWI-Prolog makes a temporary name unique by its process id,
+ * `<tmp_dir>/swipl_<base>_<pid>_<n>` with `n` counted per process [source:
+ * swipl-devel src/os/pl-os.c, TemporaryFile, at V10.1.14], and a WebAssembly
+ * engine's process id is always 42. Two engines sharing the host's directory
+ * therefore mint the same names: two in one process both answered
+ * `swipl_probe_42_1` to `tmp_file(probe, F)`, and `temp-dir!` refused
+ * whichever came second [measured 2026-09-24 at d6ba786]. mkdtemp creates its
+ * directory exclusively under a random name, which restores what a native
+ * process id guarantees for every name the engine mints inside it.
+ */
+function mintTemporaryDirectory(): OwnedDirectory {
+  const directory = mkdtempSync(join(temporaryDirectory(), "tsmetta-"));
+  minted.add(directory);
+  return {
+    path: enginePath(directory),
+    release(): void {
+      if (minted.delete(directory)) rmSync(directory, { recursive: true, force: true });
+    },
+  };
+}
+
+/**
  * Show the engine this host's files, each at the path it has here.
  *
  * Refuses on a host with no NODEFS, which would otherwise show the engine
@@ -402,7 +464,7 @@ export async function prepareRuntime(root: string): Promise<PreparedRuntime> {
     host: {
       mount: mountHostFiles,
       working: enginePath(process.cwd()),
-      temporary: enginePath(temporaryDirectory()),
+      temporary: mintTemporaryDirectory,
     },
   };
 }

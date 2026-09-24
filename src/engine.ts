@@ -52,7 +52,9 @@
  *     can return before proving uniqueness [tested: "does not expose the partial Job.only helper";
  *     commit=d6342cff24b7c087b464d9cdb13b71a3d9a115a2]
  * Owns: one WebAssembly instance per boot(), one host hold per open job,
- *   and the live-host-value table, all released by dispose().
+ *   the live-host-value table and, on a Node host, the engine's own temporary
+ *   directory, all released by dispose(); a boot that fails after minting the
+ *   directory removes it before it raises.
  * Decides: a job is addressed by integer because the WebAssembly value
  *   conversion renders every Prolog blob as the same opaque `{"$t":"b"}`.
  * Open Obligations:
@@ -66,6 +68,7 @@ import {
   type HostFS,
   loadSWIPL,
   mountHost,
+  type OwnedDirectory,
   packageRoot,
   prepareRuntime,
   repoRoot,
@@ -766,11 +769,15 @@ export class Engine {
   }
 
   /** @internal Use {@link boot}. */
-  constructor(swipl: Swipl, output: string[], stderr: string[]) {
+  constructor(swipl: Swipl, output: string[], stderr: string[], temporary?: OwnedDirectory) {
     this.#swipl = swipl;
     this.#output = output;
     this.#stderr = stderr;
+    this.#temporary = temporary;
   }
+
+  /** The engine's own temporary directory, on a host that gave it one. */
+  readonly #temporary: OwnedDirectory | undefined;
 
   /**
    * Run a goal that must succeed exactly once, and return its bindings.
@@ -1095,6 +1102,7 @@ export class Engine {
     this.#closed = true;
     this.hostValues.clear();
     this.handles.clear();
+    this.#temporary?.release();
   }
 
   /** Whether this engine has been released. */
@@ -1212,40 +1220,46 @@ export async function boot(
     throw new EngineError(String(hosted["Refusal"]));
   }
   // A host that passed is shown this host's files, so the engine starts where
-  // this process is and writes temporary files where a native engine here
-  // would. The paths are bound as text rather than spliced into the goal, so
-  // no path can break the query.
+  // this process is and writes temporary files in a directory of its own
+  // where a native engine here would write them. The paths are bound as text
+  // rather than spliced into the goal, so no path can break the query.
   const host = runtime.host;
-  if (host !== undefined) {
-    host.mount(swipl.FS);
-    const placed = swipl.prolog.query(
-      "working_directory(_, Working), atom_string(Temporary, TemporaryText), " +
-        "set_prolog_flag(tmp_dir, Temporary).",
-      { Working: host.working, TemporaryText: host.temporary },
-    ).once();
-    if (placed === undefined || placed.error === true) {
-      throw new EngineError(
-        `the engine could not start in ${host.working} with its temporary files in ` +
-          `${host.temporary}: ${String(placed?.message ?? "the query failed")}`,
-      );
+  const temporary = host?.temporary();
+  try {
+    if (host !== undefined && temporary !== undefined) {
+      host.mount(swipl.FS);
+      const placed = swipl.prolog.query(
+        "working_directory(_, Working), atom_string(Temporary, TemporaryText), " +
+          "set_prolog_flag(tmp_dir, Temporary).",
+        { Working: host.working, TemporaryText: temporary.path },
+      ).once();
+      if (placed === undefined || placed.error === true) {
+        throw new EngineError(
+          `the engine could not start in ${host.working} with its temporary files in ` +
+            `${temporary.path}: ${String(placed?.message ?? "the query failed")}`,
+        );
+      }
     }
-  }
-  const consulted = swipl.prolog.query(
-    `consult('${VIRTUAL_ROOT}/engine/identity.pl'), ` +
-    `metta_identity:metta_boot_identity, consult('${VIRTUAL_ROOT}/engine/metta.pl').`,
-  ).once();
-  if (consulted?.error === true) {
-    throw new EngineError(`the engine did not load: ${String(consulted.message)}`);
+    const consulted = swipl.prolog.query(
+      `consult('${VIRTUAL_ROOT}/engine/identity.pl'), ` +
+      `metta_identity:metta_boot_identity, consult('${VIRTUAL_ROOT}/engine/metta.pl').`,
+    ).once();
+    if (consulted?.error === true) {
+      throw new EngineError(`the engine did not load: ${String(consulted.message)}`);
+    }
+
+    refuseUnnamedErrors(stderr);
+    stderr.length = 0;
+    output.length = 0;
+
+    const bridged = swipl.prolog.query(`consult('${VIRTUAL_ROOT}/bridge.pl').`).once();
+    if (bridged?.error === true) {
+      throw new EngineError(`the Node bridge did not load: ${String(bridged.message)}`);
+    }
+  } catch (error) {
+    temporary?.release();
+    throw error;
   }
 
-  refuseUnnamedErrors(stderr);
-  stderr.length = 0;
-  output.length = 0;
-
-  const bridged = swipl.prolog.query(`consult('${VIRTUAL_ROOT}/bridge.pl').`).once();
-  if (bridged?.error === true) {
-    throw new EngineError(`the Node bridge did not load: ${String(bridged.message)}`);
-  }
-
-  return new Engine(swipl, output, stderr);
+  return new Engine(swipl, output, stderr, temporary);
 }

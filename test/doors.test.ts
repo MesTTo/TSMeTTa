@@ -24,12 +24,15 @@
  *     "boots in a working directory of / with no mount of its own", "names a
  *     Windows path by its drive's mount";
  *     commit=1369817ebd86d76661ac9f36c0e39b5b3bf75007]
+ *   - each engine mints its temporary names in a directory of its own, which
+ *     its disposal removes [tested: "gives every engine a temporary directory
+ *     of its own, and removes it when the engine is disposed"; commit=WORKTREE]
  * Open Obligations: None.
  */
 
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -144,7 +147,8 @@ describe("the host's files", () => {
   it("boots in a working directory of / with no mount of its own", () => {
     // A child process, since a working directory belongs to the process: it
     // starts at /, reads this package's manifest by its absolute path, and
-    // mints a temporary directory where TMP says, as a native engine would.
+    // mints a temporary directory inside the one TMP names, where a native
+    // engine would write.
     const temporary = mkdtempSync(join(tmpdir(), "tsmetta-root-"));
     try {
       const index = new URL(`../src/index.${import.meta.url.endsWith(".ts") ? "ts" : "js"}`, import.meta.url).href;
@@ -176,6 +180,28 @@ describe("the host's files", () => {
     } finally {
       rmSync(temporary, { recursive: true, force: true });
     }
+  });
+
+  it("gives every engine a temporary directory of its own, and removes it when the engine is disposed", async () => {
+    // Every WebAssembly engine's process id is 42, so a temporary name
+    // SWI-Prolog mints from it is unique only because each engine mints it in
+    // a directory of its own: two engines asking for one name get two.
+    const temporaryOf = (surface: MeTTa): string =>
+      String(surface.engine.once("current_prolog_flag(tmp_dir, Directory)")["Directory"]);
+    const minted = (surface: MeTTa): string =>
+      String(surface.engine.once("tmp_file(twin, Name)")["Name"]);
+    const other = await metta();
+    const mine = temporaryOf(host);
+    const theirs = temporaryOf(other);
+    try {
+      assert.notEqual(mine, theirs);
+      assert.ok(existsSync(mine) && existsSync(theirs), `${mine} and ${theirs}`);
+      assert.notEqual(minted(host), minted(other));
+    } finally {
+      other.dispose();
+    }
+    assert.equal(existsSync(theirs), false, `${theirs} outlived its engine`);
+    assert.ok(existsSync(mine), `${mine} went with another engine`);
   });
 
   it("names a Windows path by its drive's mount", () => {

@@ -189,9 +189,12 @@ starts in this process's working directory, so a program reads
 a file either side writes is there for the other at once. Every top-level
 directory is mounted live through emscripten's NODEFS but the engine's own,
 `/dev`, `/proc`, `/swipl` and `/metta`; a Windows drive is `/c`, `/d` and so
-on. The engine's temporary files go where a native SWI-Prolog here would put
-them, TMP or else `/tmp` (TEMP on Windows). `m.engine.mount(dir, "/data")`
-shows a host directory at another engine path as well.
+on. Each engine writes its temporary files in a directory of its own inside
+the one a native SWI-Prolog here would use, TMP or else `/tmp` (TEMP on
+Windows), and `dispose()` removes it: every WebAssembly engine's process id is
+42, so the names SWI-Prolog makes unique by process id would otherwise collide
+between engines. `m.engine.mount(dir, "/data")` shows a host directory at
+another engine path as well.
 
 ```ts
 m.import(lib.file);

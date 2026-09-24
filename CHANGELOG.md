@@ -8,8 +8,11 @@ Open Obligations: None. -->
   top-level directory but the engine's own `/dev`, `/proc`, `/swipl` and
   `/metta` is mounted live through emscripten's NODEFS, as Pyodide's Node
   CLI mounts them, and a Windows drive is `/c` and so on. The engine starts in
-  this process's working directory, `/` included, and its `tmp_dir` is what a
-  native SWI-Prolog here would choose, TMP or else `/tmp` (TEMP on Windows).
+  this process's working directory, `/` included, and its `tmp_dir` is a
+  directory of its own inside the one a native SWI-Prolog here would choose,
+  TMP or else `/tmp` (TEMP on Windows), which `dispose()` removes: every
+  WebAssembly engine's process id is 42, so the temporary names SWI-Prolog
+  makes unique by process id collided between engines sharing one directory.
   So a relative path in a program resolves as it does for the native engine,
   and a file either side writes is at once there for the other. `loadFile`,
   `libraryPath` and `import` of a host path read the file where it is, where

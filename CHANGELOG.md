@@ -4,6 +4,15 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- A registration of Prolog that its contract refuses throws
+  `RegistrationError`, code `ERR_METTA_REGISTRATION`, carrying `requires`:
+  what the registration lacks, which is the names to register, a declaration
+  in the source, or a file origin for a rename. Such a refusal crossed as the
+  `value` kind, whose remedy asked for "a value JSON can carry". Every engine
+  signal's message is its own sentence now, so a value, type or interrupted
+  refusal no longer reads `Unknown error term`, and none carries the
+  `metta: ... (kind)` framing.
+
 - README.md and the `enginePath` test spell a Linux home file
   `/srv/ada/...` where they wrote a path under `/home`, which the workspace's
   check for machine-local paths in tracked files refuses.

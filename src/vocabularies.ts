@@ -430,6 +430,7 @@ export const RefusalKind = {
   operation: "operation",
   stack: "stack",
   source: "source",
+  registration: "registration",
   engine: "engine",
 } as const;
 

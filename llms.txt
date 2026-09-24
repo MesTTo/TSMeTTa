@@ -210,8 +210,9 @@ caller never matches the message. One class per kind the engine publishes:
 (`PlatformCapabilityError.requires`, `.costs`, and the operation and
 capability it inherits), `operation`
 (`OperationError.operation`, `.kind`, `.expected`, `.culprit`), `stack`
-(`StackLimitError.limit`) and `source` (`SourceNotFoundError.source`); anything
-else is `EngineError`. A `limit` is `undefined` where a budget expired inside a
+(`StackLimitError.limit`), `source` (`SourceNotFoundError.source`) and
+`registration` (`RegistrationError.requires`, what the registration lacks);
+anything else is `EngineError`. A `limit` is `undefined` where a budget expired inside a
 nested query, which is the one case the engine cannot name the number. The list
 is `tests/data/error-kinds.json`, shared with the Python seat.
 

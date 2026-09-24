@@ -282,6 +282,8 @@ export {
   ResourceLimitError,
   type ResourceLimitErrorOptions,
   ResultError,
+  RegistrationError,
+  type RegistrationErrorOptions,
   RestraintError,
   type RestraintErrorOptions,
   SourceNotFoundError,

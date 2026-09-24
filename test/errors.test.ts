@@ -100,6 +100,7 @@ const EXPECTED_CODES: Readonly<Record<string, Code>> = {
   OperationError: "ERR_METTA_OPERATION",
   PlatformCapabilityError: "ERR_METTA_CAPABILITY",
   ProviderError: "ERR_METTA_PROVIDER",
+  RegistrationError: "ERR_METTA_REGISTRATION",
   RestraintError: "ERR_METTA_RESTRAINT",
   ResultError: "ERR_METTA_ABSENT",
   SourceNotFoundError: "ERR_METTA_SOURCE",

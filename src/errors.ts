@@ -113,7 +113,9 @@ export type Code =
   /** A test assertion a program made did not hold. */
   | "ERR_METTA_ASSERTION"
   /** A source a program named is not there. */
-  | "ERR_METTA_SOURCE";
+  | "ERR_METTA_SOURCE"
+  /** A registration of Prolog lacks what its contract needs. */
+  | "ERR_METTA_REGISTRATION";
 
 /**
  * The authority one refusal stands on.
@@ -628,6 +630,32 @@ export class SourceNotFoundError extends MettaError {
   }
 }
 
+/** What a refused registration lacks. */
+export interface RegistrationErrorOptions extends MettaErrorOptions {
+  /** The names to register, a declaration in the source, or a file origin for a rename. */
+  readonly requires?: string | undefined;
+}
+
+/**
+ * A registration of Prolog as MeTTa functions that its contract refuses.
+ *
+ * The engine's `registration` kind: a registration registers exactly the
+ * names its caller gives or its source declares, and a rename imports from a
+ * module file, so one missing either is refused before its source loads.
+ * `requires` is what to supply, the field the kind's remedy names.
+ */
+export class RegistrationError extends MettaError {
+  static override readonly defaultCode: Code = "ERR_METTA_REGISTRATION";
+
+  /** The names to register, a declaration in the source, or a file origin for a rename. */
+  readonly requires: string | undefined;
+
+  constructor(message: string, options: RegistrationErrorOptions = {}) {
+    super(message, options);
+    this.requires = options.requires;
+  }
+}
+
 /**
  * Whether a caught value is a TRANSPORT failure rather than a refusal.
  *
@@ -735,6 +763,8 @@ const KINDS: Readonly<
     ),
   source: (text, fields, carried) =>
     new SourceNotFoundError(text, { ...carried, source: fields["source"] }),
+  registration: (text, fields, carried) =>
+    new RegistrationError(text, { ...carried, requires: fields["requires"] }),
   engine: (text, _fields, carried) => new EngineError(text, carried),
 };
 

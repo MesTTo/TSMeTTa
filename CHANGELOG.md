@@ -14,6 +14,9 @@ Open Obligations: None. -->
   `%Undefined%` for the object with nothing said. `S.f(x)` builds the call
   to mention it, awaiting the ask gives its answers, and `G(value)` still
   grounds a thenable when that is what the program means.
+- `arrow` takes any number of positions, as PyMeTTa's does: `arrow(Number)`
+  is `(-> Number)`, the type the engine declares for `current-time`. It used
+  to refuse fewer than two with `NameError`.
 - A value only the engine can hold crosses into TypeScript as a
   `NativeHandle` and back as the very same value: `re-compile`'s pattern, a
   store from `database-open!`, any C blob the engine answers. It used to raise

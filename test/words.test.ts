@@ -162,10 +162,13 @@ describe("structure words", () => {
     assert.equal(await answer(getType(1)), "Number");
   });
 
-  it("build a type claim and an arrow as VALUES", () => {
+  it("build a type claim and an arrow as VALUES", async () => {
     assert.equal(String(typed(S.f, S.Number)), "(: f Number)");
     assert.equal(String(arrow(S.Symbol, S.Number)), "(-> Symbol Number)");
-    assert.throws(() => arrow(S.Number), /at least an argument and a result/);
+    // A nullary operation's type is its result alone, as the engine declares
+    // current-time's.
+    assert.equal(String(arrow(S.Number)), "(-> Number)");
+    assert.deepEqual(await m.fn.getType(fn.currentTime), [arrow(Number)]);
   });
 });
 

@@ -40,7 +40,6 @@
 import {
   ATOM_OF, type Atom, G, type Term, type Var, expr, exprOf, sym, toAtom, typeAtom, variable,
 } from "./atom.ts";
-import { MettaError, NameError } from "./errors.ts";
 import { type Bindings, unifyTerms } from "./matching.ts";
 
 function apply(head: string, ...args: readonly Term[]): Atom {
@@ -290,11 +289,11 @@ export function typed(x: Term, type: Term): Atom {
 /**
  * `(-> a b ... r)`, an arrow type as a value. Each position is a type
  * position, so `arrow(Number, Number, Boolean)` is `(-> Number Number Bool)`.
+ * Any number of positions is an arrow, as PyMeTTa's `arrow` takes any: a
+ * nullary operation's type is its result alone, `arrow(Number)` being
+ * `(-> Number)`, which the engine declares for `current-time`.
  */
 export function arrow(...types: readonly Term[]): Atom {
-  if (types.length < 2) {
-    throw new NameError("an arrow type needs at least an argument and a result");
-  }
   return apply(WORD_HEADS.arrow, ...types.map(typeAtom));
 }
 

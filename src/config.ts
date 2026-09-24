@@ -13,6 +13,14 @@
  *     [tested: "freezes a startup setting once an engine exists"]
  *   - every setting is a positive integer, checked where it is set rather than
  *     where it is used, so a bad `METTA_STACK_LIMIT` is named at boot
+ *   - an environment variable is read as the C seat reads METTA_STACK_LIMIT,
+ *     decimal digits alone, and refused in the Python seat's words: "must be
+ *     a positive integer, got '<value>'" for anything else, an empty value
+ *     included, and "must be positive, got 0" for zero [source:
+ *     extensions/cmetta/cmetta.c, boot_stack_bytes;
+ *     extensions/python/metta/_catalog/bounds.py, Setting.initial and
+ *     _positive_integer; tested: "reads a setting from the environment as the
+ *     other seats do, and refuses a bad one"; commit=WORKTREE]
  * Decides: the settings are a small closed set rather than an open bag. An
  *   open one cannot say which are frozen at startup, cannot validate, and
  *   turns a typo into silence.
@@ -28,12 +36,13 @@ import { showsAs } from "./present.ts";
 /**
  * Every setting, with the environment variable that supplies it.
  *
- * `stackLimit` has NO default, which is a divergence from the Python side and
- * a measured one: its default is eight gigabytes, and a WebAssembly SWI is
- * 32-bit, so setting it answers `set_prolog_flag/2: Cannot represent due to
- * size_t` on stderr [measured 2026-08-28]. Unset means the BUILD's own
- * ceiling, which is the honest default for a build whose address space is not
- * the caller's to guess.
+ * `stackLimit` has no default VALUE, which is a divergence from the Python
+ * side and a measured one: its default is eight gigabytes, and a WebAssembly
+ * SWI is 32-bit, so setting it answers `set_prolog_flag/2: Cannot represent
+ * due to size_t` on stderr [measured 2026-08-28]. Unset means the ceiling boot
+ * derives from the host's memory once the engine has loaded (stackCeiling in
+ * wasm-memory.ts), which no constant here could know; a value set here
+ * overrides it in either direction.
  */
 const SETTINGS = {
   stackLimit: { environment: "METTA_STACK_LIMIT", value: undefined, atStartup: true },
@@ -48,19 +57,25 @@ export type Setting = keyof typeof SETTINGS;
 /** What `configure` accepts. */
 export type Settings = { readonly [K in Setting]?: number };
 
+/**
+ * A setting's value from its environment variable, or its default when unset.
+ *
+ * Decimal digits alone, as the C seat reads METTA_STACK_LIMIT, so a sign, a
+ * blank, an exponent, a hex prefix or an empty value is refused rather than
+ * read the way `Number` would read some of them.
+ */
 function fromEnvironment(
   name: Setting,
   source: Readonly<Record<string, string | undefined>>,
 ): number | undefined {
   const setting = SETTINGS[name];
   const raw = source[setting.environment];
-  if (raw === undefined || raw === "") return setting.value;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new MettaError(
-      `${setting.environment} must be a positive integer, not ${JSON.stringify(raw)}`,
-    );
+  if (raw === undefined) return setting.value;
+  if (!/^[0-9]+$/.test(raw)) {
+    throw new MettaError(`${setting.environment} must be a positive integer, got '${raw}'`);
   }
+  const value = Number(raw);
+  if (value === 0) throw new MettaError(`${setting.environment} must be positive, got 0`);
   return value;
 }
 
@@ -93,10 +108,11 @@ export class Config {
   }
 
   /**
-   * The engine's stack ceiling in bytes, or nothing for the build's own.
+   * The engine's stack ceiling in bytes, or nothing for the one boot derives.
    *
-   * Frozen once an engine exists. Unset by default, because a WebAssembly SWI
-   * is 32-bit and a ceiling this package chose could not be represented.
+   * Frozen once an engine exists. Unset by default, because the ceiling a
+   * WebAssembly SWI can hold depends on what its memory holds once the engine
+   * has loaded; `Engine.stackLimit` reads the one in force.
    */
   get stackLimit(): number | undefined {
     return this.#values.stackLimit;
@@ -128,9 +144,10 @@ export class Config {
     const updates: [Setting, number][] = [];
     for (const [name, value] of Object.entries(settings) as [Setting, number | undefined][]) {
       if (value === undefined) continue;
-      if (!Number.isInteger(value) || value <= 0) {
-        throw new MettaError(`${name} must be a positive integer, not ${String(value)}`);
+      if (!Number.isInteger(value)) {
+        throw new MettaError(`${name} must be a positive integer, got ${String(value)}`);
       }
+      if (value <= 0) throw new MettaError(`${name} must be positive, got ${String(value)}`);
       if (this.#started && SETTINGS[name].atStartup && value !== this.#values[name]) {
         frozen.push(name);
         continue;

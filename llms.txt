@@ -358,7 +358,15 @@ using _ = m.limits({ inferences: 100_000 });
 
 A term is as deep as the ENGINE can hold: nothing on this side recurses per
 nesting level, `m.parse` answers at 500,000 deep, and past the engine's own
-stack the refusal is `StackLimitError` carrying the ceiling in bytes.
+stack the refusal is `StackLimitError` carrying the ceiling in bytes. That
+ceiling is `m.engine.stackLimit`. With no `METTA_STACK_LIMIT`, boot sets it
+once the engine has loaded to half of what the host's memory can still grow
+to, about 2 GiB on this build, so the heap holds the stacks at the ceiling
+and SWI's own refusal comes before the heap runs out. `METTA_STACK_LIMIT`, or
+`config.configure({ stackLimit })` before the first boot, replaces it in either
+direction; the variable is read as every seat reads it, decimal digits alone,
+and above the derived ceiling a heap that runs out first answers the engine's
+`no_memory` error instead.
 `m.dispose()` releases the surface and every door refuses with `ClosedError`
 afterwards, including an ask that was in flight.
 

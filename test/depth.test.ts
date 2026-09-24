@@ -5,8 +5,8 @@
  *   - `node --test` gives this file its own process, which is what lets it set
  *     a startup setting the rest of the suite must not see: `stackLimit` is
  *     frozen once an engine exists, and 64 MiB reaches the refusal in tens of
- *     thousands of levels instead of the 2,000,000 the build's own 1 GiB
- *     ceiling needs
+ *     thousands of levels, where SWI's own 1 GiB default needed 2,000,000 and
+ *     the ceiling boot derives from the host's memory is about twice that
  *   - the refused depth is FAR past the boundary, not just past it. The
  *     boundary is where the engine's boot footprint shows: measured by
  *     bisection after the same 10,000-level warm-up, 64 MiB accepts 45,038 and
@@ -64,6 +64,7 @@ describe("the far end of a term's depth", () => {
         assert.ok(error instanceof StackLimitError, String(error));
         assert.equal(error.code, "ERR_METTA_STACK");
         assert.equal(error.limit, CEILING, "the ceiling the engine reported, in bytes");
+        assert.equal(m.engine.stackLimit, CEILING, "a setting below the derived ceiling is the one in force");
         assert.match(error.message, /METTA_STACK_LIMIT/, "the refusal names its remedy");
         return true;
       },

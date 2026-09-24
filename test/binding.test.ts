@@ -285,8 +285,9 @@ describe("a term deeper than the JavaScript stack", () => {
 
   // What the engine does at its OWN ceiling is test/depth.test.ts, which gets
   // its own process so it can lower `stackLimit` to 64 MiB: reaching the
-  // build's 1 GiB ceiling here would make this file allocate two gigabytes
-  // beside twenty-nine other suites.
+  // default ceiling here, which boot derives at nearly half of the host's
+  // 4 GiB memory, would make this file allocate gigabytes beside twenty-nine
+  // other suites.
 });
 
 describe("what a variable is called on the wire", () => {

@@ -65,6 +65,15 @@
  *     or is refused ends without taking the home engine with it, and a job
  *     refuses to be driven both ways [tested: test/home-engine.test.ts;
  *     commit=707fc07ff19faf9b60bc45af836f2d3dbb8c1c43]
+ *   - with no stack setting, boot sets the ceiling the host's memory leaves
+ *     once the engine and the bridge have loaded, stackCeiling(M, F) in
+ *     wasm-memory.ts for M what the memory may grow to and F what it holds,
+ *     before any ask's engine exists, so every ask runs under it; a setting
+ *     is set before the engine loads instead, and Engine.stackLimit reads
+ *     whichever ceiling SWI holds [tested: test/wasm-memory.test.ts, "boots
+ *     under the ceiling the host's memory leaves", "gives an engine made
+ *     after boot the same ceiling"; test/stack-setting.test.ts, "takes a
+ *     configured ceiling above the derived one"; commit=WORKTREE]
  * Owns: one WebAssembly instance per boot(), one host hold per open job,
  *   the live-host-value table and, on a Node host, the engine's own temporary
  *   directory, all released by dispose(); a boot that fails after minting the
@@ -90,6 +99,7 @@ import {
 
 import { Atom, Expression, G, Grounded, lift } from "./atom.ts";
 import { config } from "./config.ts";
+import { stackCeiling } from "./wasm-memory.ts";
 import { type EffectClass, type OpKind as CatalogOpKind, effectRank } from "./vocabularies.ts";
 import {
   type AssertionParts,
@@ -896,11 +906,26 @@ export class Engine {
       .map(({ capability, requires, costs }) => ({ capability, requires, costs }));
   }
 
+  /**
+   * The stack ceiling every ask runs under, in bytes, as SWI holds it: the
+   * `stackLimit` setting when one is given, else the one boot derived from the
+   * host's memory once the engine had loaded (stackCeiling in wasm-memory.ts).
+   * A deeper or larger term than it allows is a StackLimitError naming it.
+   */
+  readonly stackLimit: number;
+
   /** @internal Use {@link boot}. */
-  constructor(swipl: Swipl, output: string[], stderr: string[], temporary?: OwnedDirectory) {
+  constructor(
+    swipl: Swipl,
+    output: string[],
+    stderr: string[],
+    stackLimit: number,
+    temporary?: OwnedDirectory,
+  ) {
     this.#swipl = swipl;
     this.#output = output;
     this.#stderr = stderr;
+    this.stackLimit = stackLimit;
     this.#temporary = temporary;
   }
 
@@ -1432,8 +1457,7 @@ export async function boot(
   config.markStarted();
   const output: string[] = [];
   const stderr: string[] = [];
-  const swipl = await loadSWIPL({
-    ...(runtime.options ?? {}),
+  const loaded = await loadSWIPL(runtime, {
     arguments: ["-q", "--", ...identity],
     print: (line: string) => {
       output.push(line);
@@ -1444,13 +1468,15 @@ export async function boot(
       if (verbose) console.error(line);
     },
   });
+  const swipl = loaded.swipl;
 
   runtime.mount(swipl.FS);
 
   const flags = verbose ? "['extensions']" : "['extensions', silent]";
-  // Only when one was ASKED for. Unset means the build's own ceiling, and a
-  // value this 32-bit build cannot represent is a refusal by name rather than
-  // a line on stderr.
+  // A ceiling that was ASKED for is set before anything loads, so the engine
+  // loads under it as a native seat's does; an unset one is derived once the
+  // engine has loaded, below. A value this 32-bit build cannot represent is a
+  // refusal by name rather than a line on stderr.
   const ceiling = config.stackLimit;
   if (ceiling !== undefined) {
     const set = swipl.prolog.query(`set_prolog_flag(stack_limit, ${String(ceiling)}).`).once();
@@ -1519,10 +1545,32 @@ export async function boot(
     if (bridged?.error === true) {
       throw new EngineError(`the Node bridge did not load: ${String(bridged.message)}`);
     }
+    // With the engine and the bridge loaded, what the memory holds is what the
+    // stacks cannot have, so the default ceiling is derived now, on the main
+    // engine before any ask's engine exists: an engine takes the ceiling of
+    // the engine that creates it [measured 2026-09-24: an engine created after
+    // set_prolog_flag(stack_limit, 2000000000) read 2000000000 on build 7].
+    // SWI answers the flag as it holds it, which is what the Engine reports.
+    if (ceiling === undefined) {
+      const derived = stackCeiling(loaded.maximum, loaded.memory.buffer.byteLength);
+      const set = swipl.prolog.query(`set_prolog_flag(stack_limit, ${String(derived)}).`).once();
+      if (set === undefined || set.error === true) {
+        throw new EngineError(
+          `the engine did not take the stack ceiling its memory leaves, ${String(derived)} ` +
+            `bytes: ${String(set?.message ?? "the query failed")}`,
+        );
+      }
+    }
+    const held = swipl.prolog.query("current_prolog_flag(stack_limit, Limit).").once();
+    const limit = held?.["Limit"];
+    if (held === undefined || held.error === true || (typeof limit !== "number" && typeof limit !== "bigint")) {
+      throw new EngineError(
+        `the engine did not answer its stack ceiling: ${String(held?.message ?? "the query failed")}`,
+      );
+    }
+    return new Engine(swipl, output, stderr, Number(limit), temporary);
   } catch (error) {
     temporary?.release();
     throw error;
   }
-
-  return new Engine(swipl, output, stderr, temporary);
 }

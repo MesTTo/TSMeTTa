@@ -584,6 +584,27 @@ test('compiles the engine from its URL so the browser can cache the compiled cod
   } finally { await page.close(); }
 });
 
+test("boots under the ceiling the host's memory leaves", async () => {
+  // The bundle carries the host's memory maximum, inlined at build time
+  // because a streamed compilation never holds the bytes, and boot derives
+  // the ceiling from it and what the memory holds once the engine has loaded.
+  const page = await browser.newPage();
+  try {
+    await page.goto(origin);
+    const seen = await page.evaluate(async () => {
+      const { metta } = await import('/browser/index.js');
+      const m = await metta();
+      try {
+        const held = m.engine.once('current_prolog_flag(stack_limit, L)').L;
+        return { limit: m.engine.stackLimit, held: Number(held) };
+      } finally { m.dispose(); }
+    });
+    assert.equal(seen.held, seen.limit, 'the engine reports the ceiling SWI holds');
+    // Above SWI's own 1 GiB default, below half of what a 32-bit memory grows to.
+    assert.ok(seen.limit > 1024 ** 3 && seen.limit < (4 * 1024 ** 3 - 65536) / 2, String(seen.limit));
+  } finally { await page.close(); }
+});
+
 test('compiles the fetched bytes when the response cannot be streamed', async () => {
   // A server that answers the `.wasm` with any other Content-Type makes the
   // browser refuse to stream it. That costs the code cache and must not cost

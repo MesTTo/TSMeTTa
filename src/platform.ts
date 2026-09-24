@@ -34,6 +34,10 @@
  *   engine's process id is 42 [tested: "gives every engine a temporary
  *   directory of its own, and removes it when the engine is disposed";
  *   commit=609b2715276edf92ba47f9853c0a05a29221d787].
+ *   The host binary is read, sized and compiled once per process, and every
+ *   boot links an instance of its own from that module, whose memory the boot
+ *   is handed [tested: test/wasm-memory.test.ts, "boots under the ceiling the
+ *   host's memory leaves"; commit=WORKTREE].
  * Fails when: the host carries no NODEFS, which a host built before the
  *   recipe at c68d1c9a3 does not; boot then refuses by name rather than show
  *   the engine none of the host's files.
@@ -42,7 +46,11 @@
  *   NODEFS mount lives exactly as long as the instance it is made in; and
  *   each engine's temporary directory, minted at boot, is removed with
  *   everything in it by Engine.dispose, or when the process exits for an
- *   engine nobody disposed.
+ *   engine nobody disposed. The compiled module lives as long as the process.
+ * Decides: one compiled WebAssembly.Module is shared by every engine this
+ *   process boots, as the browser platform shares one per root, because a
+ *   Module is immutable and linking one costs nothing beside compiling 3.9 MB
+ *   again.
  */
 
 import {
@@ -61,6 +69,7 @@ import { fileURLToPath } from "node:url";
 
 import type { Swipl } from "./engine.ts";
 import { EngineError, SourceNotFoundError } from "./errors.ts";
+import { memoryMaximum, startHost } from "./wasm-memory.ts";
 
 /** The filesystem operations required to install a runtime. */
 export interface RuntimeFS {
@@ -95,12 +104,28 @@ export interface HostView {
   temporary(): OwnedDirectory;
 }
 
-/** Validated runtime sources and the optional browser asset resolver. */
+/** The engine's WebAssembly module, compiled once, and how far its memory may grow. */
+export interface CompiledHost {
+  /** Immutable, so every boot links an instance of its own from it. */
+  readonly module: WebAssembly.Module;
+  /** The bytes the module's memory may grow to, as its binary declares. */
+  readonly maximum: number;
+}
+
+/** Validated runtime sources, the compiled engine and the optional browser asset resolver. */
 export interface PreparedRuntime {
   mount(fs: RuntimeFS): void;
+  readonly engine: CompiledHost;
   options?: Record<string, unknown>;
   /** The host's files, on a host that has them to show. */
   host?: HostView;
+}
+
+/** A started host: the loader's module object, its memory, and how far that may grow. */
+export interface LoadedHost {
+  readonly swipl: Swipl;
+  readonly memory: WebAssembly.Memory;
+  readonly maximum: number;
 }
 
 function findPackageRoot(from: string): string {
@@ -177,13 +202,50 @@ function requireFactory(): SwiplFactory {
   }
 }
 
-/** Start the host this package carries, with the caller's module options. */
-export async function loadSWIPL(options: Record<string, unknown>): Promise<Swipl> {
+/**
+ * The host binary, sized and compiled once per process.
+ *
+ * The PROMISE, so two boots that start together share one compilation, and a
+ * refusal is dropped so the next boot asks again, as the browser platform's
+ * prepared table does.
+ */
+let compiled: Promise<CompiledHost> | undefined;
+
+function compiledHost(): Promise<CompiledHost> {
+  if (compiled !== undefined) return compiled;
+  const work = (async (): Promise<CompiledHost> => {
+    const path = join(hostDirectory, "swipl-web.wasm");
+    let bytes: Uint8Array;
+    try {
+      bytes = readFileSync(path);
+    } catch (error) {
+      throw new EngineError(
+        `this package's WebAssembly SWI-Prolog binary is not at ${path}; the binding ` +
+          `boots the engine on that host and has no other`,
+        { cause: error },
+      );
+    }
+    return { maximum: memoryMaximum(bytes), module: await WebAssembly.compile(bytes) };
+  })();
+  compiled = work;
+  work.catch(() => {
+    if (compiled === work) compiled = undefined;
+  });
+  return work;
+}
+
+/** Start the host this package carries from a prepared runtime, with the caller's module options. */
+export async function loadSWIPL(
+  runtime: PreparedRuntime,
+  options: Record<string, unknown>,
+): Promise<LoadedHost> {
   const start = (factory ??= requireFactory());
-  return await start({
+  const { swipl, memory } = await startHost(start, runtime.engine.module, {
     locateFile: (name: string): string => join(hostDirectory, name),
+    ...runtime.options,
     ...options,
-  }) as Swipl;
+  });
+  return { swipl: swipl as Swipl, memory, maximum: runtime.engine.maximum };
 }
 
 /**
@@ -434,7 +496,7 @@ export function runtimeVersion(): string {
   return manifest.version ?? "0.0.0";
 }
 
-/** Check the checkout before allocating a WebAssembly instance. */
+/** Check the checkout, and compile the host, before allocating a WebAssembly instance. */
 export async function prepareRuntime(root: string): Promise<PreparedRuntime> {
   if (!existsSync(join(root, "engine", "metta.pl"))) {
     throw new SourceNotFoundError(
@@ -443,7 +505,9 @@ export async function prepareRuntime(root: string): Promise<PreparedRuntime> {
         `is ${repoRoot}.`,
     );
   }
+  const engine = await compiledHost();
   return {
+    engine,
     mount(fs): void {
       const source = (name: string): boolean => !name.endsWith(".qlf") && name !== ".qlf-stamp";
       for (const directory of ["engine", "lib"]) {

@@ -2,6 +2,11 @@
  * Purpose: bundle the shared public surface with the browser source loader.
  * Guarantees: Node imports in the host loader's inactive branches never reach
  *   the consumer's resolver. [tested: npm run test:browser; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
+ *   The bundle inlines the host's data size and its memory maximum, the latter
+ *   read by src/wasm-memory.ts's own parser, bundled for this script, so the
+ *   browser and Node platforms size one binary one way [tested: npm run
+ *   test:browser, "boots under the ceiling the host's memory leaves";
+ *   commit=WORKTREE]
  */
 import { build } from "esbuild";
 import { readFileSync, rmSync, statSync } from "node:fs";
@@ -9,6 +14,23 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+
+// A streamed compilation never holds the binary's bytes, so the browser learns
+// how far the host's memory may grow here, from the parser the Node platform
+// reads the same binary with. This script runs without type stripping, so the
+// parser is bundled for it rather than imported as TypeScript.
+const sizer = await build({
+  absWorkingDir: root,
+  entryPoints: ["src/wasm-memory.ts"],
+  bundle: true,
+  write: false,
+  format: "esm",
+  platform: "neutral",
+});
+const { memoryMaximum } = await import(
+  `data:text/javascript;base64,${Buffer.from(sizer.outputFiles[0].contents).toString("base64")}`
+);
+const memoryMaximumBytes = memoryMaximum(readFileSync(new URL("../_host/swipl-web.wasm", import.meta.url)));
 
 // `./seam` joins them because it reads a package.json to answer what packages
 // advertise, which is tsmetta/integrate's own reason: a browser page has no
@@ -33,6 +55,7 @@ await build({
   define: {
     __METTA_PACKAGE_VERSION__: JSON.stringify(manifest.version),
     __SWIPL_DATA_SIZE__: String(statSync(new URL("../_host/swipl-web.data", import.meta.url)).size),
+    __SWIPL_MEMORY_MAXIMUM__: String(memoryMaximumBytes),
   },
   plugins: [{
     name: "browser-runtime",

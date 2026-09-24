@@ -35,17 +35,24 @@
  * Owns resources: the prepared table holds one root's sources, data image and
  *   compiled module until forgetRuntime drops them; the engine owns the
  *   WebAssembly filesystem receiving the copy.
+ *   - a boot is handed its instance's memory and the maximum that memory may
+ *     grow to, which the browser build reads from the host binary and inlines
+ *     as __SWIPL_MEMORY_MAXIMUM__, since a streamed compilation never holds
+ *     the bytes [tested: npm run test:browser, "boots under the ceiling the
+ *     host's memory leaves"; commit=WORKTREE]
  * Decides: a compiled WebAssembly.Module is shared between engines and each
  *   boot gets its own Instance, because a Module is immutable and linking one
- *   costs nothing beside compiling 2.1 MB again.
+ *   costs nothing beside compiling 3.9 MB again.
  */
 
 import type { Swipl } from "./engine.ts";
 import { CapabilityError, EngineError, SourceNotFoundError, UnsupportedError } from "./errors.ts";
-import type { HostFS, PreparedRuntime } from "./platform.ts";
+import type { HostFS, LoadedHost, PreparedRuntime } from "./platform.ts";
+import { startHost } from "./wasm-memory.ts";
 
 declare const __METTA_PACKAGE_VERSION__: string;
 declare const __SWIPL_DATA_SIZE__: number;
+declare const __SWIPL_MEMORY_MAXIMUM__: number;
 
 /** The browser distribution's package URL. */
 export const packageRoot: string = new URL("../", import.meta.url).href;
@@ -53,12 +60,16 @@ export const packageRoot: string = new URL("../", import.meta.url).href;
 export const repoRoot: string = new URL("../_runtime/", import.meta.url).href;
 
 /**
- * Start the host this package carries, which the browser build bundles.
+ * Start the host this package carries, which the browser build bundles, from a
+ * prepared runtime's compiled module.
  *
  * Imported where it is used rather than at the top, so a module that only
  * reads this one's other exports never loads the 190 kB loader.
  */
-export async function loadSWIPL(options: Record<string, unknown>): Promise<Swipl> {
+export async function loadSWIPL(
+  runtime: PreparedRuntime,
+  options: Record<string, unknown>,
+): Promise<LoadedHost> {
   const module = await import("../_host/swipl-web.cjs");
   if (typeof module.default !== "function") {
     throw new CapabilityError(
@@ -66,7 +77,12 @@ export async function loadSWIPL(options: Record<string, unknown>): Promise<Swipl
         "use tsmetta's browser bundle or a bundler with CommonJS conversion",
     );
   }
-  return await module.default(options) as Swipl;
+  const factory = module.default as (options: Record<string, unknown>) => Promise<unknown>;
+  const { swipl, memory } = await startHost(factory, runtime.engine.module, {
+    ...runtime.options,
+    ...options,
+  });
+  return { swipl: swipl as Swipl, memory, maximum: runtime.engine.maximum };
 }
 
 /** Host filesystem paths have no browser counterpart. */
@@ -287,23 +303,12 @@ async function prepareBase(base: URL): Promise<PreparedRuntime> {
         fs.writeFile(path, file.text);
       }
     },
+    // Compiled here rather than handed over as bytes, so each engine after the
+    // first pays for linking alone: loadSWIPL instantiates it through the
+    // loader's instantiateWasm hook (startHost in wasm-memory.ts).
+    engine: { module, maximum: __SWIPL_MEMORY_MAXIMUM__ },
     options: {
       locateFile: (name: string): string => new URL(`wasm/${name}`, base).href,
-      // The loader's own hook, and the reason the module above is compiled
-      // rather than handed over as bytes: given this, it never fetches the
-      // binary and never compiles it, so each engine after the first pays for
-      // linking alone. SYNCHRONOUS, because the loader calls the hook inside a
-      // `new Promise` executor whose only resolution is this callback: a throw
-      // from here rejects the boot, where a rejected promise inside would
-      // leave the factory pending forever
-      // [source: _host/swipl-web.cjs, createWasm].
-      instantiateWasm: (
-        imports: WebAssembly.Imports,
-        ready: (instance: WebAssembly.Instance) => void,
-      ): Record<string, never> => {
-        ready(new WebAssembly.Instance(module, imports));
-        return {};
-      },
       getPreloadedPackage: (): ArrayBuffer => data,
     },
   };

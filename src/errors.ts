@@ -424,10 +424,17 @@ export class TimeLimitError extends ResourceLimitError {
  * The engine ran out of its own Prolog stack, which is what bounds a term's
  * DEPTH once nothing on this side recurses per level.
  *
- * `limit` is the ceiling in bytes as the engine reported it. The remedy is a
- * larger `stack_limit`, which is a startup setting here (`METTA_STACK_LIMIT`,
- * or `config.configure({ stackLimit })` before the first boot) and which a
- * 32-bit WebAssembly build must still fit in its address space.
+ * `limit` is the ceiling in bytes as the engine reported it, and
+ * `m.engine.stackLimit` says the same before anything runs. By default it is
+ * the ceiling boot derives from the host's memory, sized so the heap holds the
+ * stacks at it beside what the engine held at boot, so this refusal comes
+ * before the heap runs out unless the program's own data has grown past that.
+ * The remedy is a larger `stack_limit`, a startup setting here
+ * (`METTA_STACK_LIMIT`, or `config.configure({ stackLimit })` before the first
+ * boot) that a 32-bit WebAssembly build must still fit in its address space;
+ * above the derived ceiling the stacks share the heap with the engine's own
+ * data, and a heap that refuses first is the engine's
+ * `resource_error(no_memory)` instead.
  */
 export class StackLimitError extends ResourceLimitError {
   static override readonly defaultCode: Code = "ERR_METTA_STACK";

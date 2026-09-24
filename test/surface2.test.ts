@@ -54,18 +54,33 @@ after(() => {
 });
 
 describe("the settings and the version", () => {
-  it("reads a setting from the environment, and refuses a bad one", () => {
-    const fromEnvironment = new Config({ METTA_DISPLAY_ROWS: "5" });
+  it("reads a setting from the environment as the other seats do, and refuses a bad one", () => {
+    const fromEnvironment = new Config({ METTA_DISPLAY_ROWS: "5", METTA_STACK_LIMIT: "0003221225472" });
     assert.equal(fromEnvironment.displayRows, 5);
+    assert.equal(fromEnvironment.stackLimit, 3_221_225_472, "decimal digits, leading zeros included");
     assert.equal(fromEnvironment.declarationLimit, 512, "the code's default stands");
-    assert.throws(() => new Config({ METTA_DISPLAY_ROWS: "many" }), /positive integer/);
-    assert.throws(() => new Config({ METTA_STACK_LIMIT: "-1" }), /positive integer/);
+    // Decimal digits alone, as the C seat reads METTA_STACK_LIMIT, in the
+    // Python seat's words; an empty value is refused, not read as unset.
+    for (const raw of ["many", "-1", "+5", " 5", "5 ", "5e9", "0x10", "1_000", "1.5", ""]) {
+      assert.throws(
+        () => new Config({ METTA_STACK_LIMIT: raw }),
+        (error: unknown) =>
+          error instanceof MettaError &&
+          error.message === `METTA_STACK_LIMIT must be a positive integer, got '${raw}'`,
+        raw,
+      );
+    }
+    assert.throws(() => new Config({ METTA_STACK_LIMIT: "0" }), /METTA_STACK_LIMIT must be positive, got 0$/);
+    assert.throws(() => config.configure({ displayRows: 0 }), /displayRows must be positive, got 0/);
+    assert.throws(() => config.configure({ displayRows: 1.5 }), /displayRows must be a positive integer, got 1\.5/);
   });
 
-  it("has no stack ceiling of its own, because this build is 32-bit", () => {
-    // The Python default is eight gigabytes and a WebAssembly SWI cannot
-    // represent it; unset means the build's own.
+  it("has no stack setting of its own: boot derives the ceiling from the host's memory", () => {
+    // The Python default is eight gigabytes, which a 32-bit WebAssembly SWI
+    // cannot represent; unset means the ceiling test/wasm-memory.test.ts
+    // measures, which m.engine.stackLimit reads.
     assert.equal(new Config({}).stackLimit, undefined);
+    assert.equal(m.engine.stackLimit, Number(m.engine.once("current_prolog_flag(stack_limit, L)")["L"]));
   });
 
   it("freezes a startup setting once an engine exists", () => {

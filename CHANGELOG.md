@@ -4,6 +4,19 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- The engine's stack ceiling is derived from the host's memory instead of
+  SWI's 1 GiB default. Once the engine and the bridge have loaded, boot sets
+  half of what the memory can still grow to, about 2 GiB on build 9, whose
+  memory grows to one page short of 4 GiB, so the heap holds the stacks at the
+  ceiling and SWI's own refusal, a `StackLimitError`, still comes before the
+  heap runs out. `m.engine.stackLimit` reads the ceiling in force.
+  `METTA_STACK_LIMIT` replaces it in either direction, and every setting's
+  variable is now read as the C and Python seats read it: decimal digits
+  alone, refused as `must be a positive integer, got '<value>'`, an empty
+  value included, and as `must be positive, got 0`. On Node the host binary is
+  compiled once per process and each boot links an instance of its own, as the
+  browser already did for each root.
+
 - Every synchronous ask of an instance (`run`, `runOne`, `load`, the space
   doors) runs in one engine the instance keeps, where each used to get an
   engine of its own, as the Python seat's eager runs share one engine and the

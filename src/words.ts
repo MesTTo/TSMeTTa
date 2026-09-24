@@ -11,7 +11,8 @@
  * Guarantees:
  *   - a word naming one head IS that head in term position, as its `fn`
  *     spelling is, so `m.fn.getType(add)` asks about `+` [tested: "stand
- *     for the head they name wherever a term goes"]
+ *     for the head they name wherever a term goes";
+ *     commit=328f8cb3d9ec6c07386e1377808662685c95c247]
  *   - every head is written once, in OPERATOR_HEADS or WORD_HEADS, and the
  *     builders here and src/define/lower.ts both read those tables, so a
  *     built word and a lowered word are one head [tested: "a lowered body

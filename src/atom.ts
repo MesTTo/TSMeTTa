@@ -62,7 +62,8 @@
  *     refuses where a term or a datum goes with a NameError naming the two
  *     remedies, where it used to ground to a live reference nothing reads;
  *     `G` stays the explicit spelling for a live object [tested: "refuses an
- *     ask or a promise where a term goes, and says what to write instead"]
+ *     ask or a promise where a term goes, and says what to write instead";
+ *     commit=328f8cb3d9ec6c07386e1377808662685c95c247]
  *   - `exprOf` interns through weak structural-hash buckets, verifies every
  *     collision by child identity and never materialises all child ids as text
  *     [tested: "interns a wide expression without joining every child id into

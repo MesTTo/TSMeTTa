@@ -10,7 +10,7 @@
  *   - a private table, and exact memoization, which keeps a private table,
  *     stay an awaiting ask's own, while bounded memoization outlives it
  *     [tested: "keeps a private table and exact memoization to their ask, and
- *     bounded memoization past it"; commit=WORKTREE]
+ *     bounded memoization past it"; commit=707fc07ff19faf9b60bc45af836f2d3dbb8c1c43]
  *   - an ask that meets a table another ask is completing parks, and answers
  *     once that ask completes it, without running the table's body itself
  *     [tested: "parks an ask behind the ask completing its table";

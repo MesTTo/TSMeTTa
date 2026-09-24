@@ -58,13 +58,13 @@
  *     refuses rather than wait [tested: test/tabling-wait.test.ts, "parks an
  *     ask behind the ask completing its table", "evaluates a table its owner
  *     gave up", "refuses on the synchronous door rather than wait", "resolves
- *     two asks deadlocked over two tables"; commit=WORKTREE]
+ *     two asks deadlocked over two tables"; commit=707fc07ff19faf9b60bc45af836f2d3dbb8c1c43]
  *   - a job's first drive decides where its events come from: an awaiting one
  *     gets an engine of its own and a synchronous one is an ask of the home
  *     engine every synchronous ask of the instance shares; an ask that fails
  *     or is refused ends without taking the home engine with it, and a job
  *     refuses to be driven both ways [tested: test/home-engine.test.ts;
- *     commit=WORKTREE]
+ *     commit=707fc07ff19faf9b60bc45af836f2d3dbb8c1c43]
  * Owns: one WebAssembly instance per boot(), one host hold per open job,
  *   the live-host-value table and, on a Node host, the engine's own temporary
  *   directory, all released by dispose(); a boot that fails after minting the

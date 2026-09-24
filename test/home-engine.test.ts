@@ -7,19 +7,19 @@
  *   - a private table one synchronous ask fills is read by the next, and one an
  *     awaiting ask fills is that ask's own [tested: "shares a private table
  *     between synchronous asks", "keeps a private table to the awaiting ask
- *     that filled it"; commit=WORKTREE]
+ *     that filled it"; commit=707fc07ff19faf9b60bc45af836f2d3dbb8c1c43]
  *   - an exact memo outlives the synchronous ask that filled it [tested:
- *     "keeps an exact memo between synchronous asks"; commit=WORKTREE]
+ *     "keeps an exact memo between synchronous asks"; commit=707fc07ff19faf9b60bc45af836f2d3dbb8c1c43]
  *   - a synchronous ask a TypeScript operation starts runs in the same engine,
  *     on top of the ask that called the operation [tested: "runs an
  *     operation's synchronous ask on top of the ask that called it";
- *     commit=WORKTREE]
+ *     commit=707fc07ff19faf9b60bc45af836f2d3dbb8c1c43]
  *   - an ask that fails, and one refused for a promise, end without taking
  *     the home engine or what it keeps with them [tested: "keeps what the home
  *     engine holds past an ask that fails", "keeps what the home engine holds
- *     past a refused promise"; commit=WORKTREE]
+ *     past a refused promise"; commit=707fc07ff19faf9b60bc45af836f2d3dbb8c1c43]
  *   - a job is driven by awaiting or synchronously, never both [tested:
- *     "refuses to drive one job both ways"; commit=WORKTREE]
+ *     "refuses to drive one job both ways"; commit=707fc07ff19faf9b60bc45af836f2d3dbb8c1c43]
  * Open Obligations: None.
  */
 

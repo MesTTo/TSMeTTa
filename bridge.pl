@@ -110,18 +110,18 @@
 %     boot/tabling.pl refuses by name rather than block [tested:
 %     test/tabling-wait.test.ts, "parks an ask behind the ask completing its
 %     table", "refuses on the synchronous door rather than wait";
-%     commit=WORKTREE]
+%     commit=707fc07ff19faf9b60bc45af836f2d3dbb8c1c43]
 %   - every synchronous ask runs in the home engine, so a private table or an
 %     exact memo one fills is there for the next, and an ask posted while the
 %     home engine waits on the host runs on top of the suspended one [tested:
 %     test/home-engine.test.ts, "shares a private table between synchronous
 %     asks", "runs an operation's synchronous ask on top of the ask that
-%     called it"; commit=WORKTREE]
+%     called it"; commit=707fc07ff19faf9b60bc45af836f2d3dbb8c1c43]
 %   - the home engine's local stack does not grow with the number of asks it
 %     serves: metta_node_await/1's recursion is a last call [measured
 %     2026-09-24: a pure-SWI model of metta_node_await/1 and
 %     metta_node_serve/1 held 1216 bytes of local stack at ask 1 and at ask
-%     50000; commit=WORKTREE]
+%     50000; commit=707fc07ff19faf9b60bc45af836f2d3dbb8c1c43]
 %   - a command or scope whose ARGUMENT COUNT is not the one its verb declares
 %     is refused by name, naming both counts, and an unknown verb is a separate
 %     refusal from a wrong count. A wrong count used to unify with no clause

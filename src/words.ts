@@ -32,7 +32,7 @@
  *   - the verdict words `Accept`, `Refuse` and `Drop` build the engine's
  *     capitalized verdicts, which stay data beside a library defining the
  *     lowercase head [tested: "are the verdicts a pre-add judge answers,
- *     beside a library defining drop"; commit=WORKTREE]
+ *     beside a library defining drop"; commit=cd607dfb296d810cb8336ff8262d3cc3db84213d]
  * Decides: `div` is MeTTa's own `/` and inherits MeTTa's division semantics,
  *   which are the engine's to define and not this door's to normalise. The
  *   Python table flags `truediv` for the same reason.

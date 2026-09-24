@@ -20,7 +20,7 @@
  *     extensions/cmetta/cmetta.c, boot_stack_bytes;
  *     extensions/python/metta/_catalog/bounds.py, Setting.initial and
  *     _positive_integer; tested: "reads a setting from the environment as the
- *     other seats do, and refuses a bad one"; commit=WORKTREE]
+ *     other seats do, and refuses a bad one"; commit=ded9bdafa220367d3148a45542dbf62d912ccfef]
  * Decides: the settings are a small closed set rather than an open bag. An
  *   open one cannot say which are frozen at startup, cannot validate, and
  *   turns a typo into silence.

@@ -39,7 +39,7 @@
  *     grow to, which the browser build reads from the host binary and inlines
  *     as __SWIPL_MEMORY_MAXIMUM__, since a streamed compilation never holds
  *     the bytes [tested: npm run test:browser, "boots under the ceiling the
- *     host's memory leaves"; commit=WORKTREE]
+ *     host's memory leaves"; commit=ded9bdafa220367d3148a45542dbf62d912ccfef]
  * Decides: a compiled WebAssembly.Module is shared between engines and each
  *   boot gets its own Instance, because a Module is immutable and linking one
  *   costs nothing beside compiling 3.9 MB again.

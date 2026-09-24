@@ -6,7 +6,7 @@
  *   read by src/wasm-memory.ts's own parser, bundled for this script, so the
  *   browser and Node platforms size one binary one way [tested: npm run
  *   test:browser, "boots under the ceiling the host's memory leaves";
- *   commit=WORKTREE]
+ *   commit=ded9bdafa220367d3148a45542dbf62d912ccfef]
  */
 import { build } from "esbuild";
 import { readFileSync, rmSync, statSync } from "node:fs";

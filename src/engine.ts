@@ -73,7 +73,7 @@
  *     whichever ceiling SWI holds [tested: test/wasm-memory.test.ts, "boots
  *     under the ceiling the host's memory leaves", "gives an engine made
  *     after boot the same ceiling"; test/stack-setting.test.ts, "takes a
- *     configured ceiling above the derived one"; commit=WORKTREE]
+ *     configured ceiling above the derived one"; commit=ded9bdafa220367d3148a45542dbf62d912ccfef]
  * Owns: one WebAssembly instance per boot(), one host hold per open job,
  *   the live-host-value table and, on a Node host, the engine's own temporary
  *   directory, all released by dispose(); a boot that fails after minting the

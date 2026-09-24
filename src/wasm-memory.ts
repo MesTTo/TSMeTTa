@@ -21,14 +21,14 @@
  *     imported or defined, in bytes, and all a 32-bit memory addresses when
  *     it declares none [tested: test/wasm-memory.test.ts, "reads the declared
  *     maximum of memory 0 whatever precedes it", "reads an imported memory
- *     first", "answers 4 GiB for a memory with no maximum"; commit=WORKTREE]
+ *     first", "answers 4 GiB for a memory with no maximum"; commit=ded9bdafa220367d3148a45542dbf62d912ccfef]
  *   - bytes that are not a module, or a module whose memory 0 is 64-bit, are
  *     refused by name [tested: test/wasm-memory.test.ts, "refuses what it
- *     cannot size"; commit=WORKTREE]
+ *     cannot size"; commit=ded9bdafa220367d3148a45542dbf62d912ccfef]
  *   - stackCeiling answers the largest L for which the memory holds what the
  *     engine used at boot plus 2L [tested: test/wasm-memory.test.ts, "leaves
  *     room for the stacks and what their growth left behind";
- *     commit=WORKTREE]
+ *     commit=ded9bdafa220367d3148a45542dbf62d912ccfef]
  * Fails when: the engine's own data outgrows what it held at boot; the stacks
  *   then share the heap with it and malloc can refuse before the ceiling,
  *   which the host reports as resource_error(no_memory).

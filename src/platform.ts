@@ -37,7 +37,7 @@
  *   The host binary is read, sized and compiled once per process, and every
  *   boot links an instance of its own from that module, whose memory the boot
  *   is handed [tested: test/wasm-memory.test.ts, "boots under the ceiling the
- *   host's memory leaves"; commit=WORKTREE].
+ *   host's memory leaves"; commit=ded9bdafa220367d3148a45542dbf62d912ccfef].
  * Fails when: the host carries no NODEFS, which a host built before the
  *   recipe at c68d1c9a3 does not; boot then refuses by name rather than show
  *   the engine none of the host's files.

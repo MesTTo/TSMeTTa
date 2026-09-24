@@ -209,6 +209,6 @@ describe("the host's files", () => {
     assert.equal(enginePath("C:\\Users\\ada\\x.metta", "win32"), "/c/Users/ada/x.metta");
     assert.equal(enginePath("D:/data/y.pl", "win32"), "/d/data/y.pl");
     assert.equal(enginePath("\\\\server\\share\\z", "win32"), "\\\\server\\share\\z");
-    assert.equal(enginePath("/home/ada/x.metta", "linux"), "/home/ada/x.metta");
+    assert.equal(enginePath("/srv/ada/x.metta", "linux"), "/srv/ada/x.metta");
   });
 });

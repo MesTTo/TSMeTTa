@@ -4,6 +4,10 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- README.md and the `enginePath` test spell a Linux home file
+  `/srv/ada/...` where they wrote a path under `/home`, which the workspace's
+  check for machine-local paths in tracked files refuses.
+
 - The `py-*` doors refuse on this seat with a `PlatformCapabilityError`
   naming the python capability, whose `requires` is `extension(python)`,
   where each call used to answer itself unreduced:

@@ -185,7 +185,7 @@ runtime.dispose();
 
 Under Node the engine sees this host's files at the paths they have here and
 starts in this process's working directory, so a program reads
-`examples/data.csv` or `/home/ada/notes.metta` as the native engine does, and
+`examples/data.csv` or `/srv/ada/notes.metta` as the native engine does, and
 a file either side writes is there for the other at once. Every top-level
 directory is mounted live through emscripten's NODEFS but the engine's own,
 `/dev`, `/proc`, `/swipl` and `/metta`; a Windows drive is `/c`, `/d` and so

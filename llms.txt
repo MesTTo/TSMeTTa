@@ -63,6 +63,14 @@ That last pair is the one to get right. `fn` maps a readable name onto the
 operation the engine actually has, so `fn.add` is `+`; `S.add` builds a term
 headed by the symbol `add`, which nothing defines, so it comes back unreduced.
 
+The free word functions are the same words: `add`, `gte`, `If` and the rest
+build their head's expression when called, and where a term goes each IS its
+head, so `typed(S.plus, add)` is `(: plus +)` and `m.fn.getType(add)` asks
+about `+`; each used to cross as an opaque host value. A call is not a word:
+`S.f(x)` builds the call and a defined `f(x)` asks it, so an ask, or a promise
+nobody awaited, where a term goes raises `NameError` naming both remedies,
+where it used to cross as a live JavaScript object nothing reads.
+
 A gap stands for a RUN of children: `seg(V.rest)` is `(:seg $rest)`, whose
 match answers the run it took as one expression, and `seg()` is the anonymous
 gap `...`, each occurrence its own, so `S.order(seg())` matches an `order` of

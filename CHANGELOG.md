@@ -4,6 +4,16 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- A free word is the head it names wherever a term goes, as its `fn`
+  spelling is: `typed(S.plus, add)` is `(: plus +)` and `m.fn.getType(add)`
+  asks about `+`. Every word of `OPERATOR_HEADS` and `WORD_HEADS` used to
+  cross in term position as an opaque host value, `(js Function)`.
+- A pending value where a term or a datum goes raises `NameError`: an ask,
+  such as what a defined `f(x)` answers, or a promise nobody awaited. It used
+  to cross as a live JavaScript object, so `m.fn.getType(f(x))` answered
+  `%Undefined%` for the object with nothing said. `S.f(x)` builds the call
+  to mention it, awaiting the ask gives its answers, and `G(value)` still
+  grounds a thenable when that is what the program means.
 - A value only the engine can hold crosses into TypeScript as a
   `NativeHandle` and back as the very same value: `re-compile`'s pattern, a
   store from `database-open!`, any C blob the engine answers. It used to raise

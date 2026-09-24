@@ -4,6 +4,8 @@
  * Guarantees:
  *   - every operator word, every control form and the case tower reduce to
  *     what they claim, against the live engine
+ *   - every word naming one head is that head in term position, checked for
+ *     each entry of OPERATOR_HEADS and WORD_HEADS rather than a list here
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -77,6 +79,9 @@ import {
   unify,
   xor,
 } from "../src/index.ts";
+import * as words from "../src/words.ts";
+import { OPERATOR_HEADS, WORD_HEADS } from "../src/words.ts";
+import { sym, toAtom } from "../src/atom.ts";
 
 let m: MeTTa;
 
@@ -309,5 +314,18 @@ describe("the word door and the free functions are one mechanism", () => {
     assert.equal(String(fn.add(1, 2)), String(add(1, 2)));
     assert.equal(String(fn.mod(7, 3)), String(mod(7, 3)));
     assert.equal(String(fn.pow(2, 3)), String(pow(2, 3)));
+  });
+
+  it("stand for the head they name wherever a term goes", async () => {
+    // Every word of both tables, read off the module rather than listed here.
+    for (const [word, head] of Object.entries({ ...OPERATOR_HEADS, ...WORD_HEADS })) {
+      assert.equal(toAtom(words[word as keyof typeof words] as Term), sym(head), word);
+    }
+    assert.equal(toAtom(add), toAtom(fn.add));
+    assert.deepEqual(await m.fn.getMetatype(add), [S.Grounded.atom]);
+    assert.equal(String(typed(S.plus, add)), "(: plus +)");
+    // A call is not a word: what a defined function answers is an ask, and an
+    // ask refuses where a term goes.
+    assert.throws(() => S.f(m.eval(S.x)), NameError);
   });
 });

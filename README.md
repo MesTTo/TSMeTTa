@@ -121,6 +121,22 @@ add(1, 2);                            // (+ 1 2), as (a: Term, b: Term) => Atom
 If(gte(V.age, 18), S.adult, S.minor); // (if (>= $age 18) adult minor)
 ```
 
+A word where a term goes is the head it names, as its `fn` spelling is. A
+call is not a word: `S.f(x)` builds a call and a defined `f(x)` asks it, so an
+ask handed where a term goes, or a promise nobody awaited, raises `NameError`
+rather than crossing as a live JavaScript object.
+
+```ts
+const double = m.define(function double(x: number): number {
+  return 2 * x;
+}, { type: arrow(Number, Number) });
+
+typed(S.plus, add);                      // (: plus +)
+await m.fn.getType(add).one();           // (-> Number Number Number), the type of +
+await m.fn.getType(S.double(21)).one();  // Number, the type of the call (double 21)
+m.fn.getType(double(21));                // NameError: the ask (double 21) is still pending
+```
+
 ## Ask
 
 ```ts

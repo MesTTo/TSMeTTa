@@ -20,6 +20,7 @@ import {
   FloatAtom,
   G,
   Grounded,
+  NameError,
   SpaceHandle,
   Sym,
   Var,
@@ -241,6 +242,19 @@ describe("term position", () => {
       { value: sym("parent") },
     );
     assert.equal(toAtom(callable), sym("parent"));
+  });
+
+  it("refuses an ask or a promise where a term goes, and says what to write instead", () => {
+    const promise = Promise.resolve(1);
+    assert.throws(() => toAtom(promise), NameError);
+    assert.throws(() => toAtom([sym("f"), promise]), /a promise is still pending/);
+    // An ask describes itself, and the refusal quotes it.
+    const ask = { description: "(apply not false)", then: () => undefined };
+    assert.throws(
+      () => toAtom(ask),
+      /the ask \(apply not false\) is still pending, so it is no term: f\(x\) asks and S\.f\(x\) builds/,
+    );
+    assert.ok(G(promise) instanceof Grounded, "G grounds a thenable asked to");
   });
 });
 

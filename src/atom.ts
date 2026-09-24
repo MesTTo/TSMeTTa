@@ -58,6 +58,11 @@
  *     atoms", "reads a term as itself, an array as an expression type, and a
  *     class by its name", "refuses a function that names no type, where it
  *     once became a host value"; commit=39e6ae2bd697d4029fd476d7d848ae9dc9602554]
+ *   - a pending value, an ask such as `f(x)` or a promise nobody awaited,
+ *     refuses where a term or a datum goes with a NameError naming the two
+ *     remedies, where it used to ground to a live reference nothing reads;
+ *     `G` stays the explicit spelling for a live object [tested: "refuses an
+ *     ask or a promise where a term goes, and says what to write instead"]
  *   - `exprOf` interns through weak structural-hash buckets, verifies every
  *     collision by child identity and never materialises all child ids as text
  *     [tested: "interns a wide expression without joining every child id into
@@ -891,14 +896,35 @@ export function toAtom(value: Term): Atom {
  * yielded — an array is the datum, and `[1, 2, 3]` means the array. A callable
  * carrying its own atom is honoured either way, so an operation answering
  * `S.done` answers the SYMBOL and not a live JavaScript function.
+ *
+ * A thenable refuses either way. It is a value still pending, an ask such as
+ * `f(x)` or a promise nobody awaited, and never data: grounded, it became a
+ * live reference the engine could only carry, so `m.fn.getType(f(x))` asked
+ * the type of a JavaScript object and answered `%Undefined%` with nothing
+ * said. The mention law is the rule it breaks, `S.f(x)` building the call and
+ * `f(x)` asking it [source: ai-typescript-design.md round 6, "The mention law
+ * transfers verbatim"], and typescript-eslint's no-misused-promises is the
+ * same check made statically. A host operation's answer is awaited before it
+ * is encoded, so this never meets one; `G` still grounds a thenable asked to.
  */
 export function lift(value: unknown): Atom {
   if (value instanceof Atom) return value;
   if (value !== null && (typeof value === "object" || typeof value === "function")) {
     const carried = (value as Partial<HasAtom>)[ATOM_OF];
     if (carried instanceof Atom) return carried;
+    if (typeof (value as { then?: unknown }).then === "function") throw pending(value);
   }
   return G(value);
+}
+
+/** The refusal of a pending value where a term goes, naming what to write instead. */
+function pending(value: object): NameError {
+  const asked = (value as { description?: unknown }).description;
+  const what = typeof asked === "string" ? `the ask ${asked}` : "a promise";
+  return new NameError(
+    `${what} is still pending, so it is no term: f(x) asks and S.f(x) builds, so ` +
+      "await it for its answers, or build the call with S to mention it",
+  );
 }
 
 // ---------------------------------------------------------------------------

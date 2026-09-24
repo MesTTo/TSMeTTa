@@ -9,6 +9,9 @@
  *     the word door's words, so `import { lte }` and `word.lte` are one
  *     mechanism in two positions and the proxy still spells the long tail
  * Guarantees:
+ *   - a word naming one head IS that head in term position, as its `fn`
+ *     spelling is, so `m.fn.getType(add)` asks about `+` [tested: "stand
+ *     for the head they name wherever a term goes"]
  *   - every head is written once, in OPERATOR_HEADS or WORD_HEADS, and the
  *     builders here and src/define/lower.ts both read those tables, so a
  *     built word and a lowered word are one head [tested: "a lowered body
@@ -34,7 +37,9 @@
  *   Future Enhancements: None
  */
 
-import { type Atom, G, type Term, type Var, expr, exprOf, sym, toAtom, typeAtom, variable } from "./atom.ts";
+import {
+  ATOM_OF, type Atom, G, type Term, type Var, expr, exprOf, sym, toAtom, typeAtom, variable,
+} from "./atom.ts";
 import { MettaError, NameError } from "./errors.ts";
 import { type Bindings, unifyTerms } from "./matching.ts";
 
@@ -446,6 +451,34 @@ export function unify(
 ): Atom | Bindings | undefined {
   if (then === undefined || otherwise === undefined) return unifyTerms(a, b);
   return apply(WORD_HEADS.unify, a, b, then, otherwise);
+}
+
+// ---------------------------------------------------------------------------
+// A word in term position.
+
+/**
+ * Every word that names one head, by the name this module exports it under.
+ *
+ * `satisfies` holds it to both tables, so a word either table gains without a
+ * function here, or a function here naming no head, fails the build. `neg`,
+ * `e`, `nil` and `list` build composites and name no single head.
+ */
+const HEADED = {
+  eq, ne, lt, lte, gt, gte, add, sub, mul, div, mod, pow, abs, sqrt, floor, ceil,
+  minAtom, maxAtom, and, or, not, xor, carAtom, cdrAtom, consAtom, getType, typed, arrow, rewrite,
+  If, Let, LetStar, Collapse, Superpose, Quote, Empty, In, Accept, Refuse, Drop, Match, unify,
+} satisfies Record<
+  keyof typeof OPERATOR_HEADS | keyof typeof WORD_HEADS,
+  (...args: never[]) => unknown
+>;
+
+// A word in term position is the head it names, as its `fn` spelling is:
+// `m.fn.getType(add)` asks about `+`, where a bare function would ground to a
+// live JavaScript reference, so `add` and `fn.add` stay one word in both
+// positions. toAtom and lift already read ATOM_OF off any callable.
+const HEADS: Readonly<Record<string, string>> = { ...OPERATOR_HEADS, ...WORD_HEADS };
+for (const [word, value] of Object.entries(HEADED)) {
+  Object.defineProperty(value, ATOM_OF, { value: sym(HEADS[word] as string) });
 }
 
 // ---------------------------------------------------------------------------

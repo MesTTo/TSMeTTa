@@ -114,6 +114,17 @@ export function mountHost(_fs: HostFS, _hostDir: string, _virtualDir: string): v
   );
 }
 
+/**
+ * A page has no process for `exit!` to end. The engine is gone once SWI's
+ * halt has run, so the ask is refused by name and the engine stays closed.
+ */
+export function endProcess(status: number): never {
+  throw new UnsupportedError(
+    `exit! ended this engine with status ${String(status)}; a browser has no process to end, ` +
+      "so the engine is closed and a new one is booted with metta()",
+  );
+}
+
 /** The package version embedded by the browser build. */
 export function runtimeVersion(): string {
   return __METTA_PACKAGE_VERSION__;

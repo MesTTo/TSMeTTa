@@ -146,4 +146,20 @@ describe("the command line", () => {
     const refused = spawnSync(process.execPath, [command, "serve"], { encoding: "utf8" });
     assert.equal(refused.status, 1);
   });
+
+  it("ends the process with the status exit! asks, even inside catch", () => {
+    // lib_file's exit! ends the whole process, an embedding host included, and
+    // MeTTa's catch does not turn it into a value, so the status is the
+    // program's and not the CLI's, and the run never reaches printing.
+    const directory = mkdtempSync(join(tmpdir(), "metta-cli-"));
+    try {
+      const file = join(directory, "exits.metta");
+      writeFileSync(file, "!(import! &self (library lib_file))\n!(catch (exit! 3))\n!(+ 1 2)\n");
+      const ended = spawnSync(process.execPath, [command, "run", file], { encoding: "utf8" });
+      assert.equal(ended.status, 3, ended.stderr);
+      assert.equal(ended.stdout, "");
+    } finally {
+      rmSync(directory, { recursive: true });
+    }
+  });
 });

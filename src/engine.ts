@@ -39,6 +39,13 @@
  *     [tested: "hands a host operation's own error back as itself or as the
  *     cause", "refuses a capability the provider does not implement, in its
  *     own words"; commit=c52f5f0d2320ed2eea85d176318a6c384c7eab56]
+ *   - a program's exit! ends this process with the status it asked for on
+ *     Node, `catch` or not, as lib_file's contract says, and is refused by
+ *     name in a browser; either way the engine is closed and disposes without
+ *     calling into the ended runtime [tested: "ends the process with the
+ *     status exit! asks, even inside catch", "ends the process from an
+ *     awaited ask, and nothing after it runs", npm run test:browser "refuses
+ *     exit! in a page and closes the engine it ended"; commit=WORKTREE]
  *   - nothing reaches the host's console unless boot() was asked for verbose:
  *     an engine error is raised here and a program's output is buffered
  *   - every number crosses exactly: a Prolog integer arrives as a bigint and
@@ -92,6 +99,7 @@
  */
 
 import {
+  endProcess,
   forgetRuntime,
   type HostFS,
   loadSWIPL,
@@ -175,6 +183,28 @@ function refusal(
  * which bridge.pl's metta_node_host_key_field/3 writes.
  */
 const HOST_KEY = "host-error";
+
+/**
+ * The bits of an exit status that are the status a program asked for. SWI's
+ * halt flags, PL_HALT_WITH_EXCEPTION among them, sit above them [source:
+ * swipl-devel src/SWI-Prolog.h, PL_CLEANUP_STATUS_MASK, at V10.1.14], so
+ * `(exit! 0)` arrives as exit(262144).
+ */
+const HALT_STATUS = 0xffff;
+
+/**
+ * Whether a throw out of the engine is Emscripten's exit, which SWI's halt
+ * ends in. The loader does not export its ExitStatus class, so the object's
+ * own name and status are what identify it.
+ */
+function isExitStatus(error: unknown): error is { readonly status: number } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { readonly name?: unknown }).name === "ExitStatus" &&
+    typeof (error as { readonly status?: unknown }).status === "number"
+  );
+}
 
 /** The key a host operation's failure was kept under, where the refusal names one. */
 function hostKey(outcome: readonly unknown[]): string | undefined {
@@ -1002,9 +1032,19 @@ export class Engine {
     // table].
     if (this.handles.waiting) this.once("metta_node_handle_release(Ids)", { Ids: this.handles.drain() });
     this.counters.crossings += 1;
-    const result = this.#swipl.prolog
-      .query(`metta_node_do((${goal}), Outcome).`, input)
-      .once();
+    let result: PrologAnswer | undefined;
+    try {
+      result = this.#swipl.prolog.query(`metta_node_do((${goal}), Outcome).`, input).once();
+    } catch (error) {
+      // A program's exit! reaches SWI's halt/1, which ends in Emscripten's
+      // exit(): that throws an ExitStatus carrying SWI's halt flags above the
+      // status asked for. The runtime is gone by then, so the engine closes
+      // before the platform ends the process or refuses, and dispose never
+      // calls into it again.
+      if (!isExitStatus(error)) throw error;
+      this.#closed = true;
+      return endProcess(error.status & HALT_STATUS);
+    }
     if (result?.error === true) {
       throw new TransportError(`${String(result.message)} (running ${goal})`);
     }

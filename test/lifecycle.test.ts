@@ -16,6 +16,9 @@
  *     both lifecycle operations
  *     [tested: "refuses destructive lifecycle operations on engine-owned base spaces";
  *     commit=6229e43cb68cc3685360810d462d992874992f6c]
+ *   - a program's exit! ends the process it runs in, from an awaited ask
+ *     inside catch, with the status it asked for [tested: "ends the process
+ *     from an awaited ask, and nothing after it runs"; commit=WORKTREE]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None
@@ -23,6 +26,7 @@
  */
 
 import { strict as assert } from "node:assert";
+import { spawnSync } from "node:child_process";
 import { after, before, describe, it } from "node:test";
 
 import { type MeTTa, S, V, metta } from "../src/index.ts";
@@ -30,12 +34,36 @@ import { type MeTTa, S, V, metta } from "../src/index.ts";
 let m: MeTTa;
 let counter = 0;
 
+/** This package's entry as a URL, built or as source, beside the test that runs. */
+const entry = import.meta.url.replace(/test\/lifecycle\.test\.(ts|js)$/, (matched) =>
+  matched.endsWith(".ts") ? "src/index.ts" : "src/index.js",
+);
+
 before(async () => {
   m = await metta();
 });
 
 after(() => {
   m.dispose();
+});
+
+describe("a program that ends its process", () => {
+  it("ends the process from an awaited ask, and nothing after it runs", () => {
+    // In a child of its own, since exit! ends the process it runs in.
+    const program = [
+      `import { fn, lib, metta } from ${JSON.stringify(entry)};`,
+      "const m = await metta();",
+      "m.import(lib.file);",
+      'process.stdout.write("before\\n");',
+      'await m.eval(fn.catch(fn["exit!"](4))).toArray();',
+      'process.stdout.write("after\\n");',
+    ].join("\n");
+    const ended = spawnSync(process.execPath, ["--input-type=module", "-e", program], {
+      encoding: "utf8",
+    });
+    assert.equal(ended.status, 4, ended.stderr);
+    assert.equal(ended.stdout, "before\n");
+  });
 });
 
 describe("space lifecycle", () => {

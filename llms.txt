@@ -626,13 +626,16 @@ worked example: `website/scripts/bundle-browser.mjs` copies the kit into
 `website/public/metta/` and `website/public/metta/worker.js` boots one engine
 per page in a Web Worker, which is where a synchronous `run` belongs.
 
-Two things a browser meets that a Node process does not. `loadFile`,
+Three things a browser meets that a Node process does not. `loadFile`,
 `libraryPath`, `mount` and `lintFile` read host paths and refuse with
-`ERR_METTA_UNSUPPORTED`; `run`, `load` and `lint` take source text. And a call
+`ERR_METTA_UNSUPPORTED`; `run`, `load` and `lint` take source text. A call
 to a door the standard library DECLARES while this build implements nothing for
 it answers ITSELF: `!(py-atom "1 + 1")` answers `(py-atom "1 + 1")` where there
 is no Python seat. `lint`'s `unimplemented-head` rule names that before it
 runs, and it is the rule to run before handing a program to a browser engine.
+And lib_file's `exit!` ends a Node process with its status, `catch` or not, as
+its contract says, where a page has no process to end: the ask refuses with
+`ERR_METTA_UNSUPPORTED`, and the engine it ended is closed.
 
 ## Where to read next
 

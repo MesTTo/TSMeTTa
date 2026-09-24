@@ -4,6 +4,16 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- lib_file's `exit!` ends the Node process with the status it asks for,
+  inside `catch` or not, as its contract says and the Python seat's test
+  holds. SWI's halt ends in Emscripten's `exit()`, which threw an
+  `ExitStatus` out of the ask with SWI's halt flags above the status,
+  `(exit! 0)` arriving as exit(262144). The runtime was gone by then, so the
+  next `dispose()` failed with a `TypeError` inside the loader. The engine now
+  closes where the throw arrives, and the status goes to the platform. A
+  browser has no process to end, so there the ask refuses with
+  `UnsupportedError` and the engine stays closed.
+
 - A `Channel` is `Disposable`: `using channel = new Channel()` closes it when
   the block ends, as the Python seat's Channel closes from `__exit__`. A
   program had to close one in a `finally` of its own.

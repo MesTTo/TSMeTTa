@@ -359,6 +359,21 @@ process.once("exit", () => {
 });
 
 /**
+ * End this process with the status a program's `exit!` asked for.
+ *
+ * lib_file's `exit!` ends the whole process, an embedding host included, and
+ * MeTTa's `catch` does not turn it into a value [source:
+ * lib/lib_file/lib_file.pl, 'exit!'/2, which the Python seat's
+ * test_exit_is_process_termination_even_inside_catch holds]. Node's own
+ * `node:wasi` hands a guest's exit back to its embedder by default; this
+ * follows the MeTTa contract instead. The `exit` event still runs, so each
+ * engine's temporary directory goes with the process.
+ */
+export function endProcess(status: number): never {
+  process.exit(status);
+}
+
+/**
  * A directory of the engine's own inside the host's temporary directory.
  *
  * SWI-Prolog makes a temporary name unique by its process id,

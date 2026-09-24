@@ -605,6 +605,35 @@ test("boots under the ceiling the host's memory leaves", async () => {
   } finally { await page.close(); }
 });
 
+test('refuses exit! in a page and closes the engine it ended', async () => {
+  // A page has no process for exit! to end, and SWI's halt has ended the
+  // runtime by the time it is refused, so the engine is closed and disposing
+  // it must not call into what is gone.
+  const page = await browser.newPage();
+  try {
+    await page.goto(origin);
+    const seen = await page.evaluate(async () => {
+      const { metta, fn, lib } = await import('/browser/index.js');
+      const m = await metta();
+      m.import(lib.file);
+      let refused = null;
+      try {
+        await m.eval(fn['exit!'](3)).toArray();
+      } catch (error) {
+        refused = { code: error.code, message: error.message };
+      }
+      const closed = m.engine.closed;
+      let disposed = true;
+      try { m.dispose(); } catch { disposed = false; }
+      return { refused, closed, disposed };
+    });
+    assert.equal(seen.refused?.code, 'ERR_METTA_UNSUPPORTED');
+    assert.match(seen.refused?.message ?? '', /^exit! ended this engine with status 3;/);
+    assert.equal(seen.closed, true);
+    assert.equal(seen.disposed, true);
+  } finally { await page.close(); }
+});
+
 test('compiles the fetched bytes when the response cannot be streamed', async () => {
   // A server that answers the `.wasm` with any other Content-Type makes the
   // browser refuse to stream it. That costs the code cache and must not cost

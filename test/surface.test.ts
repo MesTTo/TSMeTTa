@@ -16,7 +16,7 @@
  *   - an ask is bounded by the stack-depth pragma as a runnable form is, its
  *     runaway branch answering its error beside the finished ones [tested:
  *     "bounds an asked goal by the stack-depth pragma, branch by branch";
- *     commit=WORKTREE]
+ *     commit=1fb327637bc22c5c135381f3f08abe8a86f6f6ed]
  * Open Obligations:
  *   To Do: None
  *   Hacks: None

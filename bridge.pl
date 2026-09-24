@@ -781,7 +781,7 @@ metta_node_group(Terms, Encoded) :-
 % stack gave out: (bounded-factorial 5) under a depth of 20 answered 120 and
 % then raised a 1Gb stack overflow, where the run door answers the error
 % [measured 2026-09-24 on tsmetta 143d12a; tested: "bounds an asked goal by
-% the stack-depth pragma, branch by branch"; commit=WORKTREE].
+% the stack-depth pragma, branch by branch"; commit=1fb327637bc22c5c135381f3f08abe8a86f6f6ed].
 metta_node_eval(Module, Term, Result) :-
     metta_run_with_fuel(Value, Result,
         with_metta_module(Module,

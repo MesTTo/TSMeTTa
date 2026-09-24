@@ -199,7 +199,7 @@ another engine path as well.
 ```ts
 m.import(lib.file);
 (await m.fn.fileExists("package.json")).map(String); // ["true"], beside this process
-m.loadFile("examples/family.metta");                  // read where it is, never copied
+m.loadFile("examples/streaming.metta");               // read where it is, never copied
 ```
 
 ### Spaces

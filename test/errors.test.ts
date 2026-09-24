@@ -367,6 +367,41 @@ describe("an assertion failure crossing the seat", () => {
   });
 });
 
+// The engine resolves a Prolog path itself and hands SWI's loader only the file
+// that answered, so an absent one is the same named refusal on this host as on
+// a native one. A RELATIVE path used to reach swipl-wasm's library(wasm) loader
+// hook, which read it as a URL, autoloaded wasm:sequence/5 under the engine's
+// no-autoload boot and raised an EngineError whose ball held a dict this wire
+// cannot encode, while an absolute one already arrived as SourceNotFoundError
+// [measured 2026-09-24 by the TS corpus job on tsmetta 6663d06; source:
+// engine/metta/interop.pl, metta_load_source/2].
+describe("an absent Prolog source, relative or absolute", () => {
+  let m: MeTTa;
+
+  before(async () => {
+    m = await metta();
+    m.run("!(import! &self (library lib_import))");
+  });
+
+  after(() => {
+    m.dispose();
+  });
+
+  it("is refused as a source not found, naming the path", () => {
+    for (const path of ["./no/such/file.pl", "/no/such/file.pl"]) {
+      assert.throws(
+        () => m.run(`!(import_prolog_functions_from_file "${path}" ())`),
+        (raised: unknown) => {
+          assert.ok(raised instanceof SourceNotFoundError, `${path}: ${String(raised)}`);
+          assert.equal(raised.source, path);
+          return true;
+        },
+        path,
+      );
+    }
+  });
+});
+
 describe("every kind the engine publishes, over a live engine", () => {
   let m: MeTTa;
 

@@ -4,6 +4,15 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- `llms.txt` describes the seat that ships. It installs with `npm install
+  tsmetta`, where it named only a checkout's build; the first call imports
+  `tsmetta`, since running `src/*.ts` in place needs a Node that strips types
+  and the Debian and Ubuntu builds of Node 22 do not; the restricted-space
+  example adds the equation it evaluates, which it answered nothing without;
+  `m.solve` answers an array of binding rows; the retired `m.strict()` is gone;
+  the subpath roster names `/atom`, `/errors` and `/seam`; and the command line
+  lists all six commands.
+
 - `m.eval`, `m.fn` and a live view's refresh evaluate through the engine's one
   host evaluation door, `metta_host_evaluate/5`, which translates the term and
   runs it inside the fuel scope, answering `Empty` as data. `metta_node_eval/3`

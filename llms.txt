@@ -9,16 +9,20 @@ Open Obligations: None. -->
 ## Install
 
 ```sh
-npm ci --prefix extensions/node
+npm install tsmetta
 ```
 
-That fetches the compiler and test tooling and builds the TypeScript, the
-browser bundle and the engine copy the package mounts, through the package's
-own `prepare` script, so a checkout that has run it carries dist/, browser/ and
-_runtime/. Node 22.18 or newer, which is what package.json declares. `prepare`
-rather than `prepack` because it is the one script npm's directory fetcher
-runs, so `npm install file:/path/to/extensions/node` gets a package with the
-engine in it.
+The engine, SWI-Prolog compiled to WebAssembly, ships inside the package with
+its libraries, so nothing is installed beside it and no native build runs.
+Node 22.18 or newer, which is what package.json declares.
+
+From a checkout, `npm ci --prefix extensions/node` fetches the compiler and
+test tooling and builds the TypeScript, the browser bundle and the engine copy
+the package mounts, through the package's own `prepare` script, so a checkout
+that has run it carries dist/, browser/ and _runtime/. `prepare` rather than
+`prepack` because it is the one script npm's directory fetcher runs, so
+`npm install file:/path/to/extensions/node` gets a package with the engine in
+it.
 
 ## The host
 
@@ -40,11 +44,16 @@ sentence, which names each missing patch, and nothing reaches the console.
 ## First call
 
 ```ts
-import { metta, S, V, fn } from "./extensions/node/src/index.ts";
+import { metta, S, V, fn } from "tsmetta";
 
 const m = await metta();
 await m.eval(fn.add(1, 2)).one();     // 3
 ```
+
+Node resolves `tsmetta` to the built `dist/index.js`. A checkout's
+`src/index.ts` also runs in place, but only on a Node that strips types
+(`process.features.typescript`), which the Debian and Ubuntu builds of Node 22
+do not.
 
 ## Building terms
 
@@ -274,6 +283,7 @@ runs inside one that has none:
 
 ```ts
 const locked = m.space(S.locked, { grants: [] });
+locked.add(m.parse("(= (double $x) (* $x 2))"));
 await locked.eval(S.double(21)).one();        // 42
 const reader = m.space(S.reader, { grants: ["file"] });
 ```
@@ -369,14 +379,13 @@ is refused by name. `tsmetta/spaces` composes them: `union`, `readOnly`,
 String(await m.why(S.quad(3)));   // the first proof, rendered
 m.derivation(target);             // every proof, as a discriminated union
 m.doc(S.area);                    // the (@doc ...) atom
-m.solve(4, sub(V.x, 1));          // { x: 5 }: the relation, backwards
+m.solve(4, sub(V.x, 1));          // [{ x: 5 }]: every binding row, the relation run backwards
 m.cast(S.Ann, S.Person);          // narrowed, or CastError naming its real types
 m.forms(source);                  // every top-level form, read and not run
 m.trace("!(quad 3)");             // the engine's own call and exit events
 m.disassemble("dbl");             // the clauses the name compiled to
 m.evalStatus(S.Point(1, 2));      // value, not-reducible or empty, for a TERM
 m.reducible(S.Point(1, 2));       // false: nothing applies to that head
-using _ = m.strict();             // refuse anything answered unreduced, both doors
 using _ = m.limits({ inferences: 100_000 });
 ```
 
@@ -446,15 +455,17 @@ that does not reach one promptly.
 
 The root carries what a program reaches for. Everything else is in the package's
 subpaths and costs nothing unimported: `tsmetta/ambient` (a lazily booted
-default engine), `/spaces`, `/structures` (`AlphaSet`, `PatternMap`,
+default engine), `/atom` (the atom algebra), `/errors` (the error family),
+`/spaces`, `/structures` (`AlphaSet`, `PatternMap`,
 `MatchIndex`, `ClosureView`, `TabledMap`), `/matching` (unification and alpha
 keys, no engine needed), `/testing` (generators and a shrinking property
 runner), `/vocabularies` (the engine's closed value sets, checked against
 `&metta`), `/strategies`, `/paths`, `/parallel`, `/subscribe`, `/derivation`,
 `/provider`, `/wire`, `/convert`, `/integrate`, `/algebra`, `/remote`,
 `/arrays`, `/tables`, `/tokens`, `/saga`, `/lint`, `/manifest`, `/events`,
-`/config`, `/random`, `/version`, `/live`. README.md lists every exported
-subpath and its test checks that list against package.json.
+`/config`, `/random`, `/version`, `/live`, and the Node-only `/seam` below.
+README.md lists every exported subpath and its test checks that list against
+package.json.
 
 ## Arrays, tables and native algebras
 
@@ -632,7 +643,11 @@ npx tsmetta run program.metta
 npx tsmetta eval "(+ 1 2)"
 npx tsmetta why "(quad 3)"
 npx tsmetta repl
+npx tsmetta doc car-atom          # a name's (@doc ...) documentation
+npx tsmetta forms program.metta   # each top-level form and the kind the reader gave it
 ```
+
+Those six are the whole command set, and each exits nonzero when it fails.
 
 ## In a browser
 

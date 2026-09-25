@@ -190,6 +190,7 @@ export {
   type DirectiveStatus,
   type Form,
   MeTTa,
+  type PrologSource,
   type ReconcileReport,
   type StatusGroup,
   type StatusRow,

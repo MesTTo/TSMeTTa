@@ -1142,6 +1142,8 @@ metta_node_verb(livefollow, 2).
 metta_node_verb(liveclose, 1).
 metta_node_verb(registerop, 4).
 metta_node_verb(dropop, 2).
+metta_node_verb(registerprolog, 3).
+metta_node_verb(unregisterprolog, 1).
 metta_node_verb(watch, 4).
 metta_node_verb(unwatch, 1).
 metta_node_verb(drain, 1).
@@ -1410,6 +1412,32 @@ metta_node_command(dropop, [Name0, Arity], [value, [s, "ok"]]) :-
     metta_node_atom(Name0, Name),
     metta_node_drop_op(Name, Arity).
 
+% Prolog registered as MeTTa functions through the engine's one registration
+% service, the one the Python seat's register_prolog calls, so the two seats
+% run one sequence: the names checked before the source loads, a source that
+% declares neither names nor an extension refused, and every name registered
+% or none [source 2026-09-25T02:28:34+10:00: engine/metta/interop.pl,
+% metta_register_prolog/3]. The
+% origin arrives as its kind, file or text, beside its string; a name as a
+% string and a rename as a [From, To] pair of strings. It answers the names
+% registered.
+metta_node_command(registerprolog, [Kind0, Source0, Names0], [value, Wire]) :-
+    metta_node_atom(Kind0, Kind),
+    metta_node_text(Source0, Source),
+    metta_node_prolog_origin(Kind, Source, Origin),
+    maplist(metta_node_prolog_name, Names0, Names),
+    metta_register_prolog(Origin, Names, Registered),
+    metta_node_names_wire(Registered, Wire).
+
+% An extension released whole, answering the names it had installed, asked for
+% before they go [source 2026-09-25T02:28:34+10:00: engine/metta/interop.pl,
+% metta_extension_members/2 and unregister_metta_extension/1].
+metta_node_command(unregisterprolog, [Extension0], [value, Wire]) :-
+    metta_node_atom(Extension0, Extension),
+    metta_extension_members(Extension, Released),
+    unregister_metta_extension(Extension),
+    metta_node_names_wire(Released, Wire).
+
 metta_node_command(watch, [WatchId, Space0, Wire, Edges0], [value, [s, "ok"]]) :-
     metta_node_space(Space0, Space),
     metta_node_decode(Wire, Pattern),
@@ -1650,6 +1678,18 @@ metta_node_command(derivation, [Space0, Wire, Depth0], [answer, Out, Text]) :-
 % metta_node_command/3 clause stays contiguous: SWI warns about a
 % discontiguous predicate on stderr, and this binding's own suite refuses
 % any engine output at all.
+metta_node_prolog_origin(file, Text, file(File)) :- atom_string(File, Text).
+metta_node_prolog_origin(text, Text, text(Text)).
+
+metta_node_prolog_name([From0, To0], [From, To]) :-
+    metta_node_atom(From0, From),
+    metta_node_atom(To0, To).
+metta_node_prolog_name(Name0, Name) :- metta_node_atom(Name0, Name).
+
+metta_node_names_wire(Names, Wire) :-
+    findall([g, Text], ( member(Name, Names), atom_string(Name, Text) ), Items),
+    metta_node_expr_wire(Items, Wire).
+
 metta_node_status_group(Rows, Group) :-
     maplist(metta_node_status_row, Rows, Encoded),
     metta_node_expr_wire(Encoded, Group).

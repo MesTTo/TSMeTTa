@@ -244,6 +244,18 @@ const shout = m.op(function shout(text: string): string {
 String(await shout("hello").one()); // '"HELLO"', a host callback
 ```
 
+Prolog registers as MeTTa functions at native speed, through the engine's own
+registration service. The names come from the call or from the source's own
+`:- metta_export(...)`, a mapping renames a module's exports, and an extension
+a source declares releases whole.
+
+```ts
+m.registerProlog({ source: "'vec-dot'([A, B], [C, D], R) :- R is A*C + B*D." }, ["vec-dot"]);
+(await m.fn.vecDot([1, 2], [3, 4])).map(String); // ["11"]
+m.registerProlog({ path: "native/fast.pl" });    // the names fast.pl declares
+m.unregisterProlog("fast");                      // everything its extension installed
+```
+
 ### Nondeterminism as async iteration
 
 Taking two answers closes the generator after two emissions.

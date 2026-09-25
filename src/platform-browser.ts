@@ -88,8 +88,8 @@ export async function loadSWIPL(
 /** Host filesystem paths have no browser counterpart. */
 export function resolvePath(_path: string): string {
   throw new UnsupportedError(
-    "loadFile and libraryPath read host filesystem paths and are unavailable in a browser; " +
-      "use run or load for source text",
+    "a host filesystem path is unavailable in a browser, which has no host files; pass the " +
+      "source text itself: run or load for MeTTa, registerProlog's { source } for Prolog",
   );
 }
 

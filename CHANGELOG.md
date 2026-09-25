@@ -138,7 +138,19 @@ Open Obligations: None. -->
   deadlocked over two tables resolve as SWI's threads do, the one that closes
   the cycle giving its tables up and waiting its turn. The synchronous door,
   `runOne`, has nobody to hand the thread to and refuses by name.
-
+- `m.registerProlog({ source } | { path }, names?)` registers Prolog predicates
+  as MeTTa functions through the engine's registration service,
+  `metta_register_prolog/3`, the one the Python seat's `register_prolog` calls,
+  so both seats refuse the same names before a source loads and register every
+  name or none. A syntax error in the source raises, naming its line, and so
+  does a determinism the engine does not know. A registration missing what its
+  contract needs, a source that declares neither names nor an extension, a
+  rename from `{ source }` or a call naming neither or both of `{ source }` and
+  `{ path }`, raises `RegistrationError`, whose `requires` says what to supply,
+  as the Python seat's does. A mapping in place of the names
+  imports a module's exports renamed, and `m.unregisterProlog(extension)`
+  releases an extension whole. A browser takes `{ source }`, and a host path
+  there refuses by name.
 - An ask runs in the engine's evaluation fuel scope, as a runnable form does
   and as the Python and C seats' evaluations do, so
   `(pragma! max-stack-depth N)` bounds `m.eval` and `m.fn` branch by branch:

@@ -51,6 +51,7 @@ import {
   toAtom,
 } from "./atom.ts";
 import { libraryDirectory, resolvePath } from "./platform.ts";
+import type { Name } from "./factories.ts";
 
 import { Answers, type AskOptions, type MatchOptions, type MatchTemplate, type Row } from "./answers.ts";
 import { type Derivation } from "./derivation.ts";
@@ -67,7 +68,9 @@ import {
 import {
   MettaError,
   NameError,
+  RegistrationError,
   ResultError,
+  TransportError,
 } from "./errors.ts";
 import { race as raceAsks } from "./parallel.ts";
 import { showsAs } from "./present.ts";
@@ -230,6 +233,14 @@ export interface ReconcileReport {
   readonly added: readonly Atom[];
   readonly removed: readonly Atom[];
 }
+
+/**
+ * Where registered Prolog comes from: its source text, or a host file by its
+ * path. Exactly one, which the type states: naming both does not compile.
+ */
+export type PrologSource =
+  | { readonly source: string; readonly path?: never }
+  | { readonly path: string; readonly source?: never };
 
 /**
  * A booted engine and the surface over it.
@@ -581,6 +592,94 @@ export class MeTTa implements Disposable {
 
   loadFile(path: string, space: Space = this.self): AnswerGroup[] {
     return groupsOf(this.#engine.start(["load", resolvePath(path), space.reference]).sync());
+  }
+
+  /**
+   * Register Prolog predicates as MeTTa functions, at native speed.
+   *
+   * ```ts
+   * m.registerProlog({ source: "'vec-dot'([A, B], [C, D], R) :- R is A*C + B*D." }, ["vec-dot"]);
+   * await m.fn.vecDot([1, 2], [3, 4]);                            // [11]
+   * m.registerProlog({ path: "fast.pl" });                        // the names fast.pl declares
+   * m.registerProlog({ path: "lib_b.pl" }, { norm: "libb-norm" }); // a module's export, renamed
+   * ```
+   *
+   * A predicate follows the compiled calling convention, inputs first and one
+   * output last, and keeps its nondeterminism: three solutions are three
+   * answers. The names come from the call, or from the source's own
+   * `:- metta_export("(: name (-> ...))")`; a source that only contributes
+   * clauses to an extension point, such as a space provider, declares
+   * `:- metta_extension(name, [])` and registers no function. Every rule is
+   * the engine's, through the registration service the Python seat's
+   * register_prolog calls too: a builtin and a special form are refused
+   * before the source loads, a name no loaded predicate answers after it,
+   * every name registers or none does, and a syntax error in the source
+   * raises, naming its line. A registration missing what its contract needs
+   * raises `RegistrationError`, whose `requires` says what to supply: a
+   * source that names nothing and declares nothing, since discovering its
+   * names would register whatever else it defines, a rename from text, or a
+   * call naming neither or both of `{ source }` and `{ path }`.
+   * Inline source loads under a name hashed from its text, so registering it
+   * again reloads it rather than stacking its clauses.
+   *
+   * A mapping renames a Prolog module's exports, SWI's renaming import list, so
+   * two libraries that both export `norm/2` can both be registered. It imports
+   * a module, which SWI's import list names as a file, so it takes `{ path }`;
+   * the types refuse `{ source }` with a mapping, and so does the engine for a
+   * caller the types do not reach.
+   *
+   * The registration is process-wide, as `define` and `op` are: a Prolog
+   * predicate lives in `user`, where every space can call it. It answers the
+   * names now registered.
+   */
+  registerProlog(from: PrologSource, names?: readonly (string | Name | Sym)[]): readonly string[];
+  registerProlog(
+    from: { readonly path: string; readonly source?: never },
+    renames: Readonly<Record<string, string | Name | Sym>>,
+  ): readonly string[];
+  registerProlog(
+    from: PrologSource,
+    names: readonly (string | Name | Sym)[] | Readonly<Record<string, string | Name | Sym>> = [],
+  ): readonly string[] {
+    const { source, path } = from as { readonly source?: unknown; readonly path?: unknown };
+    // The one registration refusal the engine never sees, since no origin
+    // crosses; the types refuse it for typed callers. It is the registration
+    // kind, as the Python seat's register_prolog raises it for the same call.
+    if ((source === undefined) === (path === undefined)) {
+      throw new RegistrationError("registerProlog takes exactly one of { source } or { path }", {
+        requires: "exactly one of { source } or { path }",
+      });
+    }
+    // A rename from text is the engine's registration refusal, carrying the
+    // kind's ground and remedy; a second copy of the rule here would carry
+    // neither [source 2026-09-25T18:07:58+10:00: engine/metta/interop.pl,
+    // prolog_registration_shape/3].
+    const wanted: readonly (string | readonly [string, string])[] = isNameList(names)
+      ? names.map((name) => registeredName(name, "registerProlog"))
+      : Object.entries(names).map(
+          ([exported, name]) => [exported, registeredName(name, "registerProlog")] as const,
+        );
+    const origin = path === undefined ? ["text", String(source)] : ["file", resolvePath(String(path))];
+    const registered = namesOf(this.#engine.start(["registerprolog", ...origin, wanted]).sync());
+    for (const name of registered) this.#known.add(name);
+    return registered;
+  }
+
+  /**
+   * Release everything one Prolog extension registered, and its clauses.
+   *
+   * The unit is the extension a source declared with `:- metta_extension`,
+   * never one name: its functions and the clauses behind them go together,
+   * through SWI's own unload_file/1, so no name stays callable through a
+   * predicate nothing records. It answers the names it released, and refuses
+   * an extension that is not loaded rather than report a release that did
+   * nothing.
+   */
+  unregisterProlog(extension: string | Name | Sym): readonly string[] {
+    const name = registeredName(extension, "unregisterProlog");
+    const released = namesOf(this.#engine.start(["unregisterprolog", name]).sync());
+    for (const each of released) this.#known.delete(each);
+    return released;
   }
 
   /**
@@ -1112,6 +1211,40 @@ function asProvider(backing: SpaceProvider | object): SpaceProvider {
     typeof shape.add === "function" ||
     typeof shape.remove === "function";
   return answers ? shape : view(backing);
+}
+
+/** Whether a registration's names are a list, where the other form renames. */
+function isNameList(
+  names: readonly (string | Name | Sym)[] | Readonly<Record<string, string | Name | Sym>>,
+): names is readonly (string | Name | Sym)[] {
+  return Array.isArray(names);
+}
+
+/**
+ * A registered name's text, from a string or a symbol however it is spelled,
+ * `S.name` or its atom, or a refusal naming the door.
+ */
+function registeredName(name: unknown, door: string): string {
+  if (typeof name === "string") return name;
+  const atom = name instanceof Sym || typeof name === "function" ? toAtom(name as Term) : undefined;
+  if (atom instanceof Sym) return atom.name;
+  throw new NameError(`${door} takes a name as a string or a symbol, not ${String(name)}`);
+}
+
+/** The names a registration answered, an expression of strings. */
+function namesOf(event: JobEvent | null): readonly string[] {
+  if (event?.kind !== "value" || !(event.atom instanceof Expression)) {
+    throw new TransportError(
+      `a registration answered ${event === null ? "nothing" : event.kind} where its names go`,
+    );
+  }
+  return event.atom.items.map((item) => {
+    const name = hostValue(item);
+    if (typeof name !== "string") {
+      throw new TransportError(`a registration answered ${item.text} where a name goes`);
+    }
+    return name;
+  });
 }
 
 function groupsOf(event: JobEvent | null): AnswerGroup[] {

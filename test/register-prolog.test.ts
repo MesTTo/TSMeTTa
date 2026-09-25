@@ -32,7 +32,7 @@
  *     source or path"]
  *   - a syntax error in a source raises, naming its line, and so does a
  *     determinism the engine does not know, as the Python seat raises them,
- *     although the load runs in an engine of its own [tested 2026-09-25T18:46:53+10:00: "names
+ *     although the load runs in an engine of its own [tested 2026-09-26T06:20:42+10:00: "names
  *     the line of a syntax error", "refuses a determinism it does not know"]
  *   - a function declared det raises where it leaves a choice point, and one
  *     declared nondet keeps every answer [tested 2026-09-25T18:46:53+10:00: "raises where a

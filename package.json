@@ -1,6 +1,6 @@
 {
   "name": "tsmetta",
-  "version": "0.0.1-alpha.1",
+  "version": "0.0.1-alpha.2",
   "comment": "Private is this repository's pre-release guard, not a decision about the registry: everything here goes public together on the day the GitHub repository does, and tools/refuse-early-publish.mjs enforces it. The package does carry the engine it mounts; tools/bundle-runtime.mjs copies engine/ and lib/ into _runtime/ on PREPARE, the way the Python package copies them under metta/_runtime at build time. Prepare rather than prepack because prepare is the one hook a consumer installing this DIRECTORY runs: npm's directory fetcher runs prepare and nothing else, so an artefact made only for a pack left `npm install file:...` with a package that had no engine to mount and no browser build to select.",
   "type": "module",
   "description": "MeTTa in TypeScript, in process over a patched WebAssembly SWI-Prolog",

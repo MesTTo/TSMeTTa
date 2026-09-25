@@ -4,6 +4,8 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+## 0.0.1-alpha.2 - 2026-09-26
+
 - `llms.txt` describes the seat that ships. It installs with `npm install
   tsmetta`, where it named only a checkout's build; the first call imports
   `tsmetta`, since running `src/*.ts` in place needs a Node that strips types

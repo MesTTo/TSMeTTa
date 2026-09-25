@@ -378,6 +378,11 @@ Open Obligations: None. -->
 - `rewrite(head, body)` builds `(= head body)`, an equation as a value, for a
   program that stores, removes or matches equations as data.
 
+- The package's `license` is Apache-2.0, the licence its LICENSE holds, where
+  it said MIT. `_runtime/engine/NOTICE` and `_runtime/lib/NOTICE`, which the
+  bundle copies with the engine and the library pack, keep PeTTa's MIT
+  copyright and permission notice beside them.
+
 ## 0.0.1-alpha.1 - 2026-09-24
 
 - Boot the engine on a patched WebAssembly SWI-Prolog this package carries in

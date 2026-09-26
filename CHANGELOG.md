@@ -4,6 +4,12 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- The `node-binding`, `node-examples` and `node-bench` lanes are declared
+  `full_width`, so the superproject's gate claims the machine's full-width
+  lock before it runs any of them: the first two spread the seat's suite and
+  the corpus over the machine, and the third measures the seat's rows,
+  inferences and instructions, against its committed baselines.
+
 - `examples/` is TSMeTTa-Examples, mounted as a submodule: a TypeScript twin of
   every example in the MeTTa corpus and hand-written programs, one folder per
   chapter. The README's own programs, `gallery.ts`, `readme-snippet.ts`,

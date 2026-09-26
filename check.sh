@@ -34,6 +34,7 @@ check_node_binding() {
     [ -d "$HERE/extensions/node" ] || return 0
     bounded sh "$HERE/extensions/node/test.sh"
 }
+full_width node-binding
 run GATE node-binding check_node_binding
 
 # The extension claim, proved rather than asserted: an npm package this
@@ -131,6 +132,8 @@ check_node_examples() {
     [ -d "$HERE/extensions/node" ] || return 0
     ( cd "$HERE/extensions/node" && bounded env -u METTA_LANE_WIDTH node tools/examples.mjs )
 }
+full_width node-examples
 run_solo GATE node-examples check_node_examples
 
+full_width node-bench
 run_solo GATE node-bench check_node_bench

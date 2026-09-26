@@ -24,6 +24,13 @@ Open Obligations: None. -->
   `checkThenables`, so an unawaited ask such as `m.eval(1);` is a finding where
   it passed.
 
+- `node-dist` and `node-examples` run alone in the gate, as `run_solo` runs a
+  lane writing what other lanes read: each `npm pack` rebuilds `dist/`,
+  `browser/` and `_runtime/`, which the other and the docs lane rebuild and
+  `stranger-node` imports, and two at once deleted each other's files
+  mid-copy. Alone, `node-examples` drops `METTA_LANE_WIDTH` for its own
+  default, one pair per core up to sixteen.
+
 ## 0.0.1-alpha.2 - 2026-09-26
 
 - `llms.txt` describes the seat that ships. It installs with `npm install

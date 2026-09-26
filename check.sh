@@ -110,7 +110,13 @@ with the rest of the build tooling, and a gate does not reach the network" >&2
     }
     ( cd "$HERE/extensions/node" && bounded node tools/dist-consumer.mjs )
 }
-run GATE node-dist check_node_dist
+# Alone, because the `npm pack` above rebuilds dist/, browser/ and _runtime/,
+# which node-examples and the docs lane rebuild too and stranger-node imports
+# dist/ from: two builds at once delete each other's files mid-copy, the third
+# reason run_solo gives in tools/check.sh [measured 2026-09-26T21:53:28+10:00:
+# a whole gate's node-examples pack failed on ENOENT, chmod
+# _runtime/engine/translator_rules.pl, while another lane rebuilt _runtime/].
+run_solo GATE node-dist check_node_dist
 
 # The examples corpus, TSMeTTa-Examples, mounted at extensions/node/examples:
 # every program run and every twin compared with its MeTTa original, against
@@ -118,11 +124,13 @@ run GATE node-dist check_node_dist
 # lint, format and README fence checks. tools/examples.mjs is the whole lane,
 # the same command a developer runs as `npm run examples`, and it owns the
 # skip protocol: an unmounted corpus or a missing npm install exits 125 naming
-# the command that supplies it. Its pairs run METTA_LANE_WIDTH wide.
+# the command that supplies it. It runs alone for node-dist's reason, and so
+# drops METTA_LANE_WIDTH, the share of a lane running beside others, for the
+# lane's own default: one pair per core, up to sixteen (tools/examples/run.ts).
 check_node_examples() {
     [ -d "$HERE/extensions/node" ] || return 0
-    ( cd "$HERE/extensions/node" && bounded node tools/examples.mjs )
+    ( cd "$HERE/extensions/node" && bounded env -u METTA_LANE_WIDTH node tools/examples.mjs )
 }
-run GATE node-examples check_node_examples
+run_solo GATE node-examples check_node_examples
 
 run_solo GATE node-bench check_node_bench

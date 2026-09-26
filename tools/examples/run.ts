@@ -36,7 +36,9 @@
  * Decides: one pair runs per core the lane may use, METTA_LANE_WIDTH when the
  *   gate divides the box and every available core otherwise, capped at
  *   sixteen, the most engines the lane held at once while a pair's two sides
- *   ran together.
+ *   ran together. That many pairs at once, or fewer when fewer are selected,
+ *   is the width this run decides by (full_width.ts): the corpus is
+ *   full-width, and one selected program is not.
  */
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -45,6 +47,7 @@ import { fileURLToPath } from "node:url";
 
 import { compiled, coverage, isTwin, originalOf, originals, programs, residue } from "./corpus.ts";
 import { declared } from "./declare.ts";
+import { invocation } from "./full_width.ts";
 import { type Difference, agree, mergeVolatile, storedDifference } from "./lane.ts";
 import { scan } from "./scan.ts";
 import type { Report } from "./side.ts";
@@ -259,9 +262,9 @@ async function worker(): Promise<void> {
     }
   }
 }
-await Promise.all(
-  Array.from({ length: Math.max(1, Math.min(16, Number.isInteger(width) ? width : 1)) }, worker),
-);
+const workers = Math.max(1, Math.min(16, Number.isInteger(width) ? width : 1));
+invocation(Math.min(workers, jobs.length));
+await Promise.all(Array.from({ length: workers }, worker));
 
 results.sort((a, b) => a.path.localeCompare(b.path));
 if (settling !== undefined) {

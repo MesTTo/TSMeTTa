@@ -68,6 +68,8 @@ ROOT = SEAT.parents[1]
 # instead, which no other tree defines.
 sys.path.insert(0, str(ROOT / "extensions" / "python"))
 sys.path.insert(0, str(HERE))
+sys.path.append(str(ROOT / "tests" / "checks"))
+import full_width  # noqa: E402  -- the path is installed above
 
 from _workspace import on_path  # noqa: E402  -- the path entry above
 
@@ -250,6 +252,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     selected = list(arguments.cases)
 
+    # The perf rows read retired instructions, a load-sensitive reading
+    # (tools/full_width.sh), unless --counter-only leaves them out.
+    if not arguments.counter_only:
+        full_width.invocation("measures")
     baseline = BenchmarkBaseline(BASELINE, update=arguments.update)
     # A subset run must not restamp the fingerprint the rows it is NOT
     # measuring were pinned under, which is the rule check_instructions.py

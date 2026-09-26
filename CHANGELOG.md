@@ -9,6 +9,12 @@ Open Obligations: None. -->
   lock before it runs any of them: the first two spread the seat's suite and
   the corpus over the machine, and the third measures the seat's rows,
   inferences and instructions, against its committed baselines.
+  Each runner also decides its own width by the superproject's rule
+  (`tools/full_width.sh`), so a run by hand claims the machine exactly when
+  it occupies it: `test.sh` from node --test's concurrency and the number of
+  test files, the examples runner from its pairs at once
+  (`tools/examples/full_width.ts`), and the bench unless `--counter-only`
+  leaves out its instruction rows.
 
 - `examples/` is TSMeTTa-Examples, mounted as a submodule: a TypeScript twin of
   every example in the MeTTa corpus and hand-written programs, one folder per

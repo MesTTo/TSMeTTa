@@ -18,6 +18,12 @@
 #     Ubuntu) and a suite that only ran on the official build would not run at
 #     all on the machine that most needs it. The build also downlevels
 #     `using`, which Node 22's V8 does not carry.
+#   - a run of at least one lane's share of test files at once holds the
+#     machine's full-width lock from before its build to its end, and one
+#     refused exits 125 having built and run nothing (tools/full_width.sh)
+#     [tested 2026-09-27T02:16:38+10:00: tests/checks/check_full_width_selftest.py].
+# Owns resources: descriptor 6, the machine's full-width lock while this run
+#   holds it; npm starts with it closed.
 # Open Obligations:
 #   To Do: None
 #   Hacks: None
@@ -49,5 +55,15 @@ fi
 # this tree and a command typed by hand all reach.
 bounded() { sh "$HERE/../../tools/bounded.sh" "$@"; }
 
-cd "$HERE" && bounded npm run --silent typecheck &&
-    bounded npm run --silent test
+# `npm test` runs every compiled test file through node --test, which runs
+# os.availableParallelism() - 1 files at once [source
+# 2026-09-27T01:39:36+10:00: https://nodejs.org/api/cli.html#--test-concurrency],
+# so this run's width is that or the number of test files, whichever is
+# smaller (tools/full_width.sh, metta_full_width_decide).
+. "$HERE/../../tools/full_width.sh"
+files=$(find "$HERE/test" -maxdepth 1 -name '*.test.ts' | wc -l)
+concurrency=$(bounded node -e 'console.log(Math.max(1, require("node:os").availableParallelism() - 1))')
+metta_full_width_invocation "$(( files < concurrency ? files : concurrency ))" || exit $?
+
+cd "$HERE" && bounded npm run --silent typecheck 6>&- &&
+    bounded npm run --silent test 6>&-

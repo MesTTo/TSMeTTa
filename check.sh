@@ -112,4 +112,17 @@ with the rest of the build tooling, and a gate does not reach the network" >&2
 }
 run GATE node-dist check_node_dist
 
+# The examples corpus, TSMeTTa-Examples, mounted at extensions/node/examples:
+# every program run and every twin compared with its MeTTa original, against
+# this seat's own build packed as a consumer installs it, with the corpus's
+# lint, format and README fence checks. tools/examples.mjs is the whole lane,
+# the same command a developer runs as `npm run examples`, and it owns the
+# skip protocol: an unmounted corpus or a missing npm install exits 125 naming
+# the command that supplies it. Its pairs run METTA_LANE_WIDTH wide.
+check_node_examples() {
+    [ -d "$HERE/extensions/node" ] || return 0
+    ( cd "$HERE/extensions/node" && bounded node tools/examples.mjs )
+}
+run GATE node-examples check_node_examples
+
 run_solo GATE node-bench check_node_bench

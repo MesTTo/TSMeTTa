@@ -1,0 +1,66 @@
+{
+  "$schema": "../../node_modules/oxlint/configuration_schema.json",
+  // oxlint's own low-false-positive categories, plus the type-aware rules of
+  // typescript-eslint's strict-type-checked set that oxlint implements. An
+  // Answers is a lazy thenable, so an ask nobody awaits never runs: the
+  // promise rules are what catch a twin whose write silently did nothing.
+  "plugins": ["typescript", "unicorn", "oxc", "import", "node", "promise"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "options": {
+    "typeAware": true
+  },
+  "rules": {
+    "typescript/no-floating-promises": [
+      "error",
+      {
+        // An Answers implements Promise without subclassing it, and the rule
+        // checks only the built-in Promise unless told to check every
+        // thenable: without this a bare `m.eval(1);` passed [tested
+        // 2026-09-26T17:44:30+10:00: a planted `m.eval(1);` is flagged with
+        // it and not without, and the corpus and the lane read no finding].
+        "checkThenables": true,
+        // typescript-eslint's documented exemption: node:test's top-level
+        // test() promise is consumed by the runner.
+        "allowForKnownSafeCalls": [
+          {
+            "from": "package",
+            "name": ["test", "it", "describe", "suite"],
+            "package": "node:test"
+          }
+        ]
+      }
+    ],
+    "typescript/await-thenable": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/require-await": "error",
+    "typescript/no-base-to-string": "error",
+    "typescript/restrict-template-expressions": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/prefer-for-of": "error",
+    "eslint/no-unused-vars": "error",
+    "eslint/no-unused-expressions": "error",
+    "eslint/prefer-const": "error",
+    "eslint/no-var": "error",
+    "eslint/eqeqeq": "error",
+    "unicorn/prefer-node-protocol": "error",
+    "import/no-duplicates": "error",
+    // A table of claims asks ONE engine, whose evaluations serialize anyway,
+    // and the order is part of the program: a write between two asks changes
+    // the second answer. Sequential awaits are the meaning, not a missed
+    // parallelism.
+    "eslint/no-await-in-loop": "off",
+    // A leading underscore marks a binding kept for what binding it does, an
+    // evaluation or a head position, which no-unused-vars reads as intended.
+    "eslint/no-underscore-dangle": "off",
+    // Flags every narrowing cast. A program's casts sit on values a host API
+    // types loosely, a worker's data or a server's address, and the lane's on
+    // its own JSON reports and on acorn's ESTree nodes, whose shapes their
+    // writers fix.
+    "typescript/no-unsafe-type-assertion": "off"
+  }
+}

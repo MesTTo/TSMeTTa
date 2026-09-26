@@ -682,7 +682,7 @@ test('names a wasm asset it cannot compile rather than aborting inside the loade
 test('runs the documented browser example', async () => {
   const page = await browser.newPage();
   try {
-    await page.goto(`${origin}/examples/browser.html`);
+    await page.goto(`${origin}/demos/browser.html`);
     await page.waitForFunction(() => document.querySelector('#result').textContent === '42');
     await page.fill('#source', '!(* 2)');
     await page.click('#run');

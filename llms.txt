@@ -674,5 +674,8 @@ its contract says, where a page has no process to end: the ask refuses with
 ## Where to read next
 
 - `extensions/node/README.md` is the full surface with worked examples.
-- `extensions/node/examples/` are runnable programs.
+- `extensions/node/examples/` is TSMeTTa-Examples, mounted as a submodule: a
+  TypeScript twin of every MeTTa example and hand-written programs, one folder
+  per chapter.
+- `extensions/node/demos/` holds the programs the README quotes, kept runnable.
 - The site publishes the same README at `/extensions/node`.

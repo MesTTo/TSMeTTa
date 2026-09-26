@@ -4,6 +4,26 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- `examples/` is TSMeTTa-Examples, mounted as a submodule: a TypeScript twin of
+  every example in the MeTTa corpus and hand-written programs, one folder per
+  chapter. The README's own programs, `gallery.ts`, `readme-snippet.ts`,
+  `subpaths-snippet.ts`, `streaming.metta` and `browser.html`, move to `demos/`,
+  the name the C seat gives its tour programs, and the package ships `demos/`
+  where it shipped `examples/`.
+
+- `npm run examples`, the gate's `node-examples` lane, runs the corpus against
+  this seat's own build: it packs the seat as npm publishes it, installs the
+  pack as the corpus's `tsmetta`, compiles, lints and format-checks the corpus,
+  runs the lane's own tests and the README fence check, then runs every program
+  and every twin beside its MeTTa original. The runner, the agreement lane and
+  the scans came from the corpus's `tools/`; a twin's stored-content difference
+  is now its own `DIVERGENCE` export rather than a row of `divergence.json`,
+  and a program may import only `tsmetta`, `node:*` and its own `_fixtures/`,
+  loading any other package through a guarded `import()`. oxlint,
+  oxlint-tsgolint and Prettier join the devDependencies, and the lint now sets
+  `checkThenables`, so an unawaited ask such as `m.eval(1);` is a finding where
+  it passed.
+
 ## 0.0.1-alpha.2 - 2026-09-26
 
 - `llms.txt` describes the seat that ships. It installs with `npm install

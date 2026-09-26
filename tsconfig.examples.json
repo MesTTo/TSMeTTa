@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.test.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": false,
+    "rootDir": "tools/examples",
+    "outDir": "examples/node_modules/.cache/tsmetta-lane"
+  },
+  "include": ["tools/examples"]
+}

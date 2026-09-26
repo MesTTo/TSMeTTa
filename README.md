@@ -199,7 +199,7 @@ another engine path as well.
 ```ts
 m.import(lib.file);
 (await m.fn.fileExists("package.json")).map(String); // ["true"], beside this process
-m.loadFile("examples/streaming.metta");               // read where it is, never copied
+m.loadFile("demos/streaming.metta");                  // read where it is, never copied
 ```
 
 ### Spaces
@@ -399,7 +399,7 @@ new CastError("planted").code;   // "ERR_METTA_CAST"
 CompileError.defaultCode;        // "ERR_METTA_LOWER"
 ```
 
-Every value above is printed by `examples/subpaths-snippet.ts` and asserted in
+Every value above is printed by `demos/subpaths-snippet.ts` and asserted in
 `test/gallery.test.ts`, so the page cannot show a call the package does not
 have or an answer it does not give.
 
@@ -1076,6 +1076,7 @@ Every code-module entry point the package exports, which is what
 npm test          # the suite
 npm run typecheck
 npm run kit       # the conformance corpus, compared against the Python seat
+npm run examples  # every program in examples/ against this build, each twin beside its original
 ```
 
 `llms.txt` beside this file is the full cheat sheet, and the repository root's

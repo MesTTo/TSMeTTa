@@ -181,7 +181,7 @@
     "_host",
     "_runtime",
     "bridge.pl",
-    "examples",
+    "demos",
     "README.md"
   ],
   "engines": {
@@ -199,7 +199,8 @@
     "test:source": "node tools/require-type-stripping.mjs && node --test \"test/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
     "build:browser": "node tools/bundle-runtime.mjs && node tools/build-browser.mjs",
-    "test:browser": "npm run build:browser --silent && node --test tools/browser.test.mjs"
+    "test:browser": "npm run build:browser --silent && node --test tools/browser.test.mjs",
+    "examples": "node tools/examples.mjs"
   },
   "dependencies": {
     "acorn": "^8.18.0"
@@ -207,7 +208,10 @@
   "devDependencies": {
     "@types/node": "^26.3.0",
     "esbuild": "0.28.2",
+    "oxlint": "^1.85.0",
+    "oxlint-tsgolint": "^7.0.2002",
     "playwright": "1.63.0",
+    "prettier": "3.8.3",
     "swipl-wasm": "8.0.6",
     "typescript": "^6.0.3"
   },

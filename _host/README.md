@@ -7,7 +7,7 @@ are one link of SWI-Prolog 10.1.14, swipl-devel commit
 69775434c8226897626b226aefcc8266499f1e2e, with every patch in MesTTo/MeTTa's
 `tests/checks/host_workarounds/` applied. They were compiled by
 npm-swipl-wasm's own Docker recipe at commit 774c700f2bae5c3f59706ad11dbfbd6d5f8af3e1, with
-emsdk 6.0.9, zlib 1.3.2 and pcre2-10.48, and report `compiled_at` Sep 26 2026, 15:44:45.
+emsdk 6.0.9, zlib 1.3.2 and pcre2-10.48, and report `compiled_at` Sep 27 2026, 14:01:05.
 
 Beyond that recipe the build links SWI's archive, utf8proc and yaml packages
 and clib's uuid binding over libarchive (MesTTo/MeTTa-Library-Pack's pinned
@@ -23,4 +23,8 @@ addresses, where emscripten's default maximum is 2 GiB.
 The data image holds SWI's library and, at /swipl/metta-host.pl, the
 declaration of the patches this build carries, which the engine checks at every
 boot. Rebuild with `sh tools/wasm-host/build.sh && sh tools/wasm-host/build.sh
-vendor` in MesTTo/MeTTa. SWI-Prolog's licence is `LICENSE` beside this file.
+vendor` in MesTTo/MeTTa. SWI-Prolog's licence is `LICENSE` beside this file,
+and `THIRD-PARTY-NOTICES` beside it gives the licence of every component the
+build compiled or linked into these files, the libraries above among them. The
+data image holds the same notices at /swipl/THIRD-PARTY-NOTICES, which SWI-Prolog's
+`license/0` answers from once the engine is loaded.

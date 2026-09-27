@@ -19,6 +19,14 @@
  *     with EngineError carrying the engine's own sentence, as the Python seat
  *     refuses it [tested: "refuses a host whose declaration lacks a patch the
  *     engine requires", "refuses the stock npm swipl-wasm"; commit=b18f7d31d58691f97112d0de67b0136bfd8a3291]
+ *   - SWI-Prolog's license/0 names every component the host's build compiled
+ *     or linked into it: once the host check passes, boot() loads
+ *     engine/host_notices.pl, which answers license:licensed/2 from the
+ *     THIRD-PARTY-NOTICES the data image holds at /swipl, as
+ *     engine/qlf_boot.pl loads it for every native host
+ *     [assumed 2026-09-27T13:21:39+10:00: "answers license/0 for every
+ *     component the host's notices name", which passes once build 12 is
+ *     vendored]
  *   - synchronous reading can call registered host token constructors
  *     [tested: test/reader-boundary.test.ts; commit=9d6b109740b1744b734b53b563a3be8642d24c0e].
  *   - asynchronous query completion waits for provider finalizers
@@ -1592,6 +1600,15 @@ export async function boot(
   }
   if (hosted["Verdict"] !== "passed") {
     throw new EngineError(String(hosted["Refusal"]));
+  }
+  // What the host's build linked, answered from the notices its home holds, in
+  // the place engine/qlf_boot.pl loads it for every native host: after the
+  // host check, before the engine.
+  const noticed = swipl.prolog.query(`use_module('${VIRTUAL_ROOT}/engine/host_notices.pl', []).`).once();
+  if (noticed === undefined || noticed.error === true) {
+    throw new EngineError(
+      `engine/host_notices.pl did not load: ${String(noticed?.message ?? "it answered nothing")}`,
+    );
   }
   // A host that passed is shown this host's files, so the engine starts where
   // this process is and writes temporary files in a directory of its own

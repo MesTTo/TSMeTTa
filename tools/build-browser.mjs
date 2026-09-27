@@ -7,9 +7,14 @@
  *   browser and Node platforms size one binary one way [tested: npm run
  *   test:browser, "boots under the ceiling the host's memory leaves";
  *   commit=ded9bdafa220367d3148a45542dbf62d912ccfef]
+ *   browser/ holds _host/THIRD-PARTY-NOTICES byte for byte, since one of its
+ *   chunks inlines the host's emscripten glue and the notices go wherever
+ *   the host's code goes [assumed 2026-09-27T13:21:39+10:00:
+ *   tests/checks/check_third_party_notices.py over the pack
+ *   tools/dist-consumer.mjs makes, first with build 12 vendored]
  */
 import { build } from "esbuild";
-import { readFileSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, readFileSync, rmSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -85,3 +90,7 @@ await build({
     },
   }],
 });
+
+// The chunk that inlines the glue carries the host's code, so the notices of
+// what the host's build linked go beside it.
+copyFileSync(new URL("../_host/THIRD-PARTY-NOTICES", import.meta.url), new URL("../browser/THIRD-PARTY-NOTICES", import.meta.url));

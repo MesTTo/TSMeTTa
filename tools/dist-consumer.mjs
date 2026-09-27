@@ -27,6 +27,13 @@
  *     resolver from a directory whose `node_modules` holds this package,
  *     which is the only way to exercise the `exports` map rather than a path
  *     this file happens to know
+ *   - the packed tarball carries THIRD-PARTY-NOTICES beside every copy of the
+ *     host's binaries, the glue's bundled copy in browser/ included:
+ *     tests/checks/check_third_party_notices.py runs on the tarball itself,
+ *     with the interpreter tools/select-python.sh chooses for every runner
+ *     here, and a finding stops the lane before anything boots
+ *     [assumed 2026-09-27T13:21:39+10:00: extensions/node/check.sh node-dist,
+ *     first with build 12 vendored]
  * Fails when: `dist/` was built from older sources than the ones beside it.
  *   That is not hypothetical: on 2026-08-31 `dist/` held the previous wire
  *   codec while the engine's bridge held the new one, so a consumer got
@@ -48,6 +55,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url));
+const repositoryRoot = join(packageRoot, "..", "..");
 
 /**
  * What a consumer's `npm install` puts on disk, unpacked where nothing
@@ -81,6 +89,15 @@ function unpack(scratch) {
   const tarball = readdirSync(scratch).find((name) => name.endsWith(".tgz"));
   if (tarball === undefined) {
     console.error("node-dist: npm pack wrote no tarball");
+    process.exit(1);
+  }
+  try {
+    execFileSync("sh", ["-c",
+      '. "$1/tools/select-python.sh" && [ -n "$PY" ] && exec "$PY" "$1/tests/checks/check_third_party_notices.py" "$2"',
+      "sh", repositoryRoot, join(scratch, tarball)],
+      { stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, METTA_ROOT: repositoryRoot } });
+  } catch {
+    console.error("node-dist: the packed tarball does not carry the notices of the host it ships, above");
     process.exit(1);
   }
   execFileSync("tar", ["-xzf", join(scratch, tarball), "-C", installed, "--strip-components=1"]);

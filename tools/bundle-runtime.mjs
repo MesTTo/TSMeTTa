@@ -34,6 +34,15 @@
  *     carries the binary and data image of the host in _host/, the one the
  *     browser build bundles the loader of
  *     [source: extensions/node/tools/bundle-runtime.mjs:collect; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
+ *   - wasm/ carries _host/'s THIRD-PARTY-NOTICES beside the binary and data
+ *     image, byte for byte, and runtime.json's `licenses` names, relative to
+ *     _runtime/, every licence file _runtime/ holds: those notices and each
+ *     file named for a licence (LICENSE, LICENCE, COPYING or NOTICE, alone or
+ *     with a prefix or suffix, or an LGPL- or GPL- text), which are the
+ *     engine's and the library pack's own and the ones beside the code the
+ *     pack vendors, so a site serving runtime.json can serve what it owes
+ *     [assumed 2026-09-27T13:21:39+10:00: tests/checks/check_third_party_notices.py
+ *     over the pack tools/dist-consumer.mjs makes, first with build 12 vendored]
  */
 
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -44,6 +53,11 @@ const PACKAGE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PACKAGE, "..", "..");
 const BUNDLE = join(PACKAGE, "_runtime");
 const TREES = ["engine", "lib"];
+const NOTICES = "THIRD-PARTY-NOTICES";
+// A licence file by its name: the ones licensee and REUSE recognise, with the
+// prefix or suffix a vendored copy carries (RAPIDFUZZ-LICENSE,
+// LIBARCHIVE-COPYING), and a text named for its GNU licence (LGPL-2.0).
+const LICENCE_NAME = /^(?:.*[-_.])?(?:LICEN[CS]E|COPYING|NOTICE|THIRD-PARTY-NOTICES)(?:[-_.].*)?$|^(?:L?GPL)-\d/i;
 
 // The same exclusions MANIFEST.in states for the Python seat, for the same
 // reasons, plus the caches a working tree accumulates.
@@ -76,8 +90,21 @@ for (const seat of readdirSync(controls)) {
 }
 cpSync(join(PACKAGE, "bridge.pl"), join(BUNDLE, "bridge.pl"));
 
+// The host's binary and data image, with the notices of what the build linked
+// into them, which must go wherever they go.
+const wasm = join(BUNDLE, "wasm");
+mkdirSync(wasm, { recursive: true });
+for (const name of ["swipl-web.wasm", "swipl-web.data", NOTICES]) {
+  if (!existsSync(join(PACKAGE, "_host", name))) {
+    console.error(`bundle-runtime: _host/${name} is absent; vendor the host with tools/wasm-host/build.sh vendor`);
+    process.exit(1);
+  }
+  cpSync(join(PACKAGE, "_host", name), join(wasm, name));
+}
+
 // A text snapshot avoids requiring browser directory listings or native caches.
 const files = [];
+const licenses = [];
 function collect(directory, prefix = "") {
   for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     const relative = `${prefix}${entry.name}`;
@@ -85,15 +112,11 @@ function collect(directory, prefix = "") {
     if (entry.isDirectory()) collect(path, `${relative}/`);
     else if (/\.(?:pl|metta)$/.test(entry.name)) {
       files.push({ path: relative, text: readFileSync(path, "utf8") });
+    } else if (LICENCE_NAME.test(entry.name)) {
+      licenses.push(relative);
     }
   }
 }
 collect(BUNDLE);
-writeFileSync(join(BUNDLE, "runtime.json"), JSON.stringify({ version: 1, files }));
-
-const wasm = join(BUNDLE, "wasm");
-mkdirSync(wasm, { recursive: true });
-for (const name of ["swipl-web.wasm", "swipl-web.data"]) {
-  cpSync(join(PACKAGE, "_host", name), join(wasm, name));
-}
+writeFileSync(join(BUNDLE, "runtime.json"), JSON.stringify({ version: 1, files, licenses }));
 console.log(`bundle-runtime: ${TREES.join(", ")}, extension controls, bridge and browser assets copied into _runtime/`);

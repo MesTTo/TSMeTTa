@@ -4,6 +4,17 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- The package carries `THIRD-PARTY-NOTICES` beside every copy of the
+  WebAssembly SWI-Prolog it ships: `_host/`, `_runtime/wasm/`, and
+  `browser/`, whose chunk inlines the host's glue. They name each component
+  the host's build compiled or linked into it, with its licence and copyright
+  lines, and the data image holds the same text at `/swipl`. `boot()` loads
+  `engine/host_notices.pl` after the host check, so `license/0` names those
+  components; before, it named none. `_runtime/runtime.json` gains
+  `licenses`, every licence file `_runtime/` holds, for a site serving the
+  kit to serve beside it. The `node-dist` lane fails a pack whose notices are
+  missing, stale or do not name a binary beside them.
+
 - The `node-binding`, `node-examples` and `node-bench` lanes are declared
   `full_width`, so the superproject's gate claims the machine's full-width
   lock before it runs any of them: the first two spread the seat's suite and

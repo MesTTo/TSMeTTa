@@ -19,6 +19,11 @@
  *     boot() a consumer calls [tested: "refuses the stock npm swipl-wasm";
  *     commit=b18f7d31d58691f97112d0de67b0136bfd8a3291]
  *   - a refusal writes nothing to the console [tested: both refusal cases]
+ *   - license:licensed/2 answers, beyond SWI's own registrations, exactly the
+ *     components of the THIRD-PARTY-NOTICES beside the host in _host/, which
+ *     is the text the data image holds [assumed 2026-09-27T13:21:39+10:00:
+ *     "answers license/0 for every component the host's notices name", which
+ *     passes once build 12 is vendored]
  * Owns resources: one scratch directory per case under build/, which the
  *   next build deletes and each case removes on the way out.
  * Open Obligations:
@@ -83,6 +88,32 @@ describe("the host boot() runs the engine on", () => {
     try {
       const [answer] = await m.eval(S["+"](2, 3));
       assert.equal(String(answer), "5");
+    } finally {
+      m.dispose();
+    }
+  });
+
+  it("answers license/0 for every component the host's notices name", async () => {
+    // A component block opens where a line of 78 '=' is directly followed by
+    // its `Component: ` line, the text tools/host-notices/notices.py writes
+    // and reads back in components_of(), and the host build both packs at
+    // /swipl and vendors beside it. Any other such line is a licence text's
+    // own: LLVM's LICENSE.TXT divides its sections with eight, Emscripten's
+    // LICENSE with three.
+    const rule = "=".repeat(78);
+    const lines = readFileSync(join(packageRoot, "_host", "THIRD-PARTY-NOTICES"), "utf8").split("\n");
+    const named = lines
+      .slice(1)
+      .flatMap((line, index) =>
+        lines[index] === rule && line.startsWith("Component: ") ? [line.slice("Component: ".length)] : [],
+      );
+    const m = await metta();
+    try {
+      const answer = m.engine.once(
+        "findall(C, (license:licensed(I, C), \\+ clause(license:licensed(I, C), true)), Cs), " +
+          "atomic_list_concat(Cs, '\\n', Text)",
+      );
+      assert.deepEqual(String(answer["Text"]).split("\n").sort(), [...named].sort());
     } finally {
       m.dispose();
     }

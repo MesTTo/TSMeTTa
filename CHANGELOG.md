@@ -4,6 +4,24 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+## 0.0.1-alpha.3 - 2026-09-27
+
+- The WebAssembly host links no GPL- or LGPL-licensed code (the user's ruling
+  of 2026-09-27). It leaves out SWI-Prolog's `packages/nlp`, whose `isub.c`
+  is LGPL-2.0-or-later, with `packages/semweb` and `packages/RDF`, which
+  depend on it and which nothing loads, and it links lib_string's static half
+  without ISub, which is now a native half of its own that loads only as a
+  shared object. `string-isub` refuses there by the engine's `isub` platform
+  capability, `m.engine.capabilities()` lists it absent, and
+  `string-similarity` and `string-edit-distance` still answer.
+
+- Big numbers compute correctly on the WebAssembly host, which has always
+  used SWI's LibBF: six host patches fix a big-integer zero read as negative,
+  the bitwise complement, the sign of `lcm/2`, a rational result overwriting
+  its operand, float rounding of a rational, and `format/2`'s `~e` and `~g`
+  of big numbers; a rational zero raised to a negative power raises
+  `zero_divisor` rather than answering `0r0`.
+
 - `markup-parse-html` parses in the browser and under Node: lib_markup
   carries its own HTML5 DTD, which the WebAssembly host's data image does
   not, and `_runtime/runtime.json` carries every file of a kind the host
@@ -91,6 +109,10 @@ Open Obligations: None. -->
   `licenses`, every licence file `_runtime/` holds, for a site serving the
   kit to serve beside it. The `node-dist` lane fails a pack whose notices are
   missing, stale or do not name a binary beside them.
+
+- tsmetta 0.0.1-alpha.2 is deprecated in favour of this release: its
+  WebAssembly host links ISub, LGPL-2.0-or-later, and it shipped six binaries
+  without their notices.
 
 - The `node-binding`, `node-examples` and `node-bench` lanes are declared
   `full_width`, so the superproject's gate claims the machine's full-width

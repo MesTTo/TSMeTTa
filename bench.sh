@@ -47,9 +47,13 @@ bounded() { sh "$ROOT/tools/bounded.sh" "$@"; }
 # the band -- one inference regression and five improvements wanting a re-pin.
 # A benchmark that cannot see is the failure this repository has already been
 # bitten by three times, and it is indistinguishable from a pass until the word
-# for it is used.
+# for it is used. These checks are the runner's only road to 125, each saying
+# SKIPPED with what is absent; what fails after them, the driver's own error
+# or a refused claim on the machine (tests/checks/full_width.py), is a failure,
+# and the driver's refused measurement window is metta_benchmarking's own
+# declared skip.
 unmeasured() {
-    echo "note: $*" >&2
+    echo "SKIPPED: $*" >&2
     exit 125
 }
 
@@ -57,12 +61,12 @@ if ! command -v node >/dev/null 2>&1; then
     unmeasured "node not found, the Node benchmarks will not run"
 fi
 if [ ! -d "$HERE/node_modules/typescript" ]; then
-    unmeasured "run 'npm ci --prefix extensions/node', the Node benchmarks \
-will not run without the TypeScript compiler their build needs"
+    unmeasured "extensions/node/node_modules has no typescript, the compiler the \
+Node benchmarks' build needs; 'npm ci --prefix extensions/node' installs it"
 fi
 if [ ! -f "$HERE/build/benchmarks/run.js" ]; then
-    unmeasured "run 'npm run build --prefix extensions/node', the Node \
-benchmarks run the compiled build"
+    unmeasured "extensions/node/build/benchmarks/run.js is not built, and the \
+Node benchmarks run the compiled build; 'npm run build --prefix extensions/node' makes it"
 fi
 
 # The same interpreter search check.sh makes, and then the same question asked

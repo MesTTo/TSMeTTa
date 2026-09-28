@@ -16,8 +16,10 @@
  * Guarantees:
  *   - invocation(W) answers "light" holding nothing below the share, "held"
  *     holding the lock from it up, "nested" inside a run that holds it, and a
- *     refused one exits this process 125 after the library has named the
- *     holder on stderr.
+ *     refused one exits this process 1 after the library has named the
+ *     holder on stderr, where adopt says 125: an invocation is a runner's, and
+ *     a runner in a gate lane exits 125 only for a prerequisite this machine
+ *     lacks (tools/full_width.sh, metta_full_width_runner_refused).
  * Owns resources: one descriptor on the lock file while "held", kept until the
  *   process exits.
  */
@@ -44,6 +46,10 @@ function workspace(): string {
 /** The descriptor this process holds the machine on, once it does. */
 let held: number | undefined;
 
+/** adopt's status when the machine turns it away, and a runner's for the same refusal. */
+const REFUSED = 125;
+const RUNNER_REFUSED = 1;
+
 export function invocation(width: number | "measures"): "light" | "held" | "nested" {
   if (held !== undefined) return "held";
   const library = join(workspace(), "tools", "full_width.sh");
@@ -61,7 +67,7 @@ export function invocation(width: number | "measures"): "light" | "held" | "nest
   });
   if (decided.status !== 0) {
     closeSync(descriptor);
-    process.exit(decided.status ?? 2);
+    process.exit(decided.status === REFUSED ? RUNNER_REFUSED : (decided.status ?? 2));
   }
   const outcome = decided.stdout.trim();
   if (outcome === "held") {

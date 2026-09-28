@@ -54,7 +54,7 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TypedDict
+from typing import NoReturn, TypedDict
 
 HERE = Path(__file__).resolve().parent
 SEAT = HERE.parent
@@ -87,6 +87,17 @@ RUNNER = SEAT / "build" / "benchmarks" / "run.js"
 SAMPLES = 3
 
 
+#: A prerequisite this machine lacks, the one status tools/check.sh reads as
+#: skipped; the checks below are this driver's only road to it, each printing
+#: SKIPPED with what is absent, while a failure after them exits nonzero.
+SKIPPED = 125
+
+
+def _skip(message: str) -> NoReturn:
+    print(f"SKIPPED: {message}", file=sys.stderr)
+    raise SystemExit(SKIPPED)
+
+
 def _node() -> str:
     """The node these workloads run on, named in full rather than looked up.
 
@@ -97,20 +108,16 @@ def _node() -> str:
     """
     found = shutil.which("node")
     if found is None:
-        message = "node is not on PATH; the Node benchmarks cannot run"
-        raise SystemExit(message)
+        _skip("node is not on PATH; the Node benchmarks cannot run")
     return found
 
 
 def _require_runner() -> None:
     if not (SEAT / "node_modules" / "swipl-wasm").is_dir():
-        message = f"run 'npm ci --prefix {SEAT}': the benchmarks need swipl-wasm"
-        raise SystemExit(message)
+        _skip(f"{SEAT / 'node_modules'} has no swipl-wasm, which the benchmarks run on; "
+              f"'npm ci --prefix {SEAT}' installs it")
     if not RUNNER.is_file():
-        message = (
-            f"run 'npm run build --prefix {SEAT}': {RUNNER.relative_to(ROOT)} is not built"
-        )
-        raise SystemExit(message)
+        _skip(f"{RUNNER.relative_to(ROOT)} is not built; 'npm run build --prefix {SEAT}' makes it")
 
 
 def _run(arguments: Sequence[str]) -> str:
@@ -251,6 +258,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     arguments = parser.parse_args(argv)
     selected = list(arguments.cases)
+    # An empty case table measures nothing and used to end at 0, read as `ok`.
+    # Nothing is missing from the machine there, so it is a failure, not the
+    # skip 125 declares.
+    if not selected:
+        print(f"node-bench: {RUNNER.relative_to(ROOT)} --list declares no case to measure "
+              "(extensions/node/benchmarks/cases.ts is the table)", file=sys.stderr)
+        return 1
 
     # The perf rows read retired instructions, a load-sensitive reading
     # (tools/full_width.sh), unless --counter-only leaves them out.
@@ -296,6 +310,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 continue
         measured.add(name)
         failures += observe(baseline, case, wall=arguments.update)
+    # Every selected case left out because it counts only instructions and perf
+    # is absent: what is missing is the machine's perf, a prerequisite, so the
+    # run is a declared skip rather than a pass over nothing.
+    if not measured:
+        _skip("perf or setarch is absent, and every selected case counts only "
+              "retired instructions, so none was measured")
     # Only a run that measured EVERY case can say a pinned row is unmeasured. A
     # subset run, and a --counter-only run that skipped the instruction-only
     # rows, would read a live pin as a dead receipt and prune real coverage.

@@ -4,6 +4,15 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- `test.sh` fails when the seat has no test file or `node --test` reports
+  zero tests, reading the count from the TAP report the `test` script now
+  writes to `build/test-report.tap` beside its spec output, since
+  `node --test` exits 0 over a glob that matches nothing. Every prerequisite
+  check in `test.sh`, `bench.sh`, `benchmarks/bench.py`, `tools/examples.mjs`
+  and the node-dist lane says `SKIPPED:` naming what is absent, and nothing
+  else in them exits 125: the benchmark driver's own checks, which exited 1,
+  declare their skip, an empty case table fails, and a claim on the machine
+  refused exits 1 (`tools/examples/full_width.ts`).
 - The package carries `THIRD-PARTY-NOTICES` beside every copy of the
   WebAssembly SWI-Prolog it ships: `_host/`, `_runtime/wasm/`, and
   `browser/`, whose chunk inlines the host's glue. They name each component

@@ -31,7 +31,10 @@
 # instead, the same shape the C extension example takes when swipl-ld is
 # absent. The WebAssembly SWI-Prolog the suite boots is committed in _host/.
 check_node_binding() {
-    [ -d "$HERE/extensions/node" ] || return 0
+    [ -d "$HERE/extensions/node" ] || {
+        echo "SKIPPED: extensions/node is not checked out" >&2
+        return 125
+    }
     bounded sh "$HERE/extensions/node/test.sh"
 }
 full_width node-binding
@@ -43,7 +46,10 @@ run GATE node-binding check_node_binding
 # for itself. It carries the same skip protocol as the suite above, since it
 # reaches the same built seat.
 check_stranger_node() {
-    [ -d "$HERE/extensions/node" ] || return 0
+    [ -d "$HERE/extensions/node" ] || {
+        echo "SKIPPED: extensions/node is not checked out" >&2
+        return 125
+    }
     bounded sh "$HERE/tests/shell/test_a_stranger_extends_the_node_seat.sh"
 }
 run GATE stranger-node check_stranger_node
@@ -62,7 +68,10 @@ run GATE stranger-node check_stranger_node
 # counter cannot move at all. extensions/node/benchmarks/cases.ts says which
 # and why, per case.
 check_node_bench() {
-    [ -d "$HERE/extensions/node" ] || return 0
+    [ -d "$HERE/extensions/node" ] || {
+        echo "SKIPPED: extensions/node is not checked out" >&2
+        return 125
+    }
     bounded sh "$HERE/extensions/node/bench.sh"
 }
 # The BUILT package, which no other lane loads. `npm test` compiles source into
@@ -90,7 +99,10 @@ check_node_bench() {
 # that carried no engine passed it [measured 2026-09-07: 165 of 300 files in a
 # `file:` install, the whole of _runtime/ missing].
 check_node_dist() {
-    [ -d "$HERE/extensions/node" ] || return 0
+    [ -d "$HERE/extensions/node" ] || {
+        echo "SKIPPED: extensions/node is not checked out" >&2
+        return 125
+    }
     # The DIRECTORY is not the question, the build's own dependency is. A
     # `npm install --omit=dev` leaves node_modules present with acorn in it
     # and esbuild absent, which passed a bare -d test and then died
@@ -104,7 +116,7 @@ check_node_dist() {
     # Returning 0 made this lane read as a passing built-package check on a
     # checkout that has never installed anything.
     [ -d "$HERE/extensions/node/node_modules/esbuild" ] || {
-        echo "note: extensions/node/node_modules has no esbuild, so the \
+        echo "SKIPPED: extensions/node/node_modules has no esbuild, so the \
 built-package check will not run; \`npm ci\` in extensions/node fetches it \
 with the rest of the build tooling, and a gate does not reach the network" >&2
         return 125
@@ -129,7 +141,10 @@ run_solo GATE node-dist check_node_dist
 # drops METTA_LANE_WIDTH, the share of a lane running beside others, for the
 # lane's own default: one pair per core, up to sixteen (tools/examples/run.ts).
 check_node_examples() {
-    [ -d "$HERE/extensions/node" ] || return 0
+    [ -d "$HERE/extensions/node" ] || {
+        echo "SKIPPED: extensions/node is not checked out" >&2
+        return 125
+    }
     ( cd "$HERE/extensions/node" && bounded env -u METTA_LANE_WIDTH node tools/examples.mjs )
 }
 full_width node-examples

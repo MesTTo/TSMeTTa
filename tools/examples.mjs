@@ -9,8 +9,11 @@
  *   their npm installs.
  * Guarantees:
  *   - it does not fetch. An unmounted corpus or a missing install is named with
- *     the command that supplies it, and the exit status is 125, the gate's word
- *     for a run that measured nothing.
+ *     the command that supplies it on a SKIPPED: line, and the exit status is
+ *     125, the gate's word for a prerequisite this machine lacks; these checks
+ *     are its only road to 125, and a step that fails after them, the claim on
+ *     the machine included (tools/examples/full_width.ts), exits nonzero as a
+ *     failure.
  *   - every program imports this seat's own build: the seat packed as npm
  *     would publish it, `prepare` included, and unpacked where the corpus's own
  *     install put tsmetta, so a program, the side that reads its engine and the
@@ -52,7 +55,7 @@ const lane = join(corpus, "node_modules", ".cache", "tsmetta-lane");
 const tool = (root, name) => join(root, "node_modules", ".bin", name);
 
 function unmeasured(message) {
-  console.error(`note: ${message}`);
+  console.error(`SKIPPED: ${message}`);
   process.exit(125);
 }
 

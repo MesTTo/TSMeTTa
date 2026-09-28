@@ -431,6 +431,7 @@ export const RefusalKind = {
   stack: "stack",
   source: "source",
   registration: "registration",
+  catalog_key_taken: "catalog_key_taken",
   engine: "engine",
 } as const;
 

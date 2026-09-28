@@ -285,6 +285,8 @@ export {
   ResultError,
   RegistrationError,
   type RegistrationErrorOptions,
+  IntegrityError,
+  type IntegrityErrorOptions,
   RestraintError,
   type RestraintErrorOptions,
   SourceNotFoundError,

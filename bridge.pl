@@ -1,5 +1,5 @@
 % Guarantees: an engine refusal crosses as [error, Text, Kind, Fields, Ground,
-%   Remedy, Parts], Ground and Remedy being the engine's own (refusal ...) row
+%   Remedy, Parts, Terms], Ground and Remedy being the engine's own (refusal ...) row
 %   for that kind with the remedy's <field> holes already filled, both flat and
 %   as text [tested: extensions/node/test/errors.test.ts,
 %   "carries the ground and the filled remedy of every kind"; commit=f33b7ab0200e6dc74c88fb4c7f827bf545a447ed],
@@ -7,6 +7,11 @@
 %   encoded term of four slots, each empty where the form carries none [tested:
 %   extensions/node/test/errors.test.ts, "hands a harness the parts of a failed
 %   assertion as atoms"; commit=c8ce18f24ac8192e77ddc1f173f3c5229cf58345].
+% Guarantees: Terms carries the fields the engine types `term`
+%   (metta_host_error_field_row/2) as one encoded term of (name value) pairs,
+%   empty where the refusal carries none [tested 2026-09-29T09:09:02+10:00:
+%   extensions/node/test/errors.test.ts, "hands over a term field as this
+%   package's own atom"].
 % Guarantees: a host operation's failure is the ball
 %   metta_node_host_error(Message, Key), and its refusal's Fields carry
 %   `host-error` Key, the key src/engine.ts's Job kept the thrown value under
@@ -194,7 +199,8 @@
 % cannot fix, so no exception crosses the boundary: the outcome is DATA and
 % the JavaScript side raises from it.
 %
-% [ok], [fail] or [error, Text, Kind, Fields]. A goal that fails rather than
+% [ok], [fail] or the refusal envelope metta_node_error/2 builds, whose slots
+% this file's header spells out. A goal that fails rather than
 % raising is a bug in this file, not an answer, and the host says so; MeTTa's
 % own "no answers" is an empty group, which is a success here.
 metta_node_do(Goal, Outcome) :-
@@ -217,29 +223,58 @@ metta_node_do(Goal, Outcome) :-
 % [tested: "classifies every kind the engine publishes, from a real ball";
 % commit=52e95b50cc5acdc0e41f97b444ab244ad1301433].
 %
-% The fields cross FLAT and as TEXT, name then value, the same decision the
-% number payload takes and for the same reason: this is the shape that goes
-% through swipl-wasm's toJSON at constant depth, and a field is a name and an
-% atomic value by construction. A compound value crosses as the MeTTa its
-% writer would print, which is what makes a restraint's `call` read back as
-% the call the program wrote.
+% A text or number field crosses FLAT and as TEXT, name then value, the same
+% decision the number payload takes and for the same reason: this is the
+% shape that goes through swipl-wasm's toJSON at constant depth. A compound
+% in such a field crosses as the MeTTa its writer would print, which is what
+% makes a restraint's `call` read back as the call the program wrote. A field
+% the engine types `term` (metta_host_error_field_row/2) crosses beside them
+% instead, in the envelope's last slot, as ONE encoded term of (name value)
+% pairs: the atom wire's own flat tokens, so it keeps the constant depth, and
+% the JavaScript side decodes it into its own atoms rather than a string to
+% parse.
 %
 % The classification runs inside a catch of its own because it runs inside
 % metta_node_do/2's RECOVERY, where a second exception is no longer guarded
 % and would reach the WebAssembly boundary -- the one thing this file exists
 % to prevent. An unclassifiable ball is `engine`, which is what every ball was
 % before this table existed.
-metta_node_error(Ball, [error, Text, Kind, Fields, Ground, Remedy, Parts]) :-
+metta_node_error(Ball, [error, Text, Kind, Fields, Ground, Remedy, Parts, Terms]) :-
     metta_node_render(Ball, Text),
     (   catch(metta_host_error_kind(Ball, Classified, Pairs), _, fail)
     ->  Kind = Classified,
-        metta_node_error_fields(Pairs, Found)
+        metta_node_split_fields(Pairs, FlatPairs, TermPairs),
+        metta_node_error_fields(FlatPairs, Found),
+        metta_node_term_fields(TermPairs, Terms)
     ;   Kind = engine,
-        Found = []
+        Found = [],
+        Terms = []
     ),
     metta_node_host_key_field(Ball, Found, Fields),
     metta_node_error_reading(Ball, Ground, Remedy),
     metta_node_assertion_parts(Kind, Ball, Parts).
+
+% The fields the engine types `term`, apart from the rest, each list in the
+% order the kind declares its fields.
+metta_node_split_fields([], [], []).
+metta_node_split_fields([Name-Value|Pairs], Flat, [Name-Value|Terms]) :-
+    metta_host_error_field_row(Name, term),
+    !,
+    metta_node_split_fields(Pairs, Flat, Terms).
+metta_node_split_fields([Pair|Pairs], [Pair|Flat], Terms) :-
+    metta_node_split_fields(Pairs, Flat, Terms).
+
+% The term fields as ONE encoded term, an expression of (name value) pairs, so
+% a variable two of them share stays one variable, as the assertion parts
+% cross. Empty where the refusal carries none.
+metta_node_term_fields([], []) :- !.
+metta_node_term_fields(Pairs, Terms) :-
+    metta_node_term_pairs(Pairs, Items),
+    metta_node_encode(Items, Terms).
+
+metta_node_term_pairs([], []).
+metta_node_term_pairs([Name-Value|Pairs], [[Name, Value]|Items]) :-
+    metta_node_term_pairs(Pairs, Items).
 
 % A host operation's own failure names the key the host kept what it threw
 % under, as the field `host-error`, so the JavaScript side finds the very

@@ -117,15 +117,17 @@ import {
   repoRoot,
 } from "./platform.ts";
 
-import { Atom, Expression, G, Grounded, lift } from "./atom.ts";
+import { Atom, Expression, G, Grounded, Sym, lift } from "./atom.ts";
 import { config } from "./config.ts";
 import { stackCeiling } from "./wasm-memory.ts";
+import { RefusalFieldPayload } from "./refusal-fields.ts";
 import { type EffectClass, type OpKind as CatalogOpKind, effectRank } from "./vocabularies.ts";
 import {
   type AssertionParts,
   CapabilityError,
   ClosedError,
   EngineError,
+  type Fields,
   type Ground,
   MettaError,
   type MettaErrorOptions,
@@ -152,15 +154,17 @@ import {
 export { forgetRuntime, packageRoot, repoRoot };
 
 /**
- * The refusal an `[error, text, kind, fields, ground, remedy]` outcome names.
+ * The refusal an `[error, text, kind, fields, ground, remedy, parts, terms]`
+ * outcome names.
  *
  * bridge.pl reads the KIND off the raised ball, through the engine's own
  * refusal table, so the classification crosses as data instead of being
- * recovered from the sentence on this side. The fields are flat, name then
- * text, which is the shape that crosses at constant depth, and the ground and
- * the remedy are the engine's own `(refusal ...)` row for that kind with the
- * remedy's `<field>` holes already filled from this refusal. Both are empty
- * arrays where the kind carries no row.
+ * recovered from the sentence on this side. The text and number fields are
+ * flat, name then text, which is the shape that crosses at constant depth,
+ * and the term fields one encoded term; the ground and the remedy are the
+ * engine's own `(refusal ...)` row for that kind with the remedy's `<field>`
+ * holes already filled from this refusal. Both are empty arrays where the
+ * kind carries no row.
  */
 function refusal(
   outcome: readonly unknown[],
@@ -169,20 +173,43 @@ function refusal(
   cause?: unknown,
 ): MettaError {
   const said = hostText(outcome[1]).trimEnd();
-  const flat = (outcome[3] ?? []) as readonly unknown[];
-  const fields: Record<string, string> = {};
-  for (let at = 0; at + 1 < flat.length; at += 2) {
-    const name = hostText(flat[at]);
-    if (name !== HOST_KEY) fields[name] = hostText(flat[at + 1]);
-  }
   const carried = declared(outcome[4], outcome[5]);
   return engineError(
     where === undefined ? said : `${said}\n${where}`,
     hostText(outcome[2]),
-    fields,
+    refusalFields((outcome[3] ?? []) as readonly unknown[], outcome[7], decode),
     cause === undefined ? carried : { ...carried, cause },
     assertionParts(outcome[6], decode),
   );
+}
+
+/**
+ * One refusal's fields, each as the engine's field table says it holds: a
+ * flat field is text, read as its number where the table says `number`, and
+ * the term fields, one encoded term of `(name value)` pairs, decode into
+ * atoms. A flat field the table does not name stays text.
+ */
+function refusalFields(
+  flat: readonly unknown[],
+  terms: unknown,
+  decode: (tokens: unknown) => Atom,
+): Fields {
+  const payloads: Readonly<Record<string, string>> = RefusalFieldPayload;
+  const fields: Record<string, string | number | Atom> = {};
+  for (let at = 0; at + 1 < flat.length; at += 2) {
+    const name = hostText(flat[at]);
+    if (name === HOST_KEY) continue;
+    const text = hostText(flat[at + 1]);
+    fields[name] = payloads[name] === "number" ? Number(text) : text;
+  }
+  if (((terms as readonly unknown[] | undefined) ?? []).length > 0) {
+    const pairs = decode(terms);
+    for (const pair of pairs instanceof Expression ? pairs.items : []) {
+      const [name, value] = pair instanceof Expression ? pair.items : [];
+      if (name instanceof Sym && value !== undefined) fields[name.name] = value;
+    }
+  }
+  return fields as Fields;
 }
 
 /**

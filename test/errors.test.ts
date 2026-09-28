@@ -26,7 +26,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { type Atom, type MeTTa, S, V, alphaEqual, e, metta, repoRoot } from "../src/index.ts";
+import { Atom, type MeTTa, S, V, alphaEqual, e, metta, repoRoot } from "../src/index.ts";
 
 import * as errors from "../src/errors.ts";
 
@@ -62,8 +62,10 @@ import {
 // The classifier is the transport's own door rather than a caller's: its
 // input is what the bridge read off the ball. The conditions above are the
 // package's surface; this is not.
-import { REFUSAL_KINDS, engineError } from "../src/errors.ts";
+import { type Fields, REFUSAL_KINDS, engineError } from "../src/errors.ts";
 import { packageRoot } from "../src/engine.ts";
+import { sym } from "../src/atom.ts";
+import { RefusalFieldPayload } from "../src/refusal-fields.ts";
 
 /** The kind list both seats read, and each seat's class for each kind. */
 interface KindRow {
@@ -80,11 +82,13 @@ interface KindRow {
   };
 }
 
-const KINDS = (
-  JSON.parse(readFileSync(join(repoRoot, "tests", "data", "error-kinds.json"), "utf8")) as {
-    kinds: Record<string, KindRow>;
-  }
-).kinds;
+const FIXTURE = JSON.parse(readFileSync(join(repoRoot, "tests", "data", "error-kinds.json"), "utf8")) as {
+  kinds: Record<string, KindRow>;
+  "field-types": Record<string, { readonly payload: string }>;
+};
+const KINDS = FIXTURE.kinds;
+/** What each field holds as it crosses, as the shared list types it. */
+const FIELD_TYPES = FIXTURE["field-types"];
 
 const EXPECTED_CODES: Readonly<Record<string, Code>> = {
   AssertionError: "ERR_METTA_ASSERTION",
@@ -94,6 +98,7 @@ const EXPECTED_CODES: Readonly<Record<string, Code>> = {
   CompileError: "ERR_METTA_LOWER",
   EngineError: "ERR_METTA_ENGINE",
   InferenceLimitError: "ERR_METTA_INFERENCES",
+  IntegrityError: "ERR_METTA_INTEGRITY",
   InterruptedError: "ERR_METTA_INTERRUPTED",
   MettaSyntaxError: "ERR_METTA_SYNTAX",
   NameError: "ERR_METTA_NAME",
@@ -206,14 +211,37 @@ describe("the error family", () => {
     // map. A kind added to one seat and forgotten in the other fails here.
     assert.deepEqual([...REFUSAL_KINDS].sort(), Object.keys(KINDS).sort());
     for (const [kind, row] of Object.entries(KINDS)) {
-      const raised = engineError("said", kind, row.expects);
+      // The fields as the envelope decoder hands them over, typed by the
+      // shared list. With no engine here to decode an atom, a term field's is
+      // a stand-in, which has to reach its attribute as itself.
+      const fields = Object.fromEntries(
+        Object.entries(row.expects).map(([field, text]) => {
+          const payload = FIELD_TYPES[field]?.payload;
+          return [
+            field,
+            payload === "number" ? Number(text) : payload === "term" ? sym(`stand-in-${field}`) : text,
+          ];
+        }),
+      );
+      const raised = engineError("said", kind, fields as Fields);
       assert.equal(raised.constructor.name, row.node.error, kind);
       assert.equal(raised.code, row.node.code, kind);
       for (const [field, attribute] of Object.entries(row.node.attributes)) {
         const held = (raised as unknown as Record<string, unknown>)[attribute];
-        assert.equal(String(held), row.expects[field], `${kind}.${field}`);
+        if (FIELD_TYPES[field]?.payload === "term") assert.equal(held, fields[field], `${kind}.${field}`);
+        else assert.equal(String(held), row.expects[field], `${kind}.${field}`);
       }
     }
+  });
+
+  it("types every field as the shared kind list does", () => {
+    // The table the envelope decoder and the classes read, generated from the
+    // engine's own field rows, against the list both seats' suites hold the
+    // engine to.
+    assert.deepEqual(
+      { ...RefusalFieldPayload },
+      Object.fromEntries(Object.entries(FIELD_TYPES).map(([field, row]) => [field, row.payload])),
+    );
   });
 
   it("reads the kind the engine sent, never the sentence", () => {
@@ -221,7 +249,7 @@ describe("the error family", () => {
     // engine actually read: the prose no longer decides anything.
     const said = "metta: the evaluation passed its 500 inference bound and was stopped";
     assert.ok(engineError(said, "engine", {}) instanceof EngineError);
-    assert.ok(engineError("nothing about a limit", "inference_limit", { limit: "9" }) instanceof
+    assert.ok(engineError("nothing about a limit", "inference_limit", { limit: 9 }) instanceof
       InferenceLimitError);
     // A kind this seat does not know keeps the engine's own sentence rather
     // than being replaced by a complaint about the wire.
@@ -231,7 +259,7 @@ describe("the error family", () => {
   });
 
   it("names its own remedy for a stack ceiling", () => {
-    const deep = engineError("Stack limit (1.0Gb) exceeded", "stack", { limit: "1073741824" });
+    const deep = engineError("Stack limit (1.0Gb) exceeded", "stack", { limit: 1073741824 });
     assert.ok(deep instanceof StackLimitError);
     assert.equal((deep as StackLimitError).limit, 1024 * 1024 * 1024);
     assert.match(deep.message, /METTA_STACK_LIMIT/, "the refusal names its own remedy");
@@ -431,6 +459,31 @@ describe("every kind the engine publishes, over a live engine", () => {
             const held = (error as unknown as Record<string, unknown>)[attribute];
             assert.equal(String(held), row.expects[field], `${kind}.${field}`);
           }
+          return true;
+        },
+        kind,
+      );
+    }
+  });
+
+  // A field the engine types `term` crosses as one encoded term beside the
+  // flat fields and arrives as this package's own atom, never as text to
+  // parse. Every kind carrying one is driven, so a field typed `term` later
+  // is covered the day it is typed.
+  it("hands over a term field as this package's own atom", () => {
+    const carrying = Object.entries(KINDS).flatMap(([kind, row]) =>
+      row.fields
+        .filter((field) => FIELD_TYPES[field]?.payload === "term")
+        .map((field) => ({ kind, row, field })),
+    );
+    assert.ok(carrying.length > 0, "no kind carries a term field, so this measures nothing");
+    for (const { kind, row, field } of carrying) {
+      assert.throws(
+        () => m.engine.once(`throw(${row.ball})`),
+        (raised: unknown) => {
+          const held = (raised as unknown as Record<string, unknown>)[row.node.attributes[field] ?? field];
+          assert.ok(held instanceof Atom, `${kind}.${field} arrived as ${typeof held}`);
+          assert.equal(String(held), row.expects[field], `${kind}.${field}`);
           return true;
         },
         kind,

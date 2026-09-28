@@ -64,7 +64,8 @@
  */
 
 import type { Atom } from "./atom.ts";
-import type { RefusalKind } from "./vocabularies.ts";
+import type { RefusalFieldPayload } from "./refusal-fields.ts";
+import type { RefusalKind, WirePayload } from "./vocabularies.ts";
 
 /** The stable codes. Match on these; the prose beside them is free to change. */
 export type Code =
@@ -115,7 +116,9 @@ export type Code =
   /** A source a program named is not there. */
   | "ERR_METTA_SOURCE"
   /** A registration of Prolog lacks what its contract needs. */
-  | "ERR_METTA_REGISTRATION";
+  | "ERR_METTA_REGISTRATION"
+  /** A keyed catalog declaration names a key a standing row already holds. */
+  | "ERR_METTA_INTEGRITY";
 
 /**
  * The authority one refusal stands on.
@@ -656,6 +659,40 @@ export class RegistrationError extends MettaError {
   }
 }
 
+/** Which catalog key a refused declaration names. */
+export interface IntegrityErrorOptions extends MettaErrorOptions {
+  /** The catalog head whose one-row-per-key rule the declaration broke. */
+  readonly head?: string | undefined;
+  /** The key it names, an expression of the key's arguments, `(race &self)` for an algebra. */
+  readonly key?: Atom | undefined;
+}
+
+/**
+ * A keyed catalog declaration whose key a standing row already holds.
+ *
+ * The engine's `catalog_key_taken` kind: a keyed catalog head admits one row
+ * per key, checked as the write lands and again at the outer commit, so of
+ * two writers racing for one key the second is refused, except that two
+ * overlapping transactions may each commit one repeated vocabulary member.
+ * `head` and `key` say which key to free, the fields the kind's remedy names:
+ * `key` is an expression of the key's arguments in row order, so the name of
+ * an algebra is `key.items[0]`.
+ */
+export class IntegrityError extends MettaError {
+  static override readonly defaultCode: Code = "ERR_METTA_INTEGRITY";
+
+  /** The catalog head whose one-row-per-key rule the declaration broke. */
+  readonly head: string | undefined;
+  /** The key it names, an expression of the key's arguments in row order. */
+  readonly key: Atom | undefined;
+
+  constructor(message: string, options: IntegrityErrorOptions = {}) {
+    super(message, options);
+    this.head = options.head;
+    this.key = options.key;
+  }
+}
+
 /**
  * Whether a caught value is a TRANSPORT failure rather than a refusal.
  *
@@ -678,14 +715,26 @@ export function isTransportError(value: unknown): value is TransportError {
  */
 export type { RefusalKind };
 
-/** One refusal's fields, by the engine's own name for each, as text. */
-export type Fields = Readonly<Record<string, string>>;
+/**
+ * What one of the engine's payload words decodes to on this seat. The bound
+ * holds every word of the generated field table to the wire grammar's own
+ * `wire-payload` vocabulary.
+ */
+type PayloadValue<Payload extends WirePayload> = Payload extends "number"
+  ? number
+  : Payload extends "term"
+    ? Atom
+    : string;
 
-/** A numeric field, or undefined where the refusal did not carry one. */
-function measure(fields: Fields, name: string): number | undefined {
-  const text = fields[name];
-  return text === undefined ? undefined : Number(text);
-}
+/**
+ * One refusal's fields, by the engine's own name for each, typed by what the
+ * engine's field table says each holds, so a builder below reads
+ * `fields.limit` as a number and `fields.key` as an atom without restating
+ * either, and a table change the classes do not follow fails to compile.
+ */
+export type Fields = {
+  readonly [Field in keyof typeof RefusalFieldPayload]?: PayloadValue<(typeof RefusalFieldPayload)[Field]>;
+};
 
 /**
  * The class this seat raises for each kind the engine publishes.
@@ -712,45 +761,45 @@ const KINDS: Readonly<
   >
 > = {
   syntax: (text, fields, carried) =>
-    new MettaSyntaxError(text, { ...carried, line: measure(fields, "line") }),
+    new MettaSyntaxError(text, { ...carried, line: fields.line }),
   time_limit: (text, fields, carried) =>
-    new TimeLimitError(text, { ...carried, limit: measure(fields, "limit") }),
+    new TimeLimitError(text, { ...carried, limit: fields.limit }),
   inference_limit: (text, fields, carried) =>
-    new InferenceLimitError(text, { ...carried, limit: measure(fields, "limit") }),
+    new InferenceLimitError(text, { ...carried, limit: fields.limit }),
   restraint: (text, fields, carried) =>
     new RestraintError(text, {
       ...carried,
-      restraint: fields["restraint"],
-      bound: measure(fields, "bound"),
-      call: fields["call"],
+      restraint: fields.restraint,
+      bound: fields.bound,
+      call: fields.call,
     }),
   interrupted: (text, _fields, carried) => new InterruptedError(text, carried),
   value: (text, _fields, carried) => new WireError(text, carried),
   type: (text, _fields, carried) => new CastError(text, carried),
   assertion: (text, fields, carried, parts) =>
-    new AssertionError(text, { ...carried, ...parts, operation: fields["operation"] }),
+    new AssertionError(text, { ...carried, ...parts, operation: fields.operation }),
   capability: (text, fields, carried) =>
     new CapabilityError(text, {
       ...carried,
-      space: fields["space"],
-      operation: fields["operation"],
-      capability: fields["capability"],
+      space: fields.space,
+      operation: fields.operation,
+      capability: fields.capability,
     }),
   platform: (text, fields, carried) =>
     new PlatformCapabilityError(text, {
       ...carried,
-      operation: fields["operation"],
-      capability: fields["capability"],
-      requires: fields["requires"],
-      costs: fields["costs"],
+      operation: fields.operation,
+      capability: fields.capability,
+      requires: fields.requires,
+      costs: fields.costs,
     }),
   operation: (text, fields, carried) =>
     new OperationError(text, {
       ...carried,
-      operation: fields["operation"],
-      kind: fields["kind"],
-      expected: fields["expected"],
-      culprit: fields["culprit"],
+      operation: fields.operation,
+      kind: fields.kind,
+      expected: fields.expected,
+      culprit: fields.culprit,
     }),
   // The one refusal that says more than the engine did: the ceiling is a
   // startup setting here, so the remedy is not in the engine's own message.
@@ -759,12 +808,14 @@ const KINDS: Readonly<
       `${text}\nthe term was deeper or larger than the engine's own stack; raise ` +
         `METTA_STACK_LIMIT (or config.configure({ stackLimit }) before the first boot), ` +
         `which a 32-bit WebAssembly build must still fit in its address space`,
-      { ...carried, limit: measure(fields, "limit") },
+      { ...carried, limit: fields.limit },
     ),
   source: (text, fields, carried) =>
-    new SourceNotFoundError(text, { ...carried, source: fields["source"] }),
+    new SourceNotFoundError(text, { ...carried, source: fields.source }),
   registration: (text, fields, carried) =>
-    new RegistrationError(text, { ...carried, requires: fields["requires"] }),
+    new RegistrationError(text, { ...carried, requires: fields.requires }),
+  catalog_key_taken: (text, fields, carried) =>
+    new IntegrityError(text, { ...carried, head: fields.head, key: fields.key }),
   engine: (text, _fields, carried) => new EngineError(text, carried),
 };
 

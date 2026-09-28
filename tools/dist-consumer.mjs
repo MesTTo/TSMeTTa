@@ -40,6 +40,16 @@
  *     the consumer's markup-parse-html closes an omitted end tag through it
  *     [tested 2026-09-28T13:36:09+10:00: sh tools/check.sh node-dist, with
  *     build 12 vendored]
+ *   - the packed host's platform census, as its own engine reads it, is the
+ *     one tools/host-capabilities.json declares for a WebAssembly host: every
+ *     capability present but those it lacks by design, each named with its
+ *     reason there. tests/checks/check_host_capabilities.py, the check
+ *     assemble.sh runs on every Linux wheel, compares the two and names what
+ *     differs; it loads no library here, since no Python runs beside this
+ *     host [tested 2026-09-28T15:30:27+10:00: that check's --census over
+ *     tsmetta 0.0.1-alpha.2's census read by m.engine.capabilities(), 21
+ *     capabilities parsed and its one finding the isub row alpha.2's engine
+ *     predates]
  * Fails when: `dist/` was built from older sources than the ones beside it.
  *   That is not hypothetical: on 2026-08-31 `dist/` held the previous wire
  *   codec while the engine's bridge held the new one, so a consumer got
@@ -118,6 +128,24 @@ function unpack(scratch) {
 }
 
 /**
+ * Whether the packed host's platform census is the one declared for a
+ * WebAssembly host, by the repository's check, which prints what differs.
+ */
+function capabilitiesHold(census, scratch) {
+  const file = join(scratch, "census.json");
+  writeFileSync(file, JSON.stringify(census));
+  try {
+    execFileSync("sh", ["-c",
+      '. "$1/tools/select-python.sh" && [ -n "$PY" ] && exec "$PY" "$1/tests/checks/check_host_capabilities.py" --kind webassembly --census "$2"',
+      "sh", repositoryRoot, file],
+      { stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, METTA_ROOT: repositoryRoot } });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The consumer program, run from the scratch directory as a child process.
  *
  * A CHILD because the resolver question is what this proves: the specifiers
@@ -152,7 +180,7 @@ const consumer = `
     m.import(lib.markup);
     const [html] = await m.fn.markupParseHtml("<ul><li>a<li>b</ul>");
     console.log(JSON.stringify({ ...atoms, answer: String(answer), deep: String(deep).length, repoRoot,
-                                 html: String(html) }));
+                                 html: String(html), census: m.engine.capabilities() }));
   } finally { await m.close?.(); }
 `;
 
@@ -231,11 +259,15 @@ try {
   } else if (seen.html !== '(element ul () ((element li () ("a")) (element li () ("b"))))') {
     console.error(`the packed package parsed <ul><li>a<li>b</ul> as ${seen.html}`);
     process.exitCode = 1;
+  } else if (!capabilitiesHold(seen.census, scratch)) {
+    console.error("node-dist: the packed host's platform capabilities are not the WebAssembly host's declared set, above");
+    process.exitCode = 1;
   } else {
     console.log(
       "node-dist: the packed package carries its engine, boots outside any " +
         "checkout, evaluates, reads deep, parses HTML with lib_markup's own " +
-        "DTD, and resolves the engine-free subpaths without loading the " +
+        "DTD, has every platform capability a WebAssembly host is declared " +
+        "to, and resolves the engine-free subpaths without loading the " +
         "WebAssembly host",
     );
   }

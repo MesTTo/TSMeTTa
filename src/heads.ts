@@ -124,6 +124,7 @@ export type CatalogName =
   | "is-ground"
   | "is-member"
   | "is-space"
+  | "is-symbol"
   | "is-var"
   | "isinf-math"
   | "isnan-math"

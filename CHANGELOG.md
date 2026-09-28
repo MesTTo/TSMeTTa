@@ -4,6 +4,12 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- `fn.isSymbol` is a typed head: the engine publishes `is-symbol`, True for
+  a symbol whatever the engine holds for its name, and `src/heads.ts` is
+  regenerated from it. lib_soft's `soft-symbol?`, which the soft-aggregation
+  twin reached through `m.fn["soft-symbol?"]`, is gone; the twin asks
+  `m.fn.isSymbol`.
+
 - The examples lane holds each twin to the workspace's own MeTTa corpus, the
   `examples/` the Python and C seats' lanes hold theirs to. It read the copy
   TSMeTTa-Examples pins at its own `examples/` for a reader who has it alone,

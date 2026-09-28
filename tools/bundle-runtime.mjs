@@ -25,8 +25,15 @@
  * whatever machine publishes, Windows included.
  *
  * Guarantees:
- *   - linked engine and library roots are copied as files before npm packs them
- *     [tested: npm pack and standalone consumer boot; commit=f43f0466e4ed256f599e6aa56eaa7ed92a9249d9]
+ *   - engine/ and lib/ reach _runtime/ as the files git tracks there, lib's
+ *     submodule included, each copied as a file: what a checkout's builds
+ *     and runs leave beside them never ships. The walk this replaces copied
+ *     every file it met, so tsmetta 0.0.1-alpha.2 shipped six
+ *     .native/build.lock files from under lib, and a clone of lib copied its whole
+ *     .git, which npm happened to drop
+ *     [measured 2026-09-28T20:15:55+10:00: over this tree the walk copied
+ *     1,122 untracked files, lib's .git and four .native locks, and git
+ *     tracks 377]
  *   - build products are excluded by extension: a shipped `.qlf` shadows the
  *     source it was built from and ties the package to one SWI version, and a
  *     host `.so` is meaningless to a WebAssembly engine
@@ -51,6 +58,7 @@
  *     pack the notices gate reads, with build 12 vendored]
  */
 
+import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,31 +73,38 @@ const NOTICES = "THIRD-PARTY-NOTICES";
 // LIBARCHIVE-COPYING), and a text named for its GNU licence (LGPL-2.0).
 const LICENCE_NAME = /^(?:.*[-_.])?(?:LICEN[CS]E|COPYING|NOTICE|THIRD-PARTY-NOTICES)(?:[-_.].*)?$|^(?:L?GPL)-\d/i;
 
-// The same exclusions MANIFEST.in states for the Python seat, for the same
-// reasons, plus the caches a working tree accumulates.
+// The build products MANIFEST.in excludes for the Python seat, for the same
+// reasons; git tracks none of them today, and a tracked one would still be no
+// use to a WebAssembly engine.
 const SKIP = new Set([".qlf", ".so", ".o", ".pyc", ".qlf-stamp"]);
-const SKIP_DIRS = new Set(["__pycache__", "node_modules", "target"]);
 // The kinds of file the host reads at run time, and so the browser host's
 // /metta tree needs: what the engine loads, and the DTDs library(sgml) reads,
 // which is how lib_markup's HTML5 DTD reaches the browser. platform-browser.ts
 // mounts whatever this puts in runtime.json, so the rule lives here once.
 const RUNTIME_TEXT = /\.(?:pl|metta|dtd)$/;
 
-function wanted(source) {
-  const name = source.split(/[\\/]/).pop() ?? "";
-  if (SKIP_DIRS.has(name)) return false;
+function wanted(path) {
+  const name = path.split("/").pop() ?? "";
   const dot = name.lastIndexOf(".");
   return dot < 0 || !SKIP.has(name.slice(dot));
 }
 
 rmSync(BUNDLE, { recursive: true, force: true });
+// The release content is what git tracks, so the copy follows git's list
+// rather than a walk of the directories; --recurse-submodules because lib is
+// a submodule.
+const tracked = execFileSync("git", ["-C", REPO, "ls-files", "-z", "--recurse-submodules", "--", ...TREES],
+  { encoding: "utf8", maxBuffer: 1 << 26 }).split("\0").filter(Boolean);
 for (const tree of TREES) {
-  const from = join(REPO, tree);
-  if (!existsSync(from)) {
-    console.error(`bundle-runtime: ${from} is absent; this must run in a checkout`);
+  if (!tracked.some((path) => path.startsWith(`${tree}/`))) {
+    console.error(`bundle-runtime: git tracks no file under ${tree}/ in ${REPO}; this must run in a checkout with its submodules`);
     process.exit(1);
   }
-  cpSync(from, join(BUNDLE, tree), { recursive: true, dereference: true, filter: wanted });
+}
+for (const path of tracked.filter(wanted)) {
+  const destination = join(BUNDLE, path);
+  mkdirSync(dirname(destination), { recursive: true });
+  cpSync(join(REPO, path), destination, { dereference: true });
 }
 const controls = join(REPO, "extensions");
 for (const seat of readdirSync(controls)) {

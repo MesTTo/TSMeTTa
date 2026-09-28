@@ -14,6 +14,14 @@ Open Obligations: None. -->
   fails a pack whose `runtime.json` lacks the DTD, or whose consumer cannot
   parse HTML with it.
 
+- The package ships only what git tracks of `engine/` and `lib/`:
+  `tools/bundle-runtime.mjs` copies git's list of them where it walked the
+  directories, so what builds and runs leave in a checkout never reaches
+  `_runtime/`, where 0.0.1-alpha.2 carried six empty
+  `lib/*/.native/build.lock` files. The `node-dist` lane reads the packed
+  tarball and fails when its `_runtime/` holds a file git does not track under
+  `engine/` or `lib/`, or an entry beside them the bundler does not write.
+
 - `declare()` leaves whether a space already declares an algebra name to
   the engine's catalog key. It scanned the catalog for the name and awaited
   the scan before adding the row, so two declarations in flight for one

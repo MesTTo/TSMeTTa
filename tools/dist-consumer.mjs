@@ -50,6 +50,12 @@
  *     tsmetta 0.0.1-alpha.2's census read by m.engine.capabilities(), 21
  *     capabilities parsed and its one finding the isub row alpha.2's engine
  *     predates]
+ *   - the packed _runtime/ holds, under engine/ and lib/, only files git
+ *     tracks at the same paths, lib's submodule included, and beside them
+ *     only what tools/bundle-runtime.mjs writes: read from the tarball as
+ *     unpacked, so an untracked path fails the lane whatever let it into the
+ *     pack, as six .native/build.lock files from under lib reached tsmetta
+ *     0.0.1-alpha.2 [tested 2026-09-30T12:00:13+10:00: sh tools/check.sh node-dist]
  * Fails when: `dist/` was built from older sources than the ones beside it.
  *   That is not hypothetical: on 2026-08-31 `dist/` held the previous wire
  *   codec while the engine's bridge held the new one, so a consumer got
@@ -125,6 +131,34 @@ function unpack(scratch) {
     );
   }
   return installed;
+}
+
+// What tools/bundle-runtime.mjs writes into _runtime/ beside engine/ and lib/.
+const BUNDLED = new Set(["bridge.pl", "extensions", "runtime.json", "wasm"]);
+
+/**
+ * Every file of the packed _runtime/ that is not what the package ships there:
+ * under engine/ and lib/, a file git does not track at that path, and beside
+ * them, an entry the bundler does not write.
+ */
+function untrackedInPack(installed) {
+  const tracked = new Set(execFileSync("git",
+    ["-C", repositoryRoot, "ls-files", "-z", "--recurse-submodules", "--", "engine", "lib"],
+    { encoding: "utf8", maxBuffer: 1 << 26 }).split("\0").filter(Boolean));
+  const runtime = join(installed, "_runtime");
+  const found = [];
+  const walk = (relative) => {
+    for (const entry of readdirSync(join(runtime, relative), { withFileTypes: true })) {
+      const path = `${relative}/${entry.name}`;
+      if (entry.isDirectory()) walk(path);
+      else if (!tracked.has(path)) found.push(`_runtime/${path}`);
+    }
+  };
+  for (const entry of readdirSync(runtime)) {
+    if (entry === "engine" || entry === "lib") walk(entry);
+    else if (!BUNDLED.has(entry)) found.push(`_runtime/${entry}`);
+  }
+  return found;
 }
 
 /**
@@ -229,6 +263,13 @@ try {
   const manifest = JSON.parse(readFileSync(join(installed, "_runtime/runtime.json"), "utf8"));
   if (!manifest.files.some((file) => file.path === "lib/lib_markup/DTD/HTML5.dtd")) {
     console.error("node-dist: runtime.json does not carry lib/lib_markup/DTD/HTML5.dtd, so the browser host cannot parse HTML");
+    process.exit(1);
+  }
+  const untracked = untrackedInPack(installed);
+  if (untracked.length > 0) {
+    console.error(`node-dist: the packed _runtime/ holds ${untracked.length} file(s) the package does not ship there, ` +
+      `such as ${JSON.stringify(untracked.slice(0, 5))}: under engine/ and lib/ only what git tracks, and beside ` +
+      "them only what tools/bundle-runtime.mjs writes");
     process.exit(1);
   }
 

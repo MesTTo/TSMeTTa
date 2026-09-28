@@ -4,11 +4,13 @@
  *   forms this build refuses; an original residue.json refuses whole, walked
  *   for the claims that run; or a TypeScript program with every
  *   `node:assert/strict` call counted and its DIVERGENCE export read.
- * Assumes: it is started by run.ts with the corpus root as working directory,
- *   as `node side.js <original|whole|program> <path> <report> [refused]`, the
+ * Assumes: it is started by run.ts with the corpus root as root.ts presents
+ *   it as working directory, as
+ *   `node side.js <original|whole|program> <path> <report> [refused]`, the
  *   refused `!` forms counted from 1 and comma-separated, with TSMETTA_BUILD
  *   naming the tsmetta build installed in the corpus, which this module and
- *   the program both import.
+ *   the program both import, and TSMETTA_ORIGINALS the digest of the MeTTa
+ *   corpus at that root's examples/.
  * Guarantees:
  *   - the report is written for success and for failure alike, so a side that
  *     throws still says what it threw, and the exit status is nonzero exactly
@@ -34,7 +36,7 @@
  *     runnable nor hide that it is, a later kept form cannot undo what it
  *     needs, and a form that runs but leaves the engine refusing what follows
  *     is not reported as runnable; each verdict is kept under a key of the
- *     tsmetta build's integrity, the originals' commit, this runner's
+ *     tsmetta build's integrity, the MeTTa corpus's digest, this runner's
  *     compiled source, the original, the kept forms around it and the form
  *   - an original refused whole reports `ok` exactly when it loads, and when
  *     it does not, `runsNow` and `failsNow` from lane.ts's `walkForms`,
@@ -47,7 +49,6 @@
  *   own, read and then disposed here.
  */
 import { registerHooks } from "node:module";
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
@@ -80,24 +81,31 @@ const ENGINE_SPACES = new Set(["&metta", "&catalogs"]);
  */
 const VERDICTS = fileURLToPath(new URL("./verdicts/", import.meta.url));
 
+/** What tools/examples.mjs names in VARIABLE, which a refusal verdict cannot be kept without. */
+function named(variable: string, what: string): string {
+  const value = process.env[variable];
+  if (value === undefined || value === "") {
+    throw new Error(
+      `${variable} names no ${what}, so a refusal verdict has none to belong to; run the lane through tools/examples.mjs, which names both`,
+    );
+  }
+  return value;
+}
+
 /**
  * What a refusal verdict depends on besides the original itself: the tsmetta
  * build installed, named by the integrity of the archive npm packed it into;
- * the originals' checked-out commit, which versions the fixtures their forms
- * read; and this runner's own compiled source. A change to any of them asks
- * every form again.
+ * the MeTTa corpus the run was given, named by the digest root.ts took of
+ * every original and fixture in it as it stood, committed or not; and this
+ * runner's own compiled source. A change to any of them asks every form
+ * again.
  */
 function verdictBasis(): string {
-  const integrity = process.env["TSMETTA_BUILD"];
-  if (integrity === undefined || integrity === "") {
-    throw new Error(
-      "TSMETTA_BUILD names no tsmetta build, so a refusal verdict has none to belong to; run the lane through tools/examples.mjs, which packs the seat and names its build",
-    );
-  }
-  const originals = execFileSync("git", ["-C", "examples", "rev-parse", "HEAD"], {
-    encoding: "utf8",
-  }).trim();
-  return JSON.stringify([integrity, originals, readFileSync(new URL(import.meta.url), "utf8")]);
+  return JSON.stringify([
+    named("TSMETTA_BUILD", "tsmetta build"),
+    named("TSMETTA_ORIGINALS", "MeTTa corpus digest"),
+    readFileSync(new URL(import.meta.url), "utf8"),
+  ]);
 }
 
 /** What one side did. */
@@ -191,7 +199,7 @@ function stage(path: string, tag: string): string {
  * what follows, as this build does after `(pragma! max-time 30)`, which only
  * the kept forms after it reveal. A walk passes no `after`, since it is still
  * deciding what the kept forms are. A verdict is a function of the tsmetta
- * archive, the originals' commit with their fixtures, this runner, the
+ * archive, the MeTTa corpus's digest, fixtures included, this runner, the
  * original, the kept forms around it and the form, so it is kept under that
  * key and asked again only when one of them changes. The staged copy is
  * removed however the load ends.

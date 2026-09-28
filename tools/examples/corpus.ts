@@ -3,10 +3,11 @@
  *   under its examples/, the twin path each one derives, the hand-written
  *   programs, the seat's own chapter, the residue table, and the shape of the
  *   DIVERGENCE a twin may export.
- * Assumes: the working directory is the root of TSMeTTa-Examples as this seat
- *   mounts it at examples/, with the MeTTa corpus mounted at its own examples/,
- *   and every path here is relative to that root, which is the working
- *   directory of every program the lane runs.
+ * Assumes: the working directory is the root of TSMeTTa-Examples, with a MeTTa
+ *   corpus at its examples/: the lane runs in the root root.ts presents, the
+ *   corpus's own entries with the workspace's MeTTa corpus there, and a reader
+ *   in the corpus itself, with the copy it pins. Every path here is relative to
+ *   that root, which is the working directory of every program the lane runs.
  * Guarantees:
  *   - a twin's path is DERIVED from its original's, the same relative path
  *     with .ts, so there is one walker and the twin set cannot disagree with
@@ -30,7 +31,7 @@
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 
-/** Where the MeTTa corpus is mounted, inside the examples corpus. */
+/** Where the MeTTa corpus sits, inside the examples corpus's root. */
 export const ORIGINALS = "examples";
 
 /**

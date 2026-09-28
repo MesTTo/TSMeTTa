@@ -4,8 +4,9 @@
  *   agreeing with the program it mirrors turns the run red.
  * Assumes: tools/examples.mjs has installed this seat's packed build as the
  *   corpus's tsmetta, compiled every program into the corpus's dist/, and
- *   started this with the corpus root as working directory and TSMETTA_BUILD
- *   naming that build.
+ *   started this with the corpus root as root.ts presents it as working
+ *   directory, examples/ there the workspace's MeTTa corpus, TSMETTA_BUILD
+ *   naming that build and TSMETTA_ORIGINALS that corpus's digest.
  * Guarantees:
  *   - a program passes only when the source scan finds nothing and it
  *     finishes having made at least one assertion; the count it prints is the
@@ -41,7 +42,7 @@
  *   full-width, and one selected program is not.
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { fileURLToPath } from "node:url";
 
@@ -63,6 +64,12 @@ const SIDE = fileURLToPath(new URL("./side.js", import.meta.url));
 const IDLE = fileURLToPath(new URL("./idle.js", import.meta.url));
 const RUN = `ai-tmp/run-${new Date().toISOString().replace(/[:.]/g, "-")}-${String(process.pid)}`;
 mkdirSync(RUN, { recursive: true });
+/**
+ * The directory the sides' temporary files go in, by its real path: named
+ * through the root's link to ai-tmp/, a path a program makes there and then
+ * resolves has two names (root.ts, Fails when).
+ */
+const SCRATCH = realpathSync("ai-tmp");
 
 let reports = 0;
 
@@ -79,7 +86,7 @@ function side(
       // TMPDIR places Node's temporary files and TMP the engine's, which is
       // the variable a native SWI-Prolog reads for its tmp_dir, so neither
       // side writes into a RAM-backed /tmp.
-      env: { ...process.env, TMPDIR: `${process.cwd()}/ai-tmp`, TMP: `${process.cwd()}/ai-tmp` },
+      env: { ...process.env, TMPDIR: SCRATCH, TMP: SCRATCH },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let output = "";

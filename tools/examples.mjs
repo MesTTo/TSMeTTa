@@ -2,11 +2,12 @@
  *   install this seat's own packed build as the corpus's tsmetta, build the
  *   lane and the corpus, lint and format-check them, run the lane's own tests
  *   and the README fence check, then run every program and every twin beside
- *   its MeTTa original (tools/examples/run.ts).
+ *   its MeTTa original (tools/examples/run.ts), the original from the
+ *   workspace's own MeTTa corpus.
  *
  * Assumes: the seat is this script's parent directory, the corpus is mounted at
- *   its examples/ with the MeTTa corpus at examples/examples/, and both have
- *   their npm installs.
+ *   its examples/, both have their npm installs, and the workspace holding the
+ *   seat has its MeTTa corpus at examples/.
  * Guarantees:
  *   - it does not fetch. An unmounted corpus or a missing install is named with
  *     the command that supplies it on a SKIPPED: line, and the exit status is
@@ -19,6 +20,12 @@
  *     install put tsmetta, so a program, the side that reads its engine and the
  *     browser program's bundle all load one copy. Every dependency the pack
  *     declares must resolve from there, or the run stops naming it.
+ *   - every twin is held to the workspace's MeTTa corpus, the examples/ the
+ *     Python and C seats' lanes hold theirs to, where the corpus pins a copy of
+ *     it at its own examples/ for a reader who has the corpus alone. The run
+ *     reads that corpus as tools/examples/root.ts presents it, less what its
+ *     repository ignores, so an object built there for a native host, which
+ *     the WebAssembly engine cannot open, never reaches a program.
  *   - the lane is compiled beside the programs, into the corpus's
  *     node_modules/.cache/tsmetta-lane, so its own `tsmetta` is that copy too.
  *   - every step runs whatever an earlier one found, and the exit status is 1
@@ -28,9 +35,10 @@
  * Fails when: two runs share one mounted corpus at once, since both unpack
  *   over its tsmetta and compile into its dist/.
  * Owns resources: a scratch directory under this seat's ai-tmp/ holding the
- *   packed archive, removed however the run ends; the corpus's
- *   node_modules/tsmetta and node_modules/.cache/tsmetta-lane, rewritten by
- *   every run, whose verdicts/ it keeps.
+ *   packed archive, and one holding the root the run reads, each removed
+ *   however the run ends; the corpus's node_modules/tsmetta and
+ *   node_modules/.cache/tsmetta-lane, rewritten by every run, whose verdicts/
+ *   it keeps.
  */
 
 import { execFileSync, spawnSync } from "node:child_process";
@@ -47,7 +55,7 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const seat = fileURLToPath(new URL("../", import.meta.url));
 const corpus = join(seat, "examples");
@@ -61,9 +69,6 @@ function unmeasured(message) {
 
 if (!existsSync(join(corpus, "package.json"))) {
   unmeasured("examples/ is not mounted; `git submodule update --init --recursive examples` in extensions/node mounts it");
-}
-if (!existsSync(join(corpus, "examples", "README.md"))) {
-  unmeasured("examples/examples/, the MeTTa corpus the twins mirror, is not mounted; `git -C examples submodule update --init` mounts it");
 }
 for (const name of ["tsc", "oxlint", "prettier"]) {
   if (!existsSync(tool(seat, name))) {
@@ -133,6 +138,16 @@ mkdirSync(lane, { recursive: true });
 writeFileSync(join(lane, "package.json"), '{ "type": "module" }\n');
 cpSync(join(seat, "tools", "examples", "prettierrc.json"), join(lane, "prettierrc.json"));
 
+// The MeTTa corpus the twins are held to is the workspace's, which the lane
+// finds as it finds the workspace (tools/examples/full_width.ts), so the one
+// answer to where the workspace is lives in the lane.
+const presenter = join(lane, "root.js");
+const root = existsSync(presenter) ? await import(pathToFileURL(presenter).href) : undefined;
+const originals = root?.mettaCorpus();
+if (originals !== undefined && !existsSync(join(originals, "README.md"))) {
+  unmeasured(`${originals}, the MeTTa corpus the twins mirror, is not mounted; \`git submodule update --init examples\` in the workspace mounts it`);
+}
+
 step("the corpus compiles against this build", tool(corpus, "tsc"), ["-p", "."], corpus);
 // The corpus's programs, its README and the files at its root, named rather
 // than globbed, so the MeTTa corpus at examples/examples/ and every build
@@ -155,13 +170,27 @@ step(
   corpus,
 );
 step("the README shows the programs' own lines", process.execPath, [join(lane, "fences.js"), "README.md"], corpus);
-step(
-  "every program runs, and every twin agrees with its original",
-  process.execPath,
-  [join(lane, "run.js"), ...process.argv.slice(2)],
-  corpus,
-  { TSMETTA_BUILD: build },
-);
+// The run reads the corpus as root.ts presents it. ai-tmp/ exists first, so
+// the root links it, and the run's reports and the sides' temporary files land
+// in the corpus's own ai-tmp/ as they did before the corpus was presented.
+mkdirSync(join(corpus, "ai-tmp"), { recursive: true });
+const presented = mkdtempSync(join(seat, "ai-tmp", "examples-root-"));
+try {
+  if (root === undefined) throw new Error("the lane did not compile, so there is no root.js");
+  const digest = root.presentRoot(corpus, originals, presented);
+  console.log(`examples: the twins are held to ${originals}, ${digest}`);
+  step(
+    "every program runs, and every twin agrees with its original",
+    process.execPath,
+    [join(lane, "run.js"), ...process.argv.slice(2)],
+    presented,
+    { TSMETTA_BUILD: build, TSMETTA_ORIGINALS: digest },
+  );
+} catch (error) {
+  failed.push(`the corpus could not be presented (${error.message})`);
+} finally {
+  rmSync(presented, { recursive: true, force: true });
+}
 
 if (failed.length > 0) {
   console.error(`examples: ${String(failed.length)} step(s) failed:`);

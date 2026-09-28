@@ -1,16 +1,28 @@
 /**
  * Purpose: hold the examples lane's own rules to their guarantees: what counts
  *   as a claim, what the source scan refuses, how a program is classified,
- *   what a DIVERGENCE may declare and how one is written, and when a twin
- *   agrees with its original.
+ *   what a DIVERGENCE may declare and how one is written, when a twin agrees
+ *   with its original, and how the corpus is presented to a run.
  * Assumes: it runs from the corpus root, where it writes its planted programs
- *   under ai-tmp/scan-test/.
+ *   under ai-tmp/scan-test/ and its planted corpora under ai-tmp/root-test/.
  * Guarantees: each rule has a case that must fail as well as one that must pass,
- *   so a rule that stopped firing would turn this red [tested 2026-09-26T17:54:50+10:00: node
+ *   so a rule that stopped firing would turn this red [tested 2026-09-28T19:11:58+10:00: node
  *   tools/examples.mjs].
  */
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  chmodSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { test } from "node:test";
 
 import { type Atom, type Form, S, toTransport, transportToJson, wireFromAtom } from "tsmetta";
@@ -42,6 +54,7 @@ import {
   walkForms,
 } from "./lane.ts";
 import { attributeFor, scan } from "./scan.ts";
+import { presentRoot } from "./root.ts";
 import type { Report } from "./side.ts";
 
 test("counts every way a program can reach an assertion", () => {
@@ -650,4 +663,86 @@ test("holds a program to tsmetta, node:* and its own fixtures", () => {
   assert.deepEqual(scan("ai-tmp/scan-test/imports-typed.ts", "ai-tmp/scan-test/imports-typed.js"), [
     "line 1 of the source: imports types from @tensorflow/tfjs; a program names only tsmetta, node:* and its own _fixtures/",
   ]);
+});
+
+/** Run git in a planted repository, as a commit needs no identity from the host. */
+function git(tree: string, ...args: string[]): string {
+  return execFileSync(
+    "git",
+    ["-C", tree, "-c", "user.name=lane", "-c", "user.email=lane@example.invalid", ...args],
+    { encoding: "utf8" },
+  );
+}
+
+/** Every file under a directory, relative to it, sorted; links and directories left out. */
+function filesUnder(directory: string): string[] {
+  return (readdirSync(directory, { recursive: true }) as string[])
+    .filter((path) => lstatSync(`${directory}/${path}`).isFile())
+    .toSorted();
+}
+
+test("presents the corpus with examples/ the given MeTTa corpus, less what its repository ignores", () => {
+  const base = "ai-tmp/root-test";
+  rmSync(base, { recursive: true, force: true });
+  // A MeTTa corpus: a tracked original, a script, an object its own
+  // .gitignore names as built, an original not yet added, and a tracked file
+  // deleted from the working tree.
+  const metta = `${base}/metta`;
+  mkdirSync(`${metta}/ch19/c`, { recursive: true });
+  git(metta, "init", "-q");
+  writeFileSync(`${metta}/README.md`, "the corpus\n");
+  writeFileSync(`${metta}/ch19/.gitignore`, "*/*.so\n");
+  writeFileSync(`${metta}/ch19/c/01-c.metta`, "!(test 1 1)\n");
+  writeFileSync(`${metta}/ch19/build.sh`, "#!/bin/sh\n");
+  chmodSync(`${metta}/ch19/build.sh`, 0o755);
+  writeFileSync(`${metta}/ch19/c/gone.metta`, "!(test 0 0)\n");
+  git(metta, "add", ".");
+  git(metta, "commit", "-qm", "corpus");
+  rmSync(`${metta}/ch19/c/gone.metta`);
+  writeFileSync(`${metta}/ch19/c/cstore.so`, "built for a native host\n");
+  writeFileSync(`${metta}/ch19/c/02-new.metta`, "!(test 2 2)\n");
+  // A corpus root: a chapter with a fixture, git's metadata, and the older
+  // MeTTa corpus it pins at examples/.
+  const corpus = `${base}/corpus`;
+  mkdirSync(`${corpus}/ch19/_fixtures`, { recursive: true });
+  mkdirSync(`${corpus}/examples`, { recursive: true });
+  writeFileSync(`${corpus}/examples/README.md`, "the pinned copy\n");
+  writeFileSync(`${corpus}/.git`, "gitdir: elsewhere\n");
+  writeFileSync(`${corpus}/residue.json`, "{}\n");
+
+  const root = `${base}/root`;
+  const digest = presentRoot(corpus, metta, root);
+  assert.deepEqual(readdirSync(root).toSorted(), ["ch19", "examples", "residue.json"]);
+  assert.ok(lstatSync(`${root}/ch19`).isSymbolicLink());
+  assert.equal(realpathSync(`${root}/ch19`), realpathSync(`${corpus}/ch19`));
+  writeFileSync(`${root}/ch19/_fixtures/written`, "through the root\n");
+  assert.equal(readFileSync(`${corpus}/ch19/_fixtures/written`, "utf8"), "through the root\n");
+  assert.ok(lstatSync(`${root}/examples`).isDirectory());
+  assert.deepEqual(filesUnder(`${root}/examples`), [
+    "README.md",
+    "ch19/.gitignore",
+    "ch19/build.sh",
+    "ch19/c/01-c.metta",
+    "ch19/c/02-new.metta",
+  ]);
+  assert.equal(readFileSync(`${root}/examples/README.md`, "utf8"), "the corpus\n");
+  assert.equal(statSync(`${root}/examples/ch19/build.sh`).mode & 0o777, 0o755);
+  assert.match(digest, /^sha256-/);
+
+  // The digest follows the corpus's content and nothing else.
+  assert.equal(presentRoot(corpus, metta, `${base}/again`), digest);
+  writeFileSync(`${metta}/ch19/c/01-c.metta`, "!(test 1 2)\n");
+  assert.notEqual(presentRoot(corpus, metta, `${base}/edited`), digest);
+  assert.throws(() => presentRoot(corpus, metta, root), /already holds something/);
+
+  // A link or a submodule is refused, naming it, rather than copied partly.
+  symlinkSync("README.md", `${metta}/linked.md`);
+  assert.throws(
+    () => presentRoot(corpus, metta, `${base}/linked`),
+    /linked\.md is a symbolic link/,
+  );
+  rmSync(`${metta}/linked.md`);
+  const commit = git(metta, "rev-parse", "HEAD").trim();
+  git(metta, "update-index", "--add", "--cacheinfo", `160000,${commit},nested`);
+  assert.throws(() => presentRoot(corpus, metta, `${base}/nested`), /nested is a submodule/);
 });

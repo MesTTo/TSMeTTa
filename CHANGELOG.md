@@ -4,6 +4,20 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- The examples lane holds each twin to the workspace's own MeTTa corpus, the
+  `examples/` the Python and C seats' lanes hold theirs to. It read the copy
+  TSMeTTa-Examples pins at its own `examples/` for a reader who has it alone,
+  which trailed the workspace's by two commits, so
+  `03-constructive_negation.ts` owed seven claims its original had gained and
+  no lane said so. The runner reads that corpus as `tools/examples/root.ts`
+  presents it: a root of its own linking every entry of the corpus root but
+  `examples` and `.git`, whose `examples/` is a copy of the workspace's corpus
+  less what its repository ignores. The objects chapter 19's `build.sh` makes
+  beside its originals for a native host, which the WebAssembly engine cannot
+  open, never reach a program, and what an original writes lands in the copy.
+  A refusal verdict is keyed on the copy's content digest, where it read the
+  nested mount's commit, so an uncommitted fixture edit is asked again.
+
 - `test.sh` fails when the seat has no test file or `node --test` reports
   zero tests, reading the count from the TAP report the `test` script now
   writes to `build/test-report.tap` beside its spec output, since

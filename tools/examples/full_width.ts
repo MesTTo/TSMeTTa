@@ -28,8 +28,11 @@ import { closeSync, constants, existsSync, mkdirSync, openSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** The workspace, derived as the Python seat's _workspace.py derives it. */
-function workspace(): string {
+/**
+ * The workspace, derived as the Python seat's _workspace.py derives it. root.ts
+ * reads its MeTTa corpus from here, so the lane has one answer to where it is.
+ */
+export function workspace(): string {
   let directory = dirname(fileURLToPath(import.meta.url));
   while (!(existsSync(join(directory, "engine")) && existsSync(join(directory, "lib")))) {
     const parent = dirname(directory);

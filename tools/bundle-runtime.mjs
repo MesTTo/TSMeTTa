@@ -41,8 +41,8 @@
  *     with a prefix or suffix, or an LGPL- or GPL- text), which are the
  *     engine's and the library pack's own and the ones beside the code the
  *     pack vendors, so a site serving runtime.json can serve what it owes
- *     [assumed 2026-09-27T13:21:39+10:00: tests/checks/check_third_party_notices.py
- *     over the pack tools/dist-consumer.mjs makes, first with build 12 vendored]
+ *     [tested 2026-09-28T14:00:02+10:00: sh tools/check.sh node-dist, whose
+ *     pack the notices gate reads, with build 12 vendored]
  */
 
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";

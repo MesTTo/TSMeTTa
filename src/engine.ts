@@ -24,9 +24,8 @@
  *     engine/host_notices.pl, which answers license:licensed/2 from the
  *     THIRD-PARTY-NOTICES the data image holds at /swipl, as
  *     engine/qlf_boot.pl loads it for every native host
- *     [assumed 2026-09-27T13:21:39+10:00: "answers license/0 for every
- *     component the host's notices name", which passes once build 12 is
- *     vendored]
+ *     [tested 2026-09-28T14:00:32+10:00: "answers license/0 for every
+ *     component the host's notices name", with build 12 vendored]
  *   - synchronous reading can call registered host token constructors
  *     [tested: test/reader-boundary.test.ts; commit=9d6b109740b1744b734b53b563a3be8642d24c0e].
  *   - asynchronous query completion waits for provider finalizers

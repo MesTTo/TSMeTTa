@@ -21,9 +21,9 @@
  *   - a refusal writes nothing to the console [tested: both refusal cases]
  *   - license:licensed/2 answers, beyond SWI's own registrations, exactly the
  *     components of the THIRD-PARTY-NOTICES beside the host in _host/, which
- *     is the text the data image holds [assumed 2026-09-27T13:21:39+10:00:
- *     "answers license/0 for every component the host's notices name", which
- *     passes once build 12 is vendored]
+ *     is the text the data image holds [tested 2026-09-28T14:00:32+10:00:
+ *     "answers license/0 for every component the host's notices name",
+ *     with build 12 vendored]
  * Owns resources: one scratch directory per case under build/, which the
  *   next build deletes and each case removes on the way out.
  * Open Obligations:

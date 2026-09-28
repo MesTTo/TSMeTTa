@@ -32,8 +32,8 @@
  *     tests/checks/check_third_party_notices.py runs on the tarball itself,
  *     with the interpreter tools/select-python.sh chooses for every runner
  *     here, and a finding stops the lane before anything boots
- *     [assumed 2026-09-27T13:21:39+10:00: extensions/node/check.sh node-dist,
- *     first with build 12 vendored]
+ *     [tested 2026-09-28T14:00:02+10:00: sh tools/check.sh node-dist,
+ *     with build 12 vendored]
  * Fails when: `dist/` was built from older sources than the ones beside it.
  *   That is not hypothetical: on 2026-08-31 `dist/` held the previous wire
  *   codec while the engine's bridge held the new one, so a consumer got

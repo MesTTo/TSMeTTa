@@ -4,7 +4,9 @@
  * Assumes: tools/bundle-runtime.mjs emits runtime.json and wasm assets beside
  *   it [source: extensions/node/tools/bundle-runtime.mjs:collect; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8].
  * Guarantees:
- *   - source paths are validated before any file is mounted
+ *   - source paths are validated before any file is mounted: each is a
+ *     relative path under engine/ or lib/, the bridge or a seat's control
+ *     file, whatever kind of file bundle-runtime.mjs chose to carry
  *     [source: extensions/node/src/platform-browser.ts:prepareRuntime; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
  *   - one root is fetched, validated and compiled ONCE however many engines
  *     boot on it, and concurrent boots share the one preparation rather than
@@ -259,7 +261,7 @@ async function prepareBase(base: URL): Promise<PreparedRuntime> {
     const parts = path.split("/");
     if (parts.some((part) => part === "" || part === "." || part === "..") ||
         /[\\\u0000-\u001f\u007f]/.test(path) || seen.has(path) ||
-        !/^(?:bridge\.pl|(?:engine|lib)\/.+\.(?:pl|metta)|extensions\/[^/]+\/extension\.pl)$/.test(path)) {
+        !/^(?:bridge\.pl|(?:engine|lib)\/.+|extensions\/[^/]+\/extension\.pl)$/.test(path)) {
       throw new EngineError(`browser runtime manifest has an invalid or duplicate source path: ${path}`);
     }
     seen.add(path);

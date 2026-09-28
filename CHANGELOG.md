@@ -4,6 +4,16 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- `markup-parse-html` parses in the browser and under Node: lib_markup
+  carries its own HTML5 DTD, which the WebAssembly host's data image does
+  not, and `_runtime/runtime.json` carries every file of a kind the host
+  reads at run time, the SGML DTDs `lib/` holds beside its Prolog and MeTTa.
+  The browser host mounts whatever path under `engine/` or `lib/` the
+  manifest names, where it refused any but `.pl` and `.metta`, so the kind
+  of file lives in `tools/bundle-runtime.mjs` alone. The `node-dist` lane
+  fails a pack whose `runtime.json` lacks the DTD, or whose consumer cannot
+  parse HTML with it.
+
 - `declare()` leaves whether a space already declares an algebra name to
   the engine's catalog key. It scanned the catalog for the name and awaited
   the scan before adding the row, so two declarations in flight for one

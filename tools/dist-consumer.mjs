@@ -34,6 +34,12 @@
  *     here, and a finding stops the lane before anything boots
  *     [tested 2026-09-28T14:00:02+10:00: sh tools/check.sh node-dist,
  *     with build 12 vendored]
+ *   - the packed package parses HTML with lib_markup's own HTML5 DTD, which
+ *     the WebAssembly host's data image does not carry: the DTD is in the
+ *     packed _runtime/lib, runtime.json names it for the browser host, and
+ *     the consumer's markup-parse-html closes an omitted end tag through it
+ *     [tested 2026-09-28T13:36:09+10:00: sh tools/check.sh node-dist, with
+ *     build 12 vendored]
  * Fails when: `dist/` was built from older sources than the ones beside it.
  *   That is not hypothetical: on 2026-08-31 `dist/` held the previous wire
  *   codec while the engine's bridge held the new one, so a consumer got
@@ -50,7 +56,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -140,7 +146,13 @@ const consumer = `
     // A term past the old host ceiling, because the built copy is exactly
     // where a stale one hides: the suite that proves the ceiling runs build/.
     const deep = m.parse("(f ".repeat(4096) + "1" + ")".repeat(4096));
-    console.log(JSON.stringify({ ...atoms, answer: String(answer), deep: String(deep).length, repoRoot }));
+    // HTML through the library's own DTD: two li elements, the first closed by
+    // the second as the DTD's omitted end tag says.
+    const { lib } = await import("tsmetta");
+    m.import(lib.markup);
+    const [html] = await m.fn.markupParseHtml("<ul><li>a<li>b</ul>");
+    console.log(JSON.stringify({ ...atoms, answer: String(answer), deep: String(deep).length, repoRoot,
+                                 html: String(html) }));
   } finally { await m.close?.(); }
 `;
 
@@ -171,6 +183,7 @@ try {
     "_host/LICENSE",
     "_runtime/engine/metta.pl",
     "_runtime/engine/host_check.pl",
+    "_runtime/lib/lib_markup/DTD/HTML5.dtd",
     "_runtime/runtime.json",
     "_runtime/wasm/swipl-web.wasm",
     "browser/index.js",
@@ -182,6 +195,12 @@ try {
       `node-dist: the packed package is missing ${JSON.stringify(missing)}; ` +
         "`npm run prepare` is what builds them and `npm pack` is what runs it",
     );
+    process.exit(1);
+  }
+  // The browser host mounts only what runtime.json names.
+  const manifest = JSON.parse(readFileSync(join(installed, "_runtime/runtime.json"), "utf8"));
+  if (!manifest.files.some((file) => file.path === "lib/lib_markup/DTD/HTML5.dtd")) {
+    console.error("node-dist: runtime.json does not carry lib/lib_markup/DTD/HTML5.dtd, so the browser host cannot parse HTML");
     process.exit(1);
   }
 
@@ -209,11 +228,15 @@ try {
   } else if (!seen.repoRoot.endsWith(`${join("tsmetta", "_runtime")}`)) {
     console.error(`the packed package read its engine from ${seen.repoRoot}, not from its own copy`);
     process.exitCode = 1;
+  } else if (seen.html !== '(element ul () ((element li () ("a")) (element li () ("b"))))') {
+    console.error(`the packed package parsed <ul><li>a<li>b</ul> as ${seen.html}`);
+    process.exitCode = 1;
   } else {
     console.log(
       "node-dist: the packed package carries its engine, boots outside any " +
-        "checkout, evaluates, reads deep, and resolves the engine-free " +
-        "subpaths without loading the WebAssembly host",
+        "checkout, evaluates, reads deep, parses HTML with lib_markup's own " +
+        "DTD, and resolves the engine-free subpaths without loading the " +
+        "WebAssembly host",
     );
   }
 } finally {

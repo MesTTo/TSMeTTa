@@ -34,6 +34,12 @@
  *     carries the binary and data image of the host in _host/, the one the
  *     browser build bundles the loader of
  *     [source: extensions/node/tools/bundle-runtime.mjs:collect; commit=04fde431963bd063ef4ab5dc9b579ff2faba9fe8]
+ *   - the text runtime.json carries is every file of engine/ and lib/ of a
+ *     kind the host reads at run time: the Prolog and MeTTa the engine loads
+ *     and the SGML DTDs library(sgml) opens through file_search_path(dtd, ...),
+ *     lib_markup's HTML5 DTD among them
+ *     [tested 2026-09-28T13:36:09+10:00: sh tools/check.sh node-dist, with
+ *     build 12 vendored]
  *   - wasm/ carries _host/'s THIRD-PARTY-NOTICES beside the binary and data
  *     image, byte for byte, and runtime.json's `licenses` names, relative to
  *     _runtime/, every licence file _runtime/ holds: those notices and each
@@ -63,6 +69,11 @@ const LICENCE_NAME = /^(?:.*[-_.])?(?:LICEN[CS]E|COPYING|NOTICE|THIRD-PARTY-NOTI
 // reasons, plus the caches a working tree accumulates.
 const SKIP = new Set([".qlf", ".so", ".o", ".pyc", ".qlf-stamp"]);
 const SKIP_DIRS = new Set(["__pycache__", "node_modules", "target"]);
+// The kinds of file the host reads at run time, and so the browser host's
+// /metta tree needs: what the engine loads, and the DTDs library(sgml) reads,
+// which is how lib_markup's HTML5 DTD reaches the browser. platform-browser.ts
+// mounts whatever this puts in runtime.json, so the rule lives here once.
+const RUNTIME_TEXT = /\.(?:pl|metta|dtd)$/;
 
 function wanted(source) {
   const name = source.split(/[\\/]/).pop() ?? "";
@@ -110,7 +121,7 @@ function collect(directory, prefix = "") {
     const relative = `${prefix}${entry.name}`;
     const path = join(directory, entry.name);
     if (entry.isDirectory()) collect(path, `${relative}/`);
-    else if (/\.(?:pl|metta)$/.test(entry.name)) {
+    else if (RUNTIME_TEXT.test(entry.name)) {
       files.push({ path: relative, text: readFileSync(path, "utf8") });
     } else if (LICENCE_NAME.test(entry.name)) {
       licenses.push(relative);

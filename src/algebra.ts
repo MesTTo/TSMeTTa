@@ -26,6 +26,12 @@
  *   - preset and law names resolve only through their tables' own entries
  *     [tested: "ships the carriers a program reaches for", "refuses inherited
  *     object names as algebra law aliases"; commit=f79cfa2133ee8691c8c21b8a6a59928ddbad7352]
+ *   - a name the space already declares is refused by the engine's catalog
+ *     key as the row lands, answered as `algebra_already_declared(<name>)`
+ *     with the `IntegrityError` as its cause, so of declarations in flight for
+ *     one name exactly one stands, and a preset's name is refused by the door
+ *     [tested 2026-09-29T06:15:07+10:00: "leaves a name the space declares to
+ *     the engine's key, so one of two in flight stands"]
  * Decides: the reads are asynchronous where the Python original is
  *   synchronous, because reading a space's atoms is asynchronous on this
  *   transport and pretending otherwise would mean draining a cursor behind the
@@ -52,7 +58,7 @@ import {
   sym,
   toAtom,
 } from "./atom.ts";
-import { MettaError } from "./errors.ts";
+import { IntegrityError, MettaError } from "./errors.ts";
 import { type Answers, type AskOptions } from "./answers.ts";
 import { matchTerms } from "./matching.ts";
 import { showsAs } from "./present.ts";
@@ -572,6 +578,17 @@ async function catalogOrder(
  * The laws are checked by EXHAUSTION over the declared carrier before the row
  * lands, so a declaration that does not hold is refused with the
  * counterexample rather than admitted and trusted.
+ *
+ * Whether the space already declares the name is the engine's answer as the
+ * row lands: its catalog keys an algebra row by its name and space and refuses
+ * a taken key as an `IntegrityError`, answered here as
+ * `algebra_already_declared(<name>)` with the refusal as its cause, so of
+ * declarations in flight for one name exactly one stands. A catalog scan first
+ * would be a second answer, and one two declarations awaiting it both pass.
+ * Inside a transaction of the caller's own the commit is the caller's, and a
+ * refusal there reaches the caller as the `IntegrityError`. A shipped preset's
+ * name is refused here, since its row belongs to no context the engine would
+ * compare.
  */
 export async function declare(
   space: Space,
@@ -580,7 +597,7 @@ export async function declare(
 ): Promise<Atom> {
   const catalog = space.catalog;
   if (name === "") throw new AlgebraDeclarationError("algebra_name_must_be_a_nonempty_symbol");
-  if ((await algebraOf(catalog, name, space.name)) !== undefined) {
+  if (Object.hasOwn(PRESETS, name)) {
     throw new AlgebraDeclarationError(`algebra_already_declared(${name})`);
   }
   if (declaration.combine === "") {
@@ -596,7 +613,18 @@ export async function declare(
   // the engine finds it here and not from a sibling.
   validateLaws(space, algebra);
   const row = algebra.rowOwnedBy(space.name);
-  catalog.add(row);
+  try {
+    catalog.add(row);
+  } catch (error) {
+    // The key is the row's own tuple, `(<name> <space>)` for an algebra row,
+    // so the name is its first element.
+    const key = error instanceof IntegrityError && error.head === "algebra" ? error.key : undefined;
+    const [named] = key instanceof Expression ? key.items : [];
+    if (named !== undefined) {
+      throw new AlgebraDeclarationError(`algebra_already_declared(${named.text})`, { cause: error });
+    }
+    throw error;
+  }
   return row;
 }
 

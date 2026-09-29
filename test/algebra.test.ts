@@ -5,6 +5,11 @@
  * Guarantees:
  *   - a law is checked by exhaustion over the declared carrier before its
  *     declaration lands, so a false claim is refused with the counterexample
+ *   - a name the space already declares is the engine's key to refuse, so of
+ *     two declarations in flight one stands and the other is refused with the
+ *     IntegrityError as its cause, and a preset's name is refused by the door
+ *     [tested 2026-09-29T06:15:07+10:00: "leaves a name the space declares to
+ *     the engine's key, so one of two in flight stands"]
  *   - fusion happens only under a law the algebra actually has, and the
  *     decision is reported either way
  * Open Obligations:
@@ -16,7 +21,7 @@
 import { strict as assert } from "node:assert";
 import { after, before, describe, it } from "node:test";
 
-import { G, type MeTTa, S, type Space, V, metta } from "../src/index.ts";
+import { Expression, G, IntegrityError, type MeTTa, S, type Space, V, metta } from "../src/index.ts";
 import {
   Algebra,
   AlgebraDeclarationError,
@@ -186,6 +191,31 @@ describe("declaring an algebra", () => {
         assert.match(error.message, /combine-commutative/);
         return true;
       },
+    );
+  });
+
+  it("leaves a name the space declares to the engine's key, so one of two in flight stands", async () => {
+    const named = `keyed${String(counter++)}`;
+    const declaration = { combine: "max", extend: "*", zero: 0, one: 1 };
+    // Both start before either lands: the door must not answer from a read
+    // that each of them awaits before the other has written.
+    const [first, second] = await Promise.allSettled([
+      declare(m.self, named, declaration),
+      declare(m.self, named, declaration),
+    ]);
+    assert.equal(first?.status, "fulfilled");
+    const refused: unknown = second?.status === "rejected" ? second.reason : undefined;
+    assert.ok(refused instanceof AlgebraDeclarationError);
+    assert.equal(refused.message, `algebra_already_declared(${named})`);
+    assert.ok(refused.cause instanceof IntegrityError);
+    assert.equal(refused.cause.head, "algebra");
+    const key = refused.cause.key;
+    assert.ok(key instanceof Expression);
+    assert.equal(key.items[0]?.text, named);
+    assert.equal(key.text, `(${named} ${m.self.name})`);
+    await assert.rejects(
+      () => declare(fresh(), "tropical", declaration),
+      (error: unknown) => error instanceof AlgebraDeclarationError && error.message === "algebra_already_declared(tropical)",
     );
   });
 

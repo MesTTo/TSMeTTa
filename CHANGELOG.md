@@ -4,6 +4,17 @@ Open Obligations: None. -->
 
 ## Unreleased
 
+- `declare()` leaves whether a space already declares an algebra name to
+  the engine's catalog key. It scanned the catalog for the name and awaited
+  the scan before adding the row, so two declarations in flight for one
+  name, under `Promise.all`, both passed the scan and the second met the
+  engine's refusal as something other than `AlgebraDeclarationError`. The
+  engine keys an algebra row by its name and space and refuses a taken key
+  as `IntegrityError`, which `declare()` answers as
+  `algebra_already_declared(<name>)` with the refusal as its `cause`; the
+  catalog scan per declaration is gone. A shipped preset's name is refused
+  as before.
+
 - `IntegrityError`, code `ERR_METTA_INTEGRITY`, is the engine's new
   `catalog_key_taken` refusal: a keyed catalog declaration whose key a
   standing row already holds, carrying the catalog `head`, a name, and the

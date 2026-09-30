@@ -10,7 +10,7 @@ Files:
   swipl-web.cjs
   swipl-web.data
   swipl-web.wasm
-Build: Sep 30 2026, 01:50:31
+Build: Sep 30 2026, 04:24:51
 
 ==============================================================================
 Component: dlmalloc as Emscripten 6.0.9 bundles it
@@ -1854,6 +1854,7 @@ Source: https://github.com/cslarsen/mersenne-twister
 Files: swipl-web.cjs, swipl-web.wasm
 ------------------------------------------------------------------------------
 Copyright (c) 2015, 2017 Christian Stigen Larsen
+Copyright (c) 1997-2002 Makoto Matsumoto and Takuji Nishimura
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions

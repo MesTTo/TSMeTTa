@@ -4,7 +4,7 @@ Open Obligations: None. -->
 
 ## Unreleased
 
-## 0.0.1-alpha.3 - 2026-09-27
+## 0.0.1-alpha.3 - 2026-09-30
 
 - The WebAssembly host links no GPL- or LGPL-licensed code (the user's ruling
   of 2026-09-27). It leaves out SWI-Prolog's `packages/nlp`, whose `isub.c`
